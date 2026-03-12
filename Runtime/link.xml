@@ -1,0 +1,6 @@
+<linker>
+  <!-- Preserve Newtonsoft.Json types for IL2CPP builds (iOS, Android, consoles) -->
+  <assembly fullname="Newtonsoft.Json" preserve="all" />
+  <!-- Preserve StoryFlow runtime types that use reflection-based deserialization -->
+  <assembly fullname="StoryFlow.Runtime" preserve="all" />
+</linker>

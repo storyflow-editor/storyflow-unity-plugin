@@ -1,0 +1,23 @@
+# =============================================================================
+# StoryFlow Unity Plugin - .gitignore
+# =============================================================================
+
+# Build verification artifacts
+_build_verify/bin/
+_build_verify/obj/
+
+# IDE and editor files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.csproj.user
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Unity Library (only relevant if opened as a Unity project directly)
+[Ll]ibrary/
+[Tt]emp/

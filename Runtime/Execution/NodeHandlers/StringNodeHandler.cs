@@ -1,0 +1,46 @@
+using StoryFlow.Data;
+using UnityEngine;
+
+namespace StoryFlow.Execution.NodeHandlers
+{
+    /// <summary>
+    /// Handles SetString nodes. GetString, ConcatenateString, EqualString, ContainsString,
+    /// ToUpperCase, ToLowerCase are evaluated lazily by StoryFlowEvaluator.
+    /// </summary>
+    public static class StringNodeHandler
+    {
+        public static void HandleSet(StoryFlowComponent component, StoryFlowNode node)
+        {
+            var context = component.GetContext();
+
+            // Evaluate the string input
+            string value = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+
+            // Find and update the variable
+            var variableId = node.GetData("variableId");
+            var variable = context.FindVariable(variableId);
+            if (variable != null)
+            {
+                variable.Value.SetString(value);
+                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.BroadcastVariableChanged(variable, isGlobal);
+            }
+            else
+            {
+                Debug.LogWarning($"[StoryFlow] SetString: variable '{variableId}' not found (node {node.Id}).");
+            }
+
+            // Try to follow the flow output edge
+            var flowHandle = StoryFlowHandles.Source(node.Id, StoryFlowHandles.Out_Flow);
+            var flowEdge = context.CurrentScript.FindEdgeBySourceHandle(flowHandle);
+            if (flowEdge != null)
+            {
+                component.ProcessNextNode(flowHandle);
+                return;
+            }
+
+            // No outgoing edge fallthrough
+            BooleanNodeHandler.SetNodeFallthrough(component, context, node);
+        }
+    }
+}

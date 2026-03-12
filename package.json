@@ -1,0 +1,44 @@
+{
+  "name": "com.storyflow.unity",
+  "version": "1.0.0",
+  "displayName": "StoryFlow",
+  "description": "Import and run StoryFlow Editor projects in Unity. Visual node-based dialogue, branching logic, variables, and character systems.",
+  "unity": "2022.3",
+  "documentationUrl": "https://storyflow-editor.com/integrations/unity",
+  "changelogUrl": "https://storyflow-editor.com/changelog",
+  "license": "MIT",
+  "keywords": [
+    "dialogue",
+    "story",
+    "narrative",
+    "visual-novel",
+    "branching",
+    "node-graph",
+    "storyflow"
+  ],
+  "author": {
+    "name": "StoryFlow",
+    "url": "https://storyflow-editor.com"
+  },
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.textmeshpro": "3.0.6"
+  },
+  "samples": [
+    {
+      "displayName": "Basic Dialogue",
+      "description": "Minimal dialogue setup example",
+      "path": "Samples~/BasicDialogue"
+    },
+    {
+      "displayName": "Branching Story",
+      "description": "Variables and branching example",
+      "path": "Samples~/BranchingStory"
+    },
+    {
+      "displayName": "Custom UI",
+      "description": "Custom dialogue UI implementation example",
+      "path": "Samples~/CustomUI"
+    }
+  ]
+}
