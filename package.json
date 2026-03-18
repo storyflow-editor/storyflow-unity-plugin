@@ -23,22 +23,5 @@
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1",
     "com.unity.textmeshpro": "3.0.6"
-  },
-  "samples": [
-    {
-      "displayName": "Basic Dialogue",
-      "description": "Minimal dialogue setup example",
-      "path": "Samples~/BasicDialogue"
-    },
-    {
-      "displayName": "Branching Story",
-      "description": "Variables and branching example",
-      "path": "Samples~/BranchingStory"
-    },
-    {
-      "displayName": "Custom UI",
-      "description": "Custom dialogue UI implementation example",
-      "path": "Samples~/CustomUI"
-    }
-  ]
+  }
 }

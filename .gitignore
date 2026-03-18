@@ -2,9 +2,8 @@
 # StoryFlow Unity Plugin - .gitignore
 # =============================================================================
 
-# Build verification artifacts
-_build_verify/bin/
-_build_verify/obj/
+# Build verification (internal dev tool, not part of the package)
+_build_verify/
 
 # IDE and editor files
 .vs/

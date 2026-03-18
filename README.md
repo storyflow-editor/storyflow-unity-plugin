@@ -1,90 +1,83 @@
 # StoryFlow for Unity
 
-Import and run [StoryFlow Editor](https://storyflow-editor.com) projects in Unity. Build interactive dialogues, branching narratives, and variable-driven story logic using a visual node-based editor, then play them at runtime in your Unity game.
+Runtime plugin for [StoryFlow Editor](https://storyflow-editor.com) — a visual node editor for creating interactive stories and dialogue systems.
 
 ## Requirements
 
 - **Unity 2022.3 LTS** or newer (including Unity 6)
-- **Newtonsoft.Json** (`com.unity.nuget.newtonsoft-json` 3.2.1+)
-- **TextMeshPro** (`com.unity.textmeshpro` 3.0.6+)
-
-Both dependencies are resolved automatically by the Unity Package Manager.
+- **Newtonsoft.Json** and **TextMeshPro** (resolved automatically by Package Manager)
 
 ## Installation
 
-1. Open your Unity project
-2. Go to **Window > Package Manager**
-3. Click the **+** button and select **Add package from git URL...**
-4. Enter: `https://github.com/StoryFlowEditor/storyflow-unity.git`
-5. Click **Add**
+Open your Unity project, go to **Window > Package Manager**, click **+** > **Add package from git URL**, and enter:
 
-### A Note on `.meta` Files
-
-This package does not include `.meta` files -- Unity generates them automatically when the package is first imported or resolved. After importing, commit the entire package folder (including the generated `.meta` files) to your project's version control. If you distribute via `.unitypackage`, `.meta` files are bundled automatically.
+```
+https://github.com/StoryFlowEditor/storyflow-unity.git
+```
 
 ## Quick Start
 
-1. **Export your project** from StoryFlow Editor as JSON (File > Export > JSON)
-2. **Import into Unity** via **StoryFlow > Import Project** in the menu bar, then select the exported folder
-3. **Add a StoryFlowComponent** to any GameObject in your scene
-4. **Assign the imported Project Asset** in the Inspector
-5. **Call `StartDialogue()`** from a script or hook it up to a trigger:
+1. **Import your project** — go to **StoryFlow > Import Project**, select your exported `build/` folder
+2. **Add a StoryFlowComponent** to any GameObject (e.g., an NPC)
+3. **Call `StartDialogue()`** from your game code:
 
 ```csharp
-var storyFlow = GetComponent<StoryFlowComponent>();
-storyFlow.StartDialogue();
+GetComponent<StoryFlowComponent>().StartDialogue();
 ```
 
-6. **Subscribe to events** to drive your UI:
+That's it. A built-in dialogue UI appears automatically. No manager setup, no UI wiring needed.
+
+Optionally assign a specific **Script** asset on the component in the Inspector. If left empty, the project's startup script runs.
+
+## Live Sync
+
+Connect to the StoryFlow Editor for real-time updates during development:
+
+1. Open **StoryFlow > Live Sync** in Unity
+2. Click **Connect** (default port: 9000)
+3. Click **Sync** — or sync from the editor
+
+Changes sync automatically when you save in the editor.
+
+## Customizing the UI
+
+The built-in UI is for prototyping. For production, either:
+
+- **Extend `StoryFlowDialogueUI`** — override `HandleDialogueUpdated`, assign to the component's **Dialogue UI** field
+- **Subscribe to events directly** — `OnDialogueUpdated`, `OnDialogueEnded`, etc.
 
 ```csharp
 storyFlow.OnDialogueUpdated += state =>
 {
-    // Update your dialogue UI with state.Text, state.Options, state.Character, etc.
-};
-
-storyFlow.OnDialogueEnded += () =>
-{
-    // Hide dialogue UI
+    myText.text = state.Text;
+    // Build option buttons from state.Options
 };
 ```
 
-Or use the built-in **StoryFlowDefaultDialogueUI** component for a ready-made uGUI dialogue panel.
+## Save & Load
+
+```csharp
+StoryFlowManager.Instance.SaveToSlot("slot1");
+StoryFlowManager.Instance.LoadFromSlot("slot1");
+```
 
 ## Features
 
-- **160+ node types** -- dialogue, branching, boolean/integer/float/string/enum logic, arrays, characters, audio, images, and more
-- **Variable system** with live text interpolation (`{varname}`, `{Character.Name}`)
-- **RunScript / RunFlow** for modular, nested story structures with parameter passing
-- **ForEach loops** across all array types
-- **Save / Load** -- serialize and restore full execution state
-- **Once-only options** tracked across components
-- **Live Sync** -- WebSocket connection to StoryFlow Editor for real-time updates during development
-- **Custom Inspector** for StoryFlowComponent with runtime debugging
-- **Project Settings** integration for global configuration
-
-## API Overview
-
-| Class | Purpose |
-|---|---|
-| `StoryFlowComponent` | MonoBehaviour that runs a single dialogue instance. Add to any GameObject. Provides `StartDialogue()`, `SelectOption()`, `SetVariable()`, and event callbacks. |
-| `StoryFlowManager` | Singleton manager for global state, once-only option tracking, and multi-component coordination. |
-| `StoryFlowDialogueUI` | Abstract base class for custom dialogue UI implementations. |
-| `StoryFlowProjectAsset` | ScriptableObject holding an imported project (scripts, variables, characters, assets). |
-| `StoryFlowSaveData` | Serializable save data for persisting dialogue state. |
-
-## Samples
-
-Import samples from the Package Manager window (select the StoryFlow package, expand the Samples section):
-
-- **Basic Dialogue** -- Minimal setup to get dialogue running
-- **Branching Story** -- Variables and conditional branching
-- **Custom UI** -- Implement your own dialogue UI
+- 160+ node types — dialogue, branching, variables, arrays, characters, audio, images
+- Zero-setup workflow — auto-creating manager, auto-project discovery, auto-fallback UI
+- Live text interpolation — `{varname}`, `{Character.Name}`
+- RunScript / RunFlow — nested scripts with parameters, outputs, and exit flows
+- ForEach loops across all array types
+- Audio advance-on-end with optional skip
+- Character variables with built-in Name/Image field support
+- Save/Load with slot-based persistence
+- WebSocket Live Sync with auto-reconnect
+- Toolbar button for quick Connect/Sync
 
 ## Documentation
 
-Full documentation: [storyflow-editor.com/integrations/unity](https://storyflow-editor.com/integrations/unity)
+Full documentation at [storyflow-editor.com/integrations/unity](https://storyflow-editor.com/integrations/unity).
 
 ## License
 
-MIT -- see [LICENSE](LICENSE) for details.
+[MIT](LICENSE)
