@@ -178,7 +178,7 @@ namespace StoryFlow.Execution.NodeHandlers
                     foreach (var opt in options)
                     {
                         var optionId = opt.Value<string>("id") ?? "";
-                        var isOnceOnly = opt.Value<bool?>("isOnceOnly") ?? false;
+                        var isOnceOnly = opt.Value<bool?>("onceOnly") ?? opt.Value<bool?>("isOnceOnly") ?? false;
                         var inputType = opt.Value<string>("inputType") ?? "";
                         var defaultValue = opt.Value<string>("defaultValue") ?? "";
 
@@ -221,8 +221,17 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
-            // 8. CanAdvance: true when there are no options (narrative-only node)
-            state.CanAdvance = state.Options.Count == 0;
+            // 8. CanAdvance: true when no options AND a header edge exists to follow
+            if (state.Options.Count == 0)
+            {
+                var headerHandle = StoryFlowHandles.Source(node.Id, "");
+                var headerEdge = context.CurrentScript?.FindEdgeBySourceHandle(headerHandle);
+                state.CanAdvance = headerEdge != null;
+            }
+            else
+            {
+                state.CanAdvance = false;
+            }
 
             // 9. Mark as valid and waiting for input
             state.IsValid = true;

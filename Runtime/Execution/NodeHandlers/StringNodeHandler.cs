@@ -13,11 +13,12 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Evaluate the string input
-            string value = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+            // Evaluate the string input (use inline value as fallback when no input edge)
+            string fallback = node.GetData("value");
+            string value = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_String, fallback);
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {

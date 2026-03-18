@@ -151,9 +151,12 @@ namespace UnityEditor
     // EditorApplication
     // -------------------------------------------------------------------------
 
+    public enum PlayModeStateChange { EnteredEditMode, ExitingEditMode, EnteredPlayMode, ExitingPlayMode }
+
     public static class EditorApplication
     {
         public static event Action update;
+        public static event Action<PlayModeStateChange> playModeStateChanged;
         public static Action delayCall { get; set; }
         public static bool isPlaying { get; set; }
         public static bool isPlayingOrWillChangePlaymode => false;
@@ -476,6 +479,101 @@ namespace UnityEditor
         public static void SetCurrentGroupName(string name) { }
         public static int GetCurrentGroup() => 0;
         public static void CollapseUndoOperations(int groupIndex) { }
+    }
+
+    public class SceneView : EditorWindow { }
+}
+
+// =============================================================================
+// Overlay / Toolbar Stubs (Unity 2022.1+)
+// =============================================================================
+
+namespace UnityEditor.Overlays
+{
+    [AttributeUsage(AttributeTargets.Class)]
+    public class OverlayAttribute : Attribute
+    {
+        public bool defaultDisplay { get; set; }
+        public OverlayAttribute(Type editorWindowType, string displayName) { }
+    }
+
+    [AttributeUsage(AttributeTargets.Class)]
+    public class IconAttribute : Attribute
+    {
+        public IconAttribute(string path) { }
+    }
+
+    public class ToolbarOverlay : UnityEditor.EditorWindow
+    {
+        protected ToolbarOverlay(params string[] elementIds) { }
+    }
+}
+
+namespace UnityEditor.Toolbars
+{
+    [AttributeUsage(AttributeTargets.Class)]
+    public class EditorToolbarElementAttribute : Attribute
+    {
+        public EditorToolbarElementAttribute(string id, Type editorWindowType) { }
+    }
+
+    public class EditorToolbarButton : UnityEngine.UIElements.VisualElement
+    {
+        public string text { get; set; }
+        public string tooltip { get; set; }
+        public Texture2D icon { get; set; }
+        public event Action clicked;
+    }
+}
+
+namespace UnityEngine { public enum ScaleMode { StretchToFill, ScaleAndCrop, ScaleToFit } }
+
+namespace UnityEngine.UIElements
+{
+    public class VisualElement
+    {
+        public IStyle style { get; set; }
+        public IVisualElementScheduler schedule => new VisualElementScheduler();
+        public void Add(VisualElement child) { }
+    }
+
+    public interface IVisualElementScheduler
+    {
+        IVisualElementScheduledItem Execute(Action action);
+    }
+
+    public interface IVisualElementScheduledItem
+    {
+        IVisualElementScheduledItem Every(long intervalMs);
+    }
+
+    public class VisualElementScheduler : IVisualElementScheduler
+    {
+        public IVisualElementScheduledItem Execute(Action action) => new ScheduledItem();
+    }
+
+    public class ScheduledItem : IVisualElementScheduledItem
+    {
+        public IVisualElementScheduledItem Every(long intervalMs) => this;
+    }
+
+    public interface IStyle
+    {
+        StyleLength width { get; set; }
+        StyleLength height { get; set; }
+        StyleLength marginRight { get; set; }
+    }
+
+    public struct StyleLength
+    {
+        public static implicit operator StyleLength(float v) => new StyleLength();
+        public static implicit operator StyleLength(int v) => new StyleLength();
+    }
+
+    public class Image : VisualElement
+    {
+        public Texture image { get; set; }
+        public ScaleMode scaleMode { get; set; }
     }
 }
 

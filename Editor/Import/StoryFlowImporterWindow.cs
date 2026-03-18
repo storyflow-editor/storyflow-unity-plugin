@@ -22,14 +22,27 @@ namespace StoryFlow.Editor
         private string statusMessage = "";
         private MessageType statusType = MessageType.None;
         private bool isImporting;
+        private Texture2D logoTexture;
 
-        private new void OnGUI()
+        private void OnEnable()
+        {
+            logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Packages/com.storyflow.unity/Editor/Resources/storyflow_logo.png");
+        }
+
+        private void OnGUI()
         {
             scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
 
-            // --- Header ---
+            // --- Header with logo ---
             EditorGUILayout.Space(8);
+            EditorGUILayout.BeginHorizontal();
+            if (logoTexture != null)
+            {
+                GUILayout.Label(new GUIContent(logoTexture), GUILayout.Width(24), GUILayout.Height(24));
+            }
             EditorGUILayout.LabelField("StoryFlow Project Importer", EditorStyles.boldLabel);
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(4);
             EditorGUILayout.HelpBox(
                 "Select the build directory exported from StoryFlow Editor " +

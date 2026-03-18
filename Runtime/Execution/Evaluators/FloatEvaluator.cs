@@ -68,7 +68,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetFloat:
                 case StoryFlowNodeType.SetFloat:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetFloat() ?? 0f;
                 }
@@ -98,12 +98,7 @@ namespace StoryFlow.Execution
                 {
                     float a = EvaluatorHelpers.EvaluateFloatInput1(ctx, node);
                     float b = EvaluatorHelpers.EvaluateFloatInput2(ctx, node);
-                    if (Mathf.Approximately(b, 0f))
-                    {
-                        Debug.LogWarning("[StoryFlow] Float division by zero in node " + node.Id);
-                        return 0f;
-                    }
-                    return a / b;
+                    return !Mathf.Approximately(b, 0f) ? a / b : 0f;
                 }
 
                 case StoryFlowNodeType.RandomFloat:
@@ -112,6 +107,9 @@ namespace StoryFlow.Execution
                     float b = EvaluatorHelpers.EvaluateFloatInput2(ctx, node);
                     float min = Mathf.Min(a, b);
                     float max = Mathf.Max(a, b);
+                    // Unity Random.Range(float,float) is exclusive on max.
+                    // Other runtimes (Editor/Godot/Unreal) are inclusive.
+                    // Difference is one ULP — negligible in practice.
                     return Random.Range(min, max);
                 }
 

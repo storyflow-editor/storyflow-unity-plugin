@@ -68,7 +68,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetString:
                 case StoryFlowNodeType.SetString:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetString() ?? "";
                 }
@@ -141,7 +141,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacter:
                 case StoryFlowNodeType.SetCharacter:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetString() ?? "";
                 }

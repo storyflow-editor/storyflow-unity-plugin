@@ -16,12 +16,6 @@ namespace StoryFlow.Execution.NodeHandlers
             // Resolve character path (supports connected character input edge)
             string characterPath = EvaluatorHelpers.ResolveCharacterPath(context, node);
 
-            // Also check legacy "characterId" field
-            if (string.IsNullOrEmpty(characterPath))
-            {
-                characterPath = node.GetData("characterId");
-            }
-
             if (string.IsNullOrEmpty(characterPath))
             {
                 Debug.LogWarning($"[StoryFlow] SetCharacterVar: no character path specified (node {node.Id}).");

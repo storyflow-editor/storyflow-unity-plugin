@@ -31,11 +31,7 @@ namespace StoryFlow.Data
                 {
                     _instance = Resources.Load<StoryFlowSettings>("StoryFlowSettings");
                     _searched = true;
-                    if (_instance == null)
-                    {
-                        Debug.LogWarning("[StoryFlow] StoryFlowSettings asset not found in Resources/. " +
-                                         "Create one via Project Settings > StoryFlow or place a StoryFlowSettings asset in a Resources/ folder.");
-                    }
+                    // Settings asset is optional — no warning needed
                 }
                 return _instance;
             }

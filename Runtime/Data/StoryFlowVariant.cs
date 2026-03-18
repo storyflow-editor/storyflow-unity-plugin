@@ -13,7 +13,7 @@ namespace StoryFlow.Data
         public float FloatValue;
         public string StringValue = "";
         public string EnumValue = "";
-        public List<StoryFlowVariant> ArrayValue;
+        [NonSerialized] public List<StoryFlowVariant> ArrayValue;
 
         public StoryFlowVariant()
         {

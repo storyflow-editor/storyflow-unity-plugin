@@ -166,7 +166,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var project = component.GetProject();
 
             // Get the target script path
-            var scriptId = node.GetData("scriptId");
+            var scriptId = node.GetData("script");
             if (string.IsNullOrEmpty(scriptId))
             {
                 scriptId = node.GetData("value");

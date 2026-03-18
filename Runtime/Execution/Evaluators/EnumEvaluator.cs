@@ -68,7 +68,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetEnum:
                 case StoryFlowNodeType.SetEnum:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetEnum() ?? "";
                 }

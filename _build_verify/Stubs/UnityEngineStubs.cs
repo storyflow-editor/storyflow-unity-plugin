@@ -30,6 +30,8 @@ namespace UnityEngine
         public static T Instantiate<T>(T original) where T : Object => default;
         public static T Instantiate<T>(T original, Transform parent) where T : Object => default;
         public static T Instantiate<T>(T original, Vector3 position, Quaternion rotation) where T : Object => default;
+        public static T FindObjectOfType<T>() where T : Object => default;
+        public static T[] FindObjectsOfType<T>() where T : Object => new T[0];
         public static implicit operator bool(Object exists) => exists != null;
         public int GetInstanceID() => 0;
         public override string ToString() => name ?? base.ToString();
@@ -99,6 +101,7 @@ namespace UnityEngine
         public T GetComponentInChildren<T>() => default;
         public T GetComponentInChildren<T>(bool includeInactive) => default;
         public T AddComponent<T>() where T : Component => default;
+        public Component AddComponent(System.Type type) => default;
         public void SetActive(bool value) { }
         public GameObject() { }
         public GameObject(string name) { }
@@ -397,6 +400,7 @@ namespace UnityEngine
         public static void Label(string text) { }
         public static void Label(string text, params GUILayoutOption[] options) { }
         public static void Label(string text, GUIStyle style, params GUILayoutOption[] options) { }
+        public static void Label(GUIContent content, params GUILayoutOption[] options) { }
         public static string TextField(string text, params GUILayoutOption[] options) => text;
         public static void Space(float pixels) { }
         public static void FlexibleSpace() { }
@@ -434,6 +438,7 @@ namespace UnityEngine
         public GUIContent() { }
         public GUIContent(string text) { this.text = text; }
         public GUIContent(string text, string tooltip) { this.text = text; this.tooltip = tooltip; }
+        public GUIContent(Texture image) { this.image = image; }
         public GUIContent(string text, Texture image) { this.text = text; this.image = image; }
         public GUIContent(string text, Texture image, string tooltip) { this.text = text; this.image = image; this.tooltip = tooltip; }
         public static GUIContent none => new GUIContent();
@@ -589,6 +594,8 @@ namespace UnityEngine.Events
         public void RemoveListener(UnityAction<T0, T1> call) { }
         public void RemoveAllListeners() { }
     }
+
+    // --- UI Layout & Canvas ---
 
     public delegate void UnityAction();
     public delegate void UnityAction<T0>(T0 arg0);

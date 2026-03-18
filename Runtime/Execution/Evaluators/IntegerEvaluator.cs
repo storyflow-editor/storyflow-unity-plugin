@@ -68,7 +68,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetInt:
                 case StoryFlowNodeType.SetInt:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetInt() ?? 0;
                 }
@@ -98,12 +98,7 @@ namespace StoryFlow.Execution
                 {
                     int a = EvaluatorHelpers.EvaluateIntegerInput1(ctx, node);
                     int b = EvaluatorHelpers.EvaluateIntegerInput2(ctx, node);
-                    if (b == 0)
-                    {
-                        Debug.LogWarning("[StoryFlow] Integer division by zero in node " + node.Id);
-                        return 0;
-                    }
-                    return a / b;
+                    return b != 0 ? a / b : 0;
                 }
 
                 case StoryFlowNodeType.RandomInt:

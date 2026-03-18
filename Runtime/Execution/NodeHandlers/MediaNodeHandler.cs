@@ -22,7 +22,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 context, node.Id, StoryFlowHandles.In_Image, node.GetData("value"));
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {
@@ -106,7 +106,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 context, node.Id, StoryFlowHandles.In_Audio, node.GetData("value"));
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {
@@ -185,7 +185,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 context, node.Id, StoryFlowHandles.In_Character, node.GetData("value"));
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {

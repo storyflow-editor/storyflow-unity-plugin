@@ -73,7 +73,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetBool:
                 case StoryFlowNodeType.SetBool:
                 {
-                    var variableId = node.GetData("variableId");
+                    var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
                     return variable?.Value?.GetBool() ?? false;
                 }
@@ -493,6 +493,8 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return true;
 
+            // Pre-cache boolean chain before evaluating (matches Godot/Unreal behavior)
+            ProcessBooleanChain(ctx, sourceNode.Id);
             return EvaluateFromNode(ctx, sourceNode);
         }
     }

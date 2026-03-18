@@ -13,11 +13,12 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Evaluate the integer input
-            int value = StoryFlowEvaluator.EvaluateInteger(context, node.Id, StoryFlowHandles.In_Integer);
+            // Evaluate the integer input (use inline value as fallback when no input edge)
+            int fallback = node.GetDataInt("value");
+            int value = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, StoryFlowHandles.In_Integer, fallback);
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {

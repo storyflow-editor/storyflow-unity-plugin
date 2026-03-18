@@ -8,6 +8,7 @@ namespace StoryFlow
 {
     /// <summary>
     /// Singleton manager that holds shared state across all StoryFlowComponent instances.
+    /// Auto-creates itself at runtime and auto-discovers the project asset.
     /// Persists across scene loads via DontDestroyOnLoad.
     /// </summary>
     [AddComponentMenu("StoryFlow/StoryFlow Manager")]
@@ -18,7 +19,7 @@ namespace StoryFlow
         public static StoryFlowManager Instance { get; private set; }
 
         [Header("Project")]
-        [Tooltip("The StoryFlow project asset containing scripts, characters, and global variables.")]
+        [Tooltip("The StoryFlow project asset. Auto-discovered if not assigned.")]
         public StoryFlowProjectAsset Project;
 
         // Shared mutable state (runtime copies)
@@ -27,7 +28,25 @@ namespace StoryFlow
         [NonSerialized] internal HashSet<string> UsedOnceOnlyOptions = new();
 
         // Dialogue tracking
-        private int activeDialogueCount;
+        private int _activeDialogueCount;
+
+        // =====================================================================
+        // Auto-Creation
+        // =====================================================================
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void AutoCreate()
+        {
+            if (Instance != null) return;
+
+            // Check if one already exists in the scene
+            var existing = UnityEngine.Object.FindObjectOfType<StoryFlowManager>();
+            if (existing != null) return;
+
+            // Auto-create
+            var go = new GameObject("[StoryFlow Manager]");
+            go.AddComponent<StoryFlowManager>();
+        }
 
         // =====================================================================
         // Lifecycle
@@ -37,13 +56,16 @@ namespace StoryFlow
         {
             if (Instance != null && Instance != this)
             {
-                Debug.Log("[StoryFlow] Duplicate StoryFlowManager detected. Destroying this instance.");
                 Destroy(gameObject);
                 return;
             }
 
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // Auto-discover project if not assigned
+            if (Project == null)
+                Project = FindProjectAsset();
 
             if (Project != null)
                 InitializeProject();
@@ -53,6 +75,23 @@ namespace StoryFlow
         {
             if (Instance == this)
                 Instance = null;
+        }
+
+        /// <summary>
+        /// Finds the StoryFlowProjectAsset in the project. Searches Resources first,
+        /// then falls back to scanning all loaded assets.
+        /// </summary>
+        private static StoryFlowProjectAsset FindProjectAsset()
+        {
+            // Try Resources folder first (fast)
+            var fromResources = Resources.Load<StoryFlowProjectAsset>("Project");
+            if (fromResources != null) return fromResources;
+
+            // Scan all loaded ScriptableObjects (works for assets loaded via addressables or direct reference)
+            var all = Resources.FindObjectsOfTypeAll<StoryFlowProjectAsset>();
+            if (all.Length > 0) return all[0];
+
+            return null;
         }
 
         // =====================================================================
@@ -164,12 +203,6 @@ namespace StoryFlow
                 return false;
             }
 
-            if (activeDialogueCount > 0)
-            {
-                Debug.LogWarning("[StoryFlow] Saving while dialogue is active. " +
-                                 "Local script state will not be included in the save.");
-            }
-
             try
             {
                 StoryFlowSaveHelpers.Save(slotName, GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions);
@@ -196,7 +229,7 @@ namespace StoryFlow
                 return false;
             }
 
-            if (activeDialogueCount > 0)
+            if (_activeDialogueCount > 0)
             {
                 Debug.LogError("[StoryFlow] Cannot load save while dialogue is active. " +
                                "Stop all dialogues before loading.");
@@ -327,19 +360,19 @@ namespace StoryFlow
         /// <summary>Called by StoryFlowComponent when a dialogue session starts.</summary>
         public void NotifyDialogueStarted()
         {
-            activeDialogueCount++;
+            _activeDialogueCount++;
         }
 
         /// <summary>Called by StoryFlowComponent when a dialogue session ends.</summary>
         public void NotifyDialogueEnded()
         {
-            activeDialogueCount = Mathf.Max(0, activeDialogueCount - 1);
+            _activeDialogueCount = Mathf.Max(0, _activeDialogueCount - 1);
         }
 
         /// <summary>Returns true if any StoryFlowComponent currently has an active dialogue.</summary>
         public bool IsDialogueActive()
         {
-            return activeDialogueCount > 0;
+            return _activeDialogueCount > 0;
         }
     }
 }

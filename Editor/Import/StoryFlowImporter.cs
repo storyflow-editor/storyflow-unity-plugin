@@ -281,16 +281,13 @@ namespace StoryFlow.Editor
             string title = metadata?.Value<string>("title") ?? "Untitled";
             string description = metadata?.Value<string>("description") ?? "";
 
-            // --- Ensure output directories ---
+            // --- Ensure output directory ---
             EnsureDirectory(outputPath);
-            string scriptsDir = Path.Combine(outputPath, "Scripts");
-            string charactersDir = Path.Combine(outputPath, "Characters");
-            string mediaImagesDir = Path.Combine(outputPath, "Media", "Images");
-            string mediaAudioDir = Path.Combine(outputPath, "Media", "Audio");
-            EnsureDirectory(scriptsDir);
-            EnsureDirectory(charactersDir);
-            EnsureDirectory(mediaImagesDir);
-            EnsureDirectory(mediaAudioDir);
+            // All assets go directly under outputPath, preserving build directory structure
+            string scriptsDir = outputPath;
+            string charactersDir = outputPath;
+            string mediaImagesDir = outputPath;
+            string mediaAudioDir = outputPath;
 
             // --- Read global variables ---
             var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
@@ -405,7 +402,7 @@ namespace StoryFlow.Editor
             }
 
             // --- Create / update project asset ---
-            string projectAssetPath = Path.Combine(outputPath, "SF_Project.asset");
+            string projectAssetPath = Path.Combine(outputPath, "Project.asset");
             var projectAsset = AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(projectAssetPath);
             if (projectAsset == null)
             {
@@ -417,7 +414,20 @@ namespace StoryFlow.Editor
             projectAsset.ApiVersion = apiVersion;
             projectAsset.Title = title;
             projectAsset.Description = description;
-            projectAsset.StartupScriptPath = startupScript;
+            // Resolve startup script reference from imported scripts
+            projectAsset.StartupScript = null;
+            if (!string.IsNullOrEmpty(startupScript))
+            {
+                string startupKey = startupScript.Replace("\\", "/").ToLowerInvariant();
+                foreach (var sr in scriptReferences)
+                {
+                    if (sr.Path == startupKey)
+                    {
+                        projectAsset.StartupScript = sr.Asset;
+                        break;
+                    }
+                }
+            }
             projectAsset.ScriptReferences = scriptReferences;
             projectAsset.CharacterReferences = characterReferences;
             projectAsset.GlobalVariableEntries = globalVariableEntries;
@@ -441,9 +451,10 @@ namespace StoryFlow.Editor
             string scriptPath, JObject scriptJson, string buildDirectory,
             string scriptsDir, string imagesDir, string audioDir)
         {
-            // Create safe file name from script path
-            string safeFileName = scriptPath.Replace("/", "_").Replace("\\", "_").Replace(".json", "");
-            string assetPath = Path.Combine(scriptsDir, $"SF_{safeFileName}.asset");
+            // Preserve folder structure: "scripts/hello/main_menu.json" → "Scripts/scripts/hello/main_menu.asset"
+            string relativePath = scriptPath.Replace("\\", "/").Replace(".json", "");
+            string assetPath = Path.Combine(scriptsDir, relativePath + ".asset");
+            EnsureDirectory(Path.GetDirectoryName(assetPath));
 
             var scriptAsset = AssetDatabase.LoadAssetAtPath<StoryFlowScriptAsset>(assetPath);
             if (scriptAsset == null)
@@ -505,8 +516,10 @@ namespace StoryFlow.Editor
             Dictionary<string, string> assetLookup,
             string buildDirectory, string charactersDir, string imagesDir)
         {
-            string safeFileName = normalizedPath.Replace("\\", "_").Replace("/", "_").Replace(".sfc", "");
-            string assetPath = Path.Combine(charactersDir, $"SF_Char_{safeFileName}.asset");
+            // Preserve folder structure: "scripts\newfile.sfc" → "Characters/scripts/newfile.asset"
+            string relativePath = normalizedPath.Replace("\\", "/").Replace(".sfc", "");
+            string assetPath = Path.Combine(charactersDir, relativePath + ".asset");
+            EnsureDirectory(Path.GetDirectoryName(assetPath));
 
             var charAsset = AssetDatabase.LoadAssetAtPath<StoryFlowCharacterAsset>(assetPath);
             if (charAsset == null)
@@ -615,9 +628,12 @@ namespace StoryFlow.Editor
                         valueStr = nodeProp.Value.ToString();
                     }
 
+                    // Only remap "choices" → "options" (editor export format variation)
+                    string mappedKey = key == "choices" ? "options" : key;
+
                     serializedNode.Data.Add(new StoryFlowScriptAsset.SerializedKV
                     {
-                        Key = key,
+                        Key = mappedKey,
                         Value = valueStr
                     });
                 }
@@ -861,8 +877,10 @@ namespace StoryFlow.Editor
                 return null;
             }
 
-            string fileName = Path.GetFileName(relativePath);
-            string destPath = Path.Combine(imagesDir, fileName);
+            // Preserve folder structure from build directory
+            string normalizedRelative = relativePath.Replace("\\", "/");
+            string destPath = Path.Combine(imagesDir, normalizedRelative);
+            EnsureDirectory(Path.GetDirectoryName(destPath));
 
             // Copy file to project
             File.Copy(sourcePath, destPath, overwrite: true);
@@ -906,14 +924,16 @@ namespace StoryFlow.Editor
             string fileName = Path.GetFileName(relativePath);
             string ext = Path.GetExtension(fileName).ToLowerInvariant();
 
-            // Unity handles MP3 natively (unlike Unreal), but warn about potential quality issues
             if (ext == ".mp3")
             {
                 Debug.Log($"[StoryFlow] MP3 audio detected: {fileName}. Unity supports MP3 natively, " +
                           "but WAV is recommended for best quality and compatibility.");
             }
 
-            string destPath = Path.Combine(audioDir, fileName);
+            // Preserve folder structure from build directory
+            string normalizedRelative = relativePath.Replace("\\", "/");
+            string destPath = Path.Combine(audioDir, normalizedRelative);
+            EnsureDirectory(Path.GetDirectoryName(destPath));
 
             File.Copy(sourcePath, destPath, overwrite: true);
             AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);

@@ -25,12 +25,8 @@ namespace StoryFlow
         // Inspector Fields
         // =====================================================================
 
-        [Header("Project")]
-        [Tooltip("Optional project override. If null, uses StoryFlowManager.Instance.Project.")]
-        public StoryFlowProjectAsset Project;
-
-        [Tooltip("Path of the script to run when StartDialogue() is called with no arguments.")]
-        public string ScriptPath;
+        [Tooltip("The script to run when StartDialogue() is called. If not set, uses the project's startup script.")]
+        public StoryFlowScriptAsset Script;
 
         [Tooltip("Language code for localized string lookup (e.g. \"en\", \"fr\", \"ja\").")]
         public string LanguageCode = "en";
@@ -94,11 +90,11 @@ namespace StoryFlow
         // Internal State
         // =====================================================================
 
-        private StoryFlowExecutionContext context;
-        private AudioSource dialogueAudioSource;
-        private bool isDialogueActive;
-        private bool waitingForAudioAdvance;
-        private bool audioAdvanceAllowSkip;
+        private StoryFlowExecutionContext _context;
+        private AudioSource _dialogueAudioSource;
+        private bool _isDialogueActive;
+        private bool _waitingForAudioAdvance;
+        private bool _audioAdvanceAllowSkip;
 
         // =====================================================================
         // Unity Lifecycle
@@ -107,10 +103,10 @@ namespace StoryFlow
         private void Update()
         {
             // Poll for audio finish (Unity AudioSource has no finished callback for non-looped clips)
-            if (waitingForAudioAdvance && dialogueAudioSource != null && !dialogueAudioSource.isPlaying)
+            if (_waitingForAudioAdvance && _dialogueAudioSource != null && !_dialogueAudioSource.isPlaying)
             {
-                waitingForAudioAdvance = false;
-                audioAdvanceAllowSkip = false;
+                _waitingForAudioAdvance = false;
+                _audioAdvanceAllowSkip = false;
                 AdvanceDialogue();
             }
         }
@@ -120,31 +116,29 @@ namespace StoryFlow
         // =====================================================================
 
         /// <summary>
-        /// Starts dialogue using the configured ScriptPath, or the project's StartupScriptPath
-        /// if ScriptPath is not set.
+        /// Starts dialogue using the assigned Script asset, or the project's startup script
+        /// if none is assigned.
         /// </summary>
         public void StartDialogue()
         {
-            var project = GetProject();
-            if (project == null)
-            {
-                BroadcastError("Cannot start dialogue: no project assigned and no StoryFlowManager project available.");
-                return;
-            }
-
-            var path = !string.IsNullOrEmpty(ScriptPath) ? ScriptPath : project.StartupScriptPath;
-
-            if (string.IsNullOrEmpty(path))
-            {
-                BroadcastError("Cannot start dialogue: no script path configured and no startup script in project.");
-                return;
-            }
-
-            var script = project.GetScriptByPath(path);
+            // Use assigned script asset, or fall back to project's startup script
+            var script = Script;
             if (script == null)
             {
-                BroadcastError($"Cannot start dialogue: script not found at path \"{path}\".");
-                return;
+                var project = GetProject();
+                if (project == null)
+                {
+                    BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via StoryFlow > Import Project.");
+                    return;
+                }
+
+                script = project.StartupScript;
+
+                if (script == null)
+                {
+                    BroadcastError("Cannot start dialogue: no script assigned and no startup script in project.");
+                    return;
+                }
             }
 
             StartDialogueInternal(script);
@@ -195,7 +189,7 @@ namespace StoryFlow
         private void StartDialogueInternal(StoryFlowScriptAsset script)
         {
             // If a dialogue is already active, stop it first
-            if (isDialogueActive)
+            if (_isDialogueActive)
             {
                 Debug.LogWarning("[StoryFlow] Starting new dialogue while one is already active. Stopping previous dialogue.");
                 StopDialogue();
@@ -204,22 +198,22 @@ namespace StoryFlow
             var manager = StoryFlowManager.Instance;
             if (manager == null || !manager.HasProject())
             {
-                BroadcastError("Cannot start dialogue: StoryFlowManager is not initialized or has no project.");
+                BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via StoryFlow > Import Project.");
                 return;
             }
 
             // Create and initialize the execution context
-            context = new StoryFlowExecutionContext();
-            context.Project = GetProject();
-            context.Initialize(
+            _context = new StoryFlowExecutionContext();
+            _context.Project = GetProject();
+            _context.Initialize(
                 script,
                 manager.GlobalVariables,
                 manager.RuntimeCharacters,
                 manager.UsedOnceOnlyOptions
             );
 
-            isDialogueActive = true;
-            context.IsExecuting = true;
+            _isDialogueActive = true;
+            _context.IsExecuting = true;
 
             // Notify manager
             manager.NotifyDialogueStarted();
@@ -227,6 +221,12 @@ namespace StoryFlow
             // Fire events
             OnDialogueStarted?.Invoke();
             OnDialogueStartedEvent?.Invoke();
+
+            // Auto-create fallback UI if none assigned
+            if (DialogueUI == null)
+            {
+                CreateFallbackUI();
+            }
 
             // Auto-initialize UI binding if not already bound
             if (DialogueUI != null && !DialogueUI.IsBoundTo(this))
@@ -243,6 +243,7 @@ namespace StoryFlow
                 return;
             }
 
+            _context.IsEnteringDialogueViaEdge = true;
             ProcessNode(startNode);
         }
 
@@ -251,13 +252,13 @@ namespace StoryFlow
         /// </summary>
         public void SelectOption(string optionId)
         {
-            if (!isDialogueActive)
+            if (!_isDialogueActive)
             {
                 Debug.LogWarning("[StoryFlow] SelectOption called but no dialogue is active.");
                 return;
             }
 
-            if (context == null || !context.IsWaitingForInput)
+            if (_context == null || !_context.IsWaitingForInput)
             {
                 Debug.LogWarning("[StoryFlow] SelectOption called but dialogue is not waiting for input.");
                 return;
@@ -270,33 +271,33 @@ namespace StoryFlow
             }
 
             // Check if this option is once-only and mark it
-            if (context.CurrentDialogueState?.Options != null)
+            if (_context.CurrentDialogueState?.Options != null)
             {
-                foreach (var option in context.CurrentDialogueState.Options)
+                foreach (var option in _context.CurrentDialogueState.Options)
                 {
                     if (option.Id == optionId && option.IsOnceOnly)
                     {
-                        var onceOnlyKey = context.CurrentDialogueState.NodeId + "-" + optionId;
-                        context.MarkOnceOnlyUsed(onceOnlyKey);
+                        var onceOnlyKey = _context.CurrentDialogueState.NodeId + "-" + optionId;
+                        _context.MarkOnceOnlyUsed(onceOnlyKey);
                         break;
                     }
                 }
             }
 
-            context.IsWaitingForInput = false;
-            context.IsEnteringDialogueViaEdge = true;
-            context.ShouldPause = false;
+            _context.IsWaitingForInput = false;
+            _context.IsEnteringDialogueViaEdge = true;
+            _context.ShouldPause = false;
 
             // Clear node runtime caches for fresh evaluation
-            context.ClearNodeRuntimeStates();
+            _context.ClearNodeRuntimeStates();
 
             // Find the next node from this option's edge
-            var handle = StoryFlowHandles.SourceOption(context.CurrentDialogueState.NodeId, optionId);
-            context.LastSourceHandle = handle;
-            var edge = context.CurrentScript?.FindEdgeBySourceHandle(handle);
+            var handle = StoryFlowHandles.SourceOption(_context.CurrentDialogueState.NodeId, optionId);
+            _context.LastSourceHandle = handle;
+            var edge = _context.CurrentScript?.FindEdgeBySourceHandle(handle);
             if (edge == null) return;
 
-            var targetNode = context.CurrentScript.GetNode(edge.Target);
+            var targetNode = _context.CurrentScript.GetNode(edge.Target);
             if (targetNode == null) return;
 
             ProcessNode(targetNode);
@@ -308,50 +309,50 @@ namespace StoryFlow
         /// </summary>
         public void AdvanceDialogue()
         {
-            if (!isDialogueActive)
+            if (!_isDialogueActive)
             {
                 Debug.LogWarning("[StoryFlow] AdvanceDialogue called but no dialogue is active.");
                 return;
             }
 
-            if (context == null || !context.IsWaitingForInput)
+            if (_context == null || !_context.IsWaitingForInput)
             {
                 Debug.LogWarning("[StoryFlow] AdvanceDialogue called but dialogue is not waiting for input.");
                 return;
             }
 
-            if (context.CurrentDialogueState == null || !context.CurrentDialogueState.CanAdvance)
+            if (_context.CurrentDialogueState == null || !_context.CurrentDialogueState.CanAdvance)
             {
                 Debug.LogWarning("[StoryFlow] AdvanceDialogue called but current dialogue cannot advance.");
                 return;
             }
 
             // Audio advance-on-end: block manual advance if skip is not allowed
-            if (waitingForAudioAdvance && !audioAdvanceAllowSkip)
+            if (_waitingForAudioAdvance && !_audioAdvanceAllowSkip)
                 return;
 
             // Audio advance-on-end with skip: stop audio and proceed
-            if (waitingForAudioAdvance && audioAdvanceAllowSkip)
+            if (_waitingForAudioAdvance && _audioAdvanceAllowSkip)
             {
                 StopDialogueAudio();
-                waitingForAudioAdvance = false;
-                audioAdvanceAllowSkip = false;
+                _waitingForAudioAdvance = false;
+                _audioAdvanceAllowSkip = false;
             }
 
-            context.IsWaitingForInput = false;
-            context.IsEnteringDialogueViaEdge = true;
-            context.ShouldPause = false;
+            _context.IsWaitingForInput = false;
+            _context.IsEnteringDialogueViaEdge = true;
+            _context.ShouldPause = false;
 
             // Clear node runtime caches for fresh evaluation
-            context.ClearNodeRuntimeStates();
+            _context.ClearNodeRuntimeStates();
 
             // Find the next node from the default output edge
-            var handle = StoryFlowHandles.Source(context.CurrentDialogueState.NodeId, "");
-            context.LastSourceHandle = handle;
-            var edge = context.CurrentScript?.FindEdgeBySourceHandle(handle);
+            var handle = StoryFlowHandles.Source(_context.CurrentDialogueState.NodeId, "");
+            _context.LastSourceHandle = handle;
+            var edge = _context.CurrentScript?.FindEdgeBySourceHandle(handle);
             if (edge == null) return;
 
-            var targetNode = context.CurrentScript.GetNode(edge.Target);
+            var targetNode = _context.CurrentScript.GetNode(edge.Target);
             if (targetNode == null) return;
 
             ProcessNode(targetNode);
@@ -362,23 +363,23 @@ namespace StoryFlow
         /// </summary>
         public void StopDialogue()
         {
-            if (!isDialogueActive)
+            if (!_isDialogueActive)
                 return;
 
-            waitingForAudioAdvance = false;
-            audioAdvanceAllowSkip = false;
+            _waitingForAudioAdvance = false;
+            _audioAdvanceAllowSkip = false;
 
             // Stop audio
             if (StopAudioOnDialogueEnd)
                 StopDialogueAudio();
 
-            isDialogueActive = false;
+            _isDialogueActive = false;
 
-            if (context != null)
+            if (_context != null)
             {
-                context.IsExecuting = false;
-                context.IsWaitingForInput = false;
-                context.ShouldPause = true;
+                _context.IsExecuting = false;
+                _context.IsWaitingForInput = false;
+                _context.ShouldPause = true;
             }
 
             // Notify manager
@@ -392,15 +393,15 @@ namespace StoryFlow
         /// <summary>Pauses dialogue execution. Node processing will be blocked until resumed.</summary>
         public void PauseDialogue()
         {
-            if (context != null)
-                context.IsPaused = true;
+            if (_context != null)
+                _context.IsPaused = true;
         }
 
         /// <summary>Resumes dialogue execution after a pause.</summary>
         public void ResumeDialogue()
         {
-            if (context != null)
-                context.IsPaused = false;
+            if (_context != null)
+                _context.IsPaused = false;
         }
 
         /// <summary>
@@ -409,8 +410,8 @@ namespace StoryFlow
         /// </summary>
         public void PauseExecution()
         {
-            if (context != null)
-                context.ShouldPause = true;
+            if (_context != null)
+                _context.ShouldPause = true;
         }
 
         /// <summary>
@@ -418,11 +419,11 @@ namespace StoryFlow
         /// </summary>
         public void ResumeExecution()
         {
-            if (context == null || !isDialogueActive) return;
-            if (context.NextNode != null)
+            if (_context == null || !_isDialogueActive) return;
+            if (_context.NextNode != null)
             {
-                context.ShouldPause = false;
-                ProcessNode(context.NextNode);
+                _context.ShouldPause = false;
+                ProcessNode(_context.NextNode);
             }
         }
 
@@ -462,7 +463,7 @@ namespace StoryFlow
         /// </summary>
         public void InputChanged(string optionId, StoryFlowVariant value)
         {
-            if (!isDialogueActive || context == null)
+            if (!_isDialogueActive || _context == null)
             {
                 Debug.LogWarning("[StoryFlow] InputChanged called but no dialogue is active.");
                 return;
@@ -474,30 +475,30 @@ namespace StoryFlow
                 return;
             }
 
-            if (context.CurrentDialogueState == null)
+            if (_context.CurrentDialogueState == null)
                 return;
 
             // Store the input value on the node's runtime state
-            var nodeState = context.GetNodeRuntimeState(context.CurrentDialogueState.NodeId);
+            var nodeState = _context.GetNodeRuntimeState(_context.CurrentDialogueState.NodeId);
             nodeState.OutputValues[optionId] = value ?? new StoryFlowVariant();
 
             // Clear caches so downstream nodes re-evaluate with the new input
-            context.ClearNodeRuntimeStates();
+            _context.ClearNodeRuntimeStates();
 
             // Broadcast updated dialogue state (text may re-interpolate based on new value)
             BroadcastDialogueUpdate();
 
             // Check if there's an "on change" edge from this option
-            var onChangeHandle = StoryFlowHandles.SourceOption(context.CurrentDialogueState.NodeId, optionId);
-            var onChangeEdge = context.CurrentScript?.FindEdgeBySourceHandle(onChangeHandle);
+            var onChangeHandle = StoryFlowHandles.SourceOption(_context.CurrentDialogueState.NodeId, optionId);
+            var onChangeEdge = _context.CurrentScript?.FindEdgeBySourceHandle(onChangeHandle);
 
             if (onChangeEdge != null)
             {
                 // Execute the on-change flow without leaving the dialogue
-                var targetNode = context.CurrentScript?.GetNode(onChangeEdge.Target);
+                var targetNode = _context.CurrentScript?.GetNode(onChangeEdge.Target);
                 if (targetNode != null)
                 {
-                    context.IsEnteringDialogueViaEdge = false;
+                    _context.IsEnteringDialogueViaEdge = false;
                     ProcessNode(targetNode);
                 }
             }
@@ -510,40 +511,39 @@ namespace StoryFlow
         /// <summary>Returns the current dialogue state, or null if no dialogue is active.</summary>
         public StoryFlowDialogueState GetCurrentDialogue()
         {
-            return context?.CurrentDialogueState;
+            return _context?.CurrentDialogueState;
         }
 
         /// <summary>Returns true if a dialogue session is currently active on this component.</summary>
         public bool IsDialogueActive()
         {
-            return isDialogueActive;
+            return _isDialogueActive;
         }
 
         /// <summary>Returns true if the dialogue is currently waiting for player input.</summary>
         public bool IsWaitingForInput()
         {
-            return context?.IsWaitingForInput ?? false;
+            return _context?.IsWaitingForInput ?? false;
         }
 
         /// <summary>Returns true if the dialogue is currently paused.</summary>
         public bool IsPaused()
         {
-            return context?.IsPaused ?? false;
+            return _context?.IsPaused ?? false;
         }
 
         /// <summary>Returns the internal execution context. Use with care.</summary>
         internal StoryFlowExecutionContext GetContext()
         {
-            return context;
+            return _context;
         }
 
         /// <summary>
-        /// Returns the project asset. Checks this component's override first,
-        /// then falls back to StoryFlowManager.Instance.Project.
+        /// Returns the project asset from the StoryFlowManager singleton.
         /// </summary>
         public StoryFlowProjectAsset GetProject()
         {
-            return Project != null ? Project : StoryFlowManager.Instance?.Project;
+            return StoryFlowManager.Instance?.Project;
         }
 
         // =====================================================================
@@ -554,8 +554,8 @@ namespace StoryFlow
         public bool GetBoolVariable(string name, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             return v?.Value.GetBool() ?? false;
         }
 
@@ -563,12 +563,12 @@ namespace StoryFlow
         public void SetBoolVariable(string name, bool value, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             if (v != null)
             {
                 v.Value.SetBool(value);
-                bool isGlobal = context != null && !context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -581,8 +581,8 @@ namespace StoryFlow
         public int GetIntVariable(string name, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             return v?.Value.GetInt() ?? 0;
         }
 
@@ -590,12 +590,12 @@ namespace StoryFlow
         public void SetIntVariable(string name, int value, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             if (v != null)
             {
                 v.Value.SetInt(value);
-                bool isGlobal = context != null && !context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -608,8 +608,8 @@ namespace StoryFlow
         public float GetFloatVariable(string name, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             return v?.Value.GetFloat() ?? 0f;
         }
 
@@ -617,12 +617,12 @@ namespace StoryFlow
         public void SetFloatVariable(string name, float value, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             if (v != null)
             {
                 v.Value.SetFloat(value);
-                bool isGlobal = context != null && !context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -635,8 +635,8 @@ namespace StoryFlow
         public string GetStringVariable(string name, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             return v?.Value.GetString() ?? "";
         }
 
@@ -644,12 +644,12 @@ namespace StoryFlow
         public void SetStringVariable(string name, string value, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             if (v != null)
             {
                 v.Value.SetString(value);
-                bool isGlobal = context != null && !context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -662,8 +662,8 @@ namespace StoryFlow
         public string GetEnumVariable(string name, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             return v?.Value.GetEnum() ?? "";
         }
 
@@ -671,12 +671,12 @@ namespace StoryFlow
         public void SetEnumVariable(string name, string value, bool global = false)
         {
             var v = global
-                ? context?.FindVariableByName(name, false, true)
-                : context?.FindVariableByName(name, true, true);
+                ? _context?.FindVariableByName(name, false, true)
+                : _context?.FindVariableByName(name, true, true);
             if (v != null)
             {
                 v.Value.SetEnum(value);
-                bool isGlobal = context != null && !context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -691,9 +691,9 @@ namespace StoryFlow
         /// </summary>
         public StoryFlowVariant GetCharacterVariable(string charPath, string varName)
         {
-            if (context == null) return null;
+            if (_context == null) return null;
 
-            var characterData = context.FindCharacter(charPath);
+            var characterData = _context.FindCharacter(charPath);
             if (characterData == null)
             {
                 Debug.LogWarning($"[StoryFlow] GetCharacterVariable: character at \"{charPath}\" not found.");
@@ -714,9 +714,9 @@ namespace StoryFlow
         /// </summary>
         public void SetCharacterVariable(string charPath, string varName, StoryFlowVariant value)
         {
-            if (context == null) return;
+            if (_context == null) return;
 
-            var characterData = context.FindCharacter(charPath);
+            var characterData = _context.FindCharacter(charPath);
             if (characterData == null)
             {
                 Debug.LogWarning($"[StoryFlow] SetCharacterVariable: character at \"{charPath}\" not found.");
@@ -742,22 +742,22 @@ namespace StoryFlow
         /// </summary>
         public void ResetVariables()
         {
-            context?.ClearNodeRuntimeStates();
+            _context?.ClearNodeRuntimeStates();
 
             // Re-initialize local variables from the current script
-            if (context?.CurrentScript != null)
+            if (_context?.CurrentScript != null)
             {
-                var script = context.CurrentScript;
+                var script = _context.CurrentScript;
                 if (script.Variables != null)
                 {
                     foreach (var kvp in script.Variables)
                     {
-                        if (context.LocalVariables.TryGetValue(kvp.Key, out var localVar))
+                        if (_context.LocalVariables.TryGetValue(kvp.Key, out var localVar))
                         {
                             localVar.Value = new StoryFlowVariant(kvp.Value.Value);
                         }
                     }
-                    context.InvalidateLocalNameIndex();
+                    _context.InvalidateLocalNameIndex();
                 }
             }
         }
@@ -769,7 +769,7 @@ namespace StoryFlow
         {
             if (string.IsNullOrEmpty(key)) return key;
             var fullKey = LanguageCode + "." + key;
-            return context?.GetString(fullKey) ?? key;
+            return _context?.GetString(fullKey) ?? key;
         }
 
         // =====================================================================
@@ -789,17 +789,17 @@ namespace StoryFlow
                 return;
             }
 
-            if (!isDialogueActive || context == null) return;
-            if (context.IsPaused) return;
+            if (!_isDialogueActive || _context == null) return;
+            if (_context.IsPaused) return;
 
-            context.NextNode = node;
-            context.ShouldPause = false;
+            _context.NextNode = node;
+            _context.ShouldPause = false;
             int iterationCount = 0;
 
-            while (context.NextNode != null && !context.ShouldPause)
+            while (_context.NextNode != null && !_context.ShouldPause)
             {
-                var current = context.NextNode;
-                context.NextNode = null;
+                var current = _context.NextNode;
+                _context.NextNode = null;
 
                 iterationCount++;
                 if (iterationCount > StoryFlowExecutionContext.MaxProcessingDepth)
@@ -810,7 +810,7 @@ namespace StoryFlow
                     return;
                 }
 
-                context.CurrentNodeId = current.Id;
+                _context.CurrentNodeId = current.Id;
 
                 try
                 {
@@ -832,23 +832,27 @@ namespace StoryFlow
         /// </summary>
         internal void ProcessNextNode(string sourceHandle)
         {
-            if (context == null || context.CurrentScript == null) return;
+            if (_context == null || _context.CurrentScript == null) return;
 
-            context.LastSourceHandle = sourceHandle;
-            var edge = context.CurrentScript.FindEdgeBySourceHandle(sourceHandle);
+            _context.LastSourceHandle = sourceHandle;
+            var edge = _context.CurrentScript.FindEdgeBySourceHandle(sourceHandle);
             if (edge == null) return;
 
             var targetNodeId = edge.Target;
             if (string.IsNullOrEmpty(targetNodeId)) return;
 
-            var targetNode = context.CurrentScript.GetNode(targetNodeId);
+            var targetNode = _context.CurrentScript.GetNode(targetNodeId);
             if (targetNode == null)
             {
                 BroadcastError($"Target node not found: {targetNodeId}");
                 return;
             }
 
-            context.NextNode = targetNode;
+            // Mark fresh entry only when target is a dialogue node (matches Godot/Unreal)
+            if (targetNode.Type == StoryFlowNodeType.Dialogue)
+                _context.IsEnteringDialogueViaEdge = true;
+
+            _context.NextNode = targetNode;
         }
 
         /// <summary>
@@ -872,10 +876,10 @@ namespace StoryFlow
         /// </summary>
         internal void BroadcastDialogueUpdate()
         {
-            if (context?.CurrentDialogueState == null) return;
+            if (_context?.CurrentDialogueState == null) return;
 
-            OnDialogueUpdated?.Invoke(context.CurrentDialogueState);
-            OnDialogueUpdatedEvent?.Invoke(context.CurrentDialogueState);
+            OnDialogueUpdated?.Invoke(_context.CurrentDialogueState);
+            OnDialogueUpdatedEvent?.Invoke(_context.CurrentDialogueState);
         }
 
         /// <summary>
@@ -944,24 +948,24 @@ namespace StoryFlow
             if (clip == null) return;
 
             // Create AudioSource on demand
-            if (dialogueAudioSource == null)
+            if (_dialogueAudioSource == null)
             {
-                dialogueAudioSource = gameObject.AddComponent<AudioSource>();
-                dialogueAudioSource.playOnAwake = false;
-                dialogueAudioSource.spatialBlend = 0f; // 2D audio
+                _dialogueAudioSource = gameObject.AddComponent<AudioSource>();
+                _dialogueAudioSource.playOnAwake = false;
+                _dialogueAudioSource.spatialBlend = 0f; // 2D audio
             }
 
             // Stop any currently playing audio
-            if (dialogueAudioSource.isPlaying)
-                dialogueAudioSource.Stop();
+            if (_dialogueAudioSource.isPlaying)
+                _dialogueAudioSource.Stop();
 
             // Configure
-            dialogueAudioSource.clip = clip;
-            dialogueAudioSource.loop = loop;
-            dialogueAudioSource.outputAudioMixerGroup = DialogueAudioMixerGroup;
-            dialogueAudioSource.volume = DialogueVolumeMultiplier;
+            _dialogueAudioSource.clip = clip;
+            _dialogueAudioSource.loop = loop;
+            _dialogueAudioSource.outputAudioMixerGroup = DialogueAudioMixerGroup;
+            _dialogueAudioSource.volume = DialogueVolumeMultiplier;
 
-            dialogueAudioSource.Play();
+            _dialogueAudioSource.Play();
         }
 
         /// <summary>
@@ -969,26 +973,26 @@ namespace StoryFlow
         /// </summary>
         public void StopDialogueAudio()
         {
-            if (dialogueAudioSource != null && dialogueAudioSource.isPlaying)
+            if (_dialogueAudioSource != null && _dialogueAudioSource.isPlaying)
             {
-                dialogueAudioSource.Stop();
-                dialogueAudioSource.clip = null;
+                _dialogueAudioSource.Stop();
+                _dialogueAudioSource.clip = null;
             }
-            waitingForAudioAdvance = false;
-            audioAdvanceAllowSkip = false;
+            _waitingForAudioAdvance = false;
+            _audioAdvanceAllowSkip = false;
         }
 
         /// <summary>Returns true if dialogue audio is currently playing.</summary>
         public bool IsDialogueAudioPlaying()
         {
-            return dialogueAudioSource != null && dialogueAudioSource.isPlaying;
+            return _dialogueAudioSource != null && _dialogueAudioSource.isPlaying;
         }
 
         /// <summary>Sets the audio advance-on-end state flags.</summary>
         public void SetAudioAdvanceState(bool waiting, bool allowSkip)
         {
-            waitingForAudioAdvance = waiting;
-            audioAdvanceAllowSkip = allowSkip;
+            _waitingForAudioAdvance = waiting;
+            _audioAdvanceAllowSkip = allowSkip;
         }
 
         // =====================================================================
@@ -1005,9 +1009,9 @@ namespace StoryFlow
                 return null;
 
             // Check current script's resolved assets
-            if (context?.CurrentScript != null &&
-                context.CurrentScript.ResolvedAssets != null &&
-                context.CurrentScript.ResolvedAssets.TryGetValue(assetKey, out var scriptAsset))
+            if (_context?.CurrentScript != null &&
+                _context.CurrentScript.ResolvedAssets != null &&
+                _context.CurrentScript.ResolvedAssets.TryGetValue(assetKey, out var scriptAsset))
             {
                 if (scriptAsset is T typedScriptAsset)
                     return typedScriptAsset;
@@ -1032,7 +1036,7 @@ namespace StoryFlow
 
         private void OnDisable()
         {
-            if (isDialogueActive)
+            if (_isDialogueActive)
             {
                 StopDialogue();
             }
@@ -1040,7 +1044,7 @@ namespace StoryFlow
 
         private void OnDestroy()
         {
-            if (isDialogueActive)
+            if (_isDialogueActive)
                 StopDialogue();
 
             // Clear all C# event subscribers to prevent memory leaks
@@ -1053,6 +1057,23 @@ namespace StoryFlow
             OnBackgroundImageChanged = null;
             OnScriptStarted = null;
             OnScriptEnded = null;
+        }
+
+        // =====================================================================
+        // Fallback UI
+        // =====================================================================
+
+        private void CreateFallbackUI()
+        {
+            // Use System.Type lookup to avoid hard reference (allows build verify to exclude the UI file)
+            var uiType = System.Type.GetType("StoryFlow.UI.StoryFlowRuntimeUI, StoryFlow.Runtime");
+            if (uiType == null) uiType = System.Type.GetType("StoryFlow.UI.StoryFlowRuntimeUI");
+            if (uiType != null)
+            {
+                var runtimeUI = gameObject.AddComponent(uiType);
+                uiType.GetMethod("Build")?.Invoke(runtimeUI, null);
+                DialogueUI = runtimeUI as StoryFlow.UI.StoryFlowDialogueUI;
+            }
         }
     }
 }

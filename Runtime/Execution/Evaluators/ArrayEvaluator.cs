@@ -55,7 +55,7 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
-            var variableId = sourceNode.GetData("variableId");
+            var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
                 var variable = ctx.FindVariable(variableId);
@@ -102,7 +102,7 @@ namespace StoryFlow.Execution
             try
             {
                 // Array-producing nodes: GetXxxArray, SetXxxArray
-                var variableId = node.GetData("variableId");
+                var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
                 {
                     var variable = ctx.FindVariable(variableId);

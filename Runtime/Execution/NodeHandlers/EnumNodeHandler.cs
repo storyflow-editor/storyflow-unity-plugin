@@ -14,11 +14,12 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Evaluate the enum input
-            string value = StoryFlowEvaluator.EvaluateEnum(context, node.Id, StoryFlowHandles.In_Enum);
+            // Evaluate the enum input (use inline value as fallback when no input edge)
+            string fallback = node.GetData("value");
+            string value = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {
@@ -49,7 +50,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Get the enum value from the referenced variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             string enumValue = "";
 
             var variable = context.FindVariable(variableId);

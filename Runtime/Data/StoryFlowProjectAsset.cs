@@ -14,7 +14,7 @@ namespace StoryFlow.Data
         public string Description;
 
         [Header("Startup")]
-        public string StartupScriptPath;
+        public StoryFlowScriptAsset StartupScript;
 
         [Header("Assets")]
         public List<ScriptReference> ScriptReferences = new();
@@ -188,8 +188,7 @@ namespace StoryFlow.Data
 
         public StoryFlowScriptAsset GetStartupScriptAsset()
         {
-            if (string.IsNullOrEmpty(StartupScriptPath)) return null;
-            return Scripts.TryGetValue(StartupScriptPath, out var asset) ? asset : null;
+            return StartupScript;
         }
 
         public StoryFlowScriptAsset GetScriptByPath(string path)

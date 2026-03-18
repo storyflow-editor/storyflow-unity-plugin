@@ -13,11 +13,12 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Evaluate the float input
-            float value = StoryFlowEvaluator.EvaluateFloat(context, node.Id, StoryFlowHandles.In_Float);
+            // Evaluate the float input (use inline value as fallback when no input edge)
+            float fallback = node.GetDataFloat("value");
+            float value = StoryFlowEvaluator.EvaluateFloatWithDefault(context, node.Id, StoryFlowHandles.In_Float, fallback);
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {

@@ -24,7 +24,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var inputArray = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType));
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {
@@ -165,7 +165,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Find the connected array source variable and clear it
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {
@@ -183,7 +183,7 @@ namespace StoryFlow.Execution.NodeHandlers
                     var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
                     if (sourceNode != null)
                     {
-                        var sourceVarId = sourceNode.GetData("variableId");
+                        var sourceVarId = sourceNode.GetData("variable");
                         var sourceVar = context.FindVariable(sourceVarId);
                         if (sourceVar != null)
                         {
@@ -398,7 +398,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
             if (sourceNode == null) return;
 
-            var sourceVarId = sourceNode.GetData("variableId");
+            var sourceVarId = sourceNode.GetData("variable");
             var sourceVar = context.FindVariable(sourceVarId);
             if (sourceVar != null)
             {

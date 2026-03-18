@@ -13,11 +13,12 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Evaluate the boolean input
-            bool value = StoryFlowEvaluator.EvaluateBoolean(context, node.Id, StoryFlowHandles.In_Boolean);
+            // Evaluate the boolean input (use inline value as fallback when no input edge)
+            bool fallback = node.GetDataBool("value");
+            bool value = StoryFlowEvaluator.EvaluateBooleanWithDefault(context, node.Id, StoryFlowHandles.In_Boolean, fallback);
 
             // Find and update the variable
-            var variableId = node.GetData("variableId");
+            var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
             if (variable != null)
             {

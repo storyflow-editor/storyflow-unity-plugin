@@ -38,7 +38,7 @@ storyFlow.StartDialogue();
 6. **Subscribe to events** to drive your UI:
 
 ```csharp
-storyFlow.OnDialogueStateChanged += state =>
+storyFlow.OnDialogueUpdated += state =>
 {
     // Update your dialogue UI with state.Text, state.Options, state.Character, etc.
 };

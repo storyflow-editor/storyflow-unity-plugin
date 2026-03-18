@@ -16,5 +16,8 @@
     <Compile Include="..\Runtime\**\*.cs" />
     <Compile Include="..\Editor\**\*.cs" />
     <Compile Include="Stubs\**\*.cs" />
+    <!-- StoryFlowRuntimeUI uses extensive Unity UI APIs (Canvas, LayoutGroup, etc.)
+         that require too many stubs. It compiles fine in Unity. -->
+    <Compile Remove="..\Runtime\UI\StoryFlowRuntimeUI.cs" />
   </ItemGroup>
 </Project>

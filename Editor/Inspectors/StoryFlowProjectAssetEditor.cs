@@ -43,7 +43,9 @@ namespace StoryFlow.Editor
                 EditorGUI.indentLevel--;
             }
 
-            EditorGUILayout.TextField("Startup Script", project.StartupScriptPath ?? "(none)");
+            EditorGUI.BeginDisabledGroup(true);
+            EditorGUILayout.ObjectField("Startup Script", project.StartupScript, typeof(StoryFlowScriptAsset), false);
+            EditorGUI.EndDisabledGroup();
 
             EditorGUI.indentLevel--;
             EditorGUILayout.Space(8);

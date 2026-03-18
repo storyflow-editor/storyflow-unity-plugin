@@ -33,8 +33,9 @@ namespace StoryFlow.Editor
         }
 
         // --- Settings ---
-        private string host = "localhost";
-        private int port = 6545;
+        private const string host = "localhost";
+        private int port = 9000;
+        private Texture2D logoTexture;
         private string outputPath = "Assets/StoryFlow";
 
         // --- State ---
@@ -59,20 +60,49 @@ namespace StoryFlow.Editor
         // --- Plugin version for identification ---
         private const string PluginVersion = "1.0.0";
 
-        private new void OnEnable()
+        // --- EditorPrefs keys for auto-reconnect across domain reloads ---
+        private const string PrefKeyWasConnected = "StoryFlow_LiveSync_WasConnected";
+        private const string PrefKeyPort = "StoryFlow_LiveSync_Port";
+
+        private void OnEnable()
         {
             EditorApplication.update += EditorUpdate;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+
+            // Load logo
+            logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Packages/com.storyflow.unity/Editor/Resources/storyflow_logo.png");
+
+            // Auto-reconnect if we were connected before domain reload
+            if (EditorPrefs.GetBool(PrefKeyWasConnected, false))
+            {
+                EditorPrefs.DeleteKey(PrefKeyWasConnected);
+                port = EditorPrefs.GetInt(PrefKeyPort, 9000);
+                Connect();
+            }
         }
 
-        private new void OnDisable()
+        private void OnDisable()
         {
             EditorApplication.update -= EditorUpdate;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             Disconnect();
         }
 
-        private new void OnDestroy()
+        private void OnDestroy()
         {
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             Disconnect();
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.ExitingEditMode && isConnected)
+            {
+                // Save connection state before domain reload
+                EditorPrefs.SetBool(PrefKeyWasConnected, true);
+                EditorPrefs.SetInt(PrefKeyPort, port);
+            }
         }
 
         /// <summary>
@@ -117,6 +147,7 @@ namespace StoryFlow.Editor
                     isConnected = false;
                     statusMessage = "Disconnected (connection lost)";
                     AddLog("Connection lost.");
+                    EditorPrefs.SetBool("StoryFlow_Toolbar_Connected", false);
                     Repaint();
                 }
 
@@ -124,18 +155,23 @@ namespace StoryFlow.Editor
             }
         }
 
-        private new void OnGUI()
+        private void OnGUI()
         {
             EditorGUILayout.Space(8);
+
+            // --- Header with logo ---
+            EditorGUILayout.BeginHorizontal();
+            if (logoTexture != null)
+            {
+                GUILayout.Label(new GUIContent(logoTexture), GUILayout.Width(24), GUILayout.Height(24));
+            }
             EditorGUILayout.LabelField("StoryFlow Live Sync", EditorStyles.boldLabel);
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(4);
 
-            // --- Connection settings ---
-            EditorGUILayout.LabelField("Connection", EditorStyles.label);
+            // --- Port setting ---
             EditorGUILayout.BeginHorizontal();
             {
-                EditorGUILayout.LabelField("Host", GUILayout.Width(40));
-                host = EditorGUILayout.TextField(host, GUILayout.MinWidth(100));
                 EditorGUILayout.LabelField("Port", GUILayout.Width(30));
                 port = EditorGUILayout.IntField(port, GUILayout.Width(60));
             }
@@ -233,6 +269,7 @@ namespace StoryFlow.Editor
                     isConnected = true;
                     statusMessage = $"Connected to {uri}";
                     AddLog("Connected.");
+                    EditorPrefs.SetBool("StoryFlow_Toolbar_Connected", true);
                     Repaint();
 
                     // Identify ourselves to the editor
@@ -270,7 +307,26 @@ namespace StoryFlow.Editor
             isConnected = false;
             statusMessage = "Disconnected";
             receiveTask = null;
+            EditorPrefs.SetBool("StoryFlow_Toolbar_Connected", false);
             Repaint();
+        }
+
+        // ================================================================
+        // Toolbar Integration
+        // ================================================================
+
+        /// <summary>Called by the toolbar button to initiate connection.</summary>
+        internal void ConnectFromToolbar()
+        {
+            if (!isConnected)
+                Connect();
+        }
+
+        /// <summary>Called by the toolbar button to request a sync.</summary>
+        internal void RequestSyncFromToolbar()
+        {
+            if (isConnected)
+                SendRequestSync();
         }
 
         private void CleanupWebSocket()
@@ -331,7 +387,7 @@ namespace StoryFlow.Editor
                 ["type"] = "connect",
                 ["payload"] = new JObject
                 {
-                    ["engine"] = "Unity",
+                    ["engine"] = "unity",
                     ["version"] = Application.unityVersion,
                     ["pluginVersion"] = PluginVersion
                 }
