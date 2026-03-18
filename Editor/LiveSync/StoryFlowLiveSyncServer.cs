@@ -57,8 +57,21 @@ namespace StoryFlow.Editor
         // --- Async task tracking ---
         private Task receiveTask;
 
-        // --- Plugin version for identification ---
-        private const string PluginVersion = "1.0.0";
+        // --- Plugin version (read from package.json) ---
+        private static string _pluginVersion;
+        private static string PluginVersion
+        {
+            get
+            {
+                if (_pluginVersion == null)
+                {
+                    var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(
+                        typeof(StoryFlowLiveSyncServer).Assembly);
+                    _pluginVersion = packageInfo?.version ?? "unknown";
+                }
+                return _pluginVersion;
+            }
+        }
 
         // --- EditorPrefs keys for auto-reconnect across domain reloads ---
         private const string PrefKeyWasConnected = "StoryFlow_LiveSync_WasConnected";
@@ -166,6 +179,8 @@ namespace StoryFlow.Editor
                 GUILayout.Label(new GUIContent(logoTexture), GUILayout.Width(24), GUILayout.Height(24));
             }
             EditorGUILayout.LabelField("StoryFlow Live Sync", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.LabelField("v" + PluginVersion, EditorStyles.miniLabel, GUILayout.Width(50));
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(4);
 
