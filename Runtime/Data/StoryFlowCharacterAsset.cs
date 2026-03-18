@@ -86,6 +86,7 @@ namespace StoryFlow.Data
             {
                 Name = CharacterName,
                 Image = ResolvedImage,
+                ImageAssetKey = ImageAssetKey,
                 Variables = new Dictionary<string, StoryFlowVariant>(),
                 VariablesList = new List<StoryFlowVariable>()
             };

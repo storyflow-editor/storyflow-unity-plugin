@@ -13,19 +13,13 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Get the character path from node data or input edge
-            string characterPath = node.GetData("characterId");
+            // Resolve character path (supports connected character input edge)
+            string characterPath = EvaluatorHelpers.ResolveCharacterPath(context, node);
+
+            // Also check legacy "characterId" field
             if (string.IsNullOrEmpty(characterPath))
             {
-                characterPath = node.GetData("characterPath");
-            }
-
-            // Try evaluating from the character input edge (overrides dropdown)
-            string evaluatedPath = StoryFlowEvaluator.EvaluateStringWithDefault(
-                context, node.Id, "character-character-input", characterPath);
-            if (!string.IsNullOrEmpty(evaluatedPath))
-            {
-                characterPath = evaluatedPath;
+                characterPath = node.GetData("characterId");
             }
 
             if (string.IsNullOrEmpty(characterPath))
@@ -51,6 +45,24 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(variableName))
             {
                 Debug.LogWarning($"[StoryFlow] SetCharacterVar: no variable name specified (node {node.Id}).");
+                FollowFlowOrFallthrough(component, context, node);
+                return;
+            }
+
+            // Handle built-in "Name" field
+            if (string.Equals(variableName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            {
+                string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+                characterData.Name = val;
+                FollowFlowOrFallthrough(component, context, node);
+                return;
+            }
+
+            // Handle built-in "Image" field
+            if (string.Equals(variableName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            {
+                string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+                characterData.ImageAssetKey = val;
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }

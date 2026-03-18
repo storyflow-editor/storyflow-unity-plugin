@@ -97,6 +97,23 @@ namespace StoryFlow
         private StoryFlowExecutionContext context;
         private AudioSource dialogueAudioSource;
         private bool isDialogueActive;
+        private bool waitingForAudioAdvance;
+        private bool audioAdvanceAllowSkip;
+
+        // =====================================================================
+        // Unity Lifecycle
+        // =====================================================================
+
+        private void Update()
+        {
+            // Poll for audio finish (Unity AudioSource has no finished callback for non-looped clips)
+            if (waitingForAudioAdvance && dialogueAudioSource != null && !dialogueAudioSource.isPlaying)
+            {
+                waitingForAudioAdvance = false;
+                audioAdvanceAllowSkip = false;
+                AdvanceDialogue();
+            }
+        }
 
         // =====================================================================
         // Public Control Methods
@@ -309,6 +326,18 @@ namespace StoryFlow
                 return;
             }
 
+            // Audio advance-on-end: block manual advance if skip is not allowed
+            if (waitingForAudioAdvance && !audioAdvanceAllowSkip)
+                return;
+
+            // Audio advance-on-end with skip: stop audio and proceed
+            if (waitingForAudioAdvance && audioAdvanceAllowSkip)
+            {
+                StopDialogueAudio();
+                waitingForAudioAdvance = false;
+                audioAdvanceAllowSkip = false;
+            }
+
             context.IsWaitingForInput = false;
             context.IsEnteringDialogueViaEdge = true;
             context.ShouldPause = false;
@@ -335,6 +364,9 @@ namespace StoryFlow
         {
             if (!isDialogueActive)
                 return;
+
+            waitingForAudioAdvance = false;
+            audioAdvanceAllowSkip = false;
 
             // Stop audio
             if (StopAudioOnDialogueEnd)
@@ -942,12 +974,21 @@ namespace StoryFlow
                 dialogueAudioSource.Stop();
                 dialogueAudioSource.clip = null;
             }
+            waitingForAudioAdvance = false;
+            audioAdvanceAllowSkip = false;
         }
 
         /// <summary>Returns true if dialogue audio is currently playing.</summary>
         public bool IsDialogueAudioPlaying()
         {
             return dialogueAudioSource != null && dialogueAudioSource.isPlaying;
+        }
+
+        /// <summary>Sets the audio advance-on-end state flags.</summary>
+        public void SetAudioAdvanceState(bool waiting, bool allowSkip)
+        {
+            waitingForAudioAdvance = waiting;
+            audioAdvanceAllowSkip = allowSkip;
         }
 
         // =====================================================================

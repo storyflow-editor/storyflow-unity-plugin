@@ -19,6 +19,8 @@ namespace StoryFlow.Data
         public bool CanAdvance;
         public bool AudioLoop;
         public bool AudioReset;
+        public bool AudioAdvanceOnEnd;
+        public bool AudioAllowSkip;
 
         public StoryFlowDialogueState()
         {

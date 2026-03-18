@@ -261,5 +261,75 @@ namespace StoryFlow.Execution
 
             return null;
         }
+
+        // =====================================================================
+        // Character Variable Evaluation
+        // =====================================================================
+
+        /// <summary>
+        /// Resolves the character path for a GetCharacterVar/SetCharacterVar node,
+        /// checking for a connected character input edge first (overrides dropdown).
+        /// </summary>
+        internal static string ResolveCharacterPath(StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            string charPath = node.GetData("characterPath");
+
+            // Check for connected character input edge (overrides dropdown)
+            var charEdge = ctx.CurrentScript?.FindInputEdge(node.Id, StoryFlowHandles.In_CharacterInput);
+            if (charEdge != null)
+            {
+                var sourceNode = ctx.CurrentScript.GetNode(charEdge.Source);
+                if (sourceNode != null)
+                {
+                    string evaluated = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    if (!string.IsNullOrEmpty(evaluated))
+                        charPath = evaluated;
+                }
+            }
+
+            return charPath;
+        }
+
+        /// <summary>
+        /// Evaluates a character variable value, handling built-in "Name" and "Image"
+        /// fields as well as custom variables. Returns null if not found.
+        /// </summary>
+        internal static StoryFlowVariant EvaluateCharacterVariable(StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            string charPath = ResolveCharacterPath(ctx, node);
+            string varName = node.GetData("variableName");
+
+            if (string.IsNullOrEmpty(charPath) || string.IsNullOrEmpty(varName))
+                return null;
+
+            var characterData = ctx.FindCharacter(charPath);
+            if (characterData == null)
+                return null;
+
+            // Handle built-in "Name" field
+            if (string.Equals(varName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var v = new StoryFlowVariant();
+                v.SetString(characterData.Name ?? "");
+                return v;
+            }
+
+            // Handle built-in "Image" field
+            if (string.Equals(varName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var v = new StoryFlowVariant();
+                v.SetString(characterData.ImageAssetKey ?? "");
+                return v;
+            }
+
+            // Custom variable
+            if (characterData.Variables != null &&
+                characterData.Variables.TryGetValue(varName, out var charVar))
+            {
+                return charVar;
+            }
+
+            return null;
+        }
     }
 }

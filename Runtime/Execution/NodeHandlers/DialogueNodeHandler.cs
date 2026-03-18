@@ -118,6 +118,9 @@ namespace StoryFlow.Execution.NodeHandlers
 
             state.AudioLoop = node.GetDataBool("audioLoop");
             state.AudioReset = node.GetDataBool("audioReset");
+            bool advanceOnEnd = node.GetDataBool("audioAdvanceOnEnd") && !state.AudioLoop;
+            state.AudioAdvanceOnEnd = advanceOnEnd;
+            state.AudioAllowSkip = advanceOnEnd && node.GetDataBool("audioAllowSkip");
 
             // 6. Build text blocks
             state.TextBlocks.Clear();
@@ -232,6 +235,17 @@ namespace StoryFlow.Execution.NodeHandlers
                 if (state.Audio != null)
                 {
                     component.PlayDialogueAudio(state.Audio, state.AudioLoop);
+
+                    // Set advance-on-end state (non-looped audio that actually played)
+                    if (state.AudioAdvanceOnEnd && component.IsDialogueAudioPlaying())
+                    {
+                        component.SetAudioAdvanceState(true, state.AudioAllowSkip);
+                    }
+                    else if (state.AudioAdvanceOnEnd && !component.IsDialogueAudioPlaying())
+                    {
+                        // Audio was expected to play but didn't — clear flags
+                        component.SetAudioAdvanceState(false, false);
+                    }
                 }
                 else if (state.AudioReset)
                 {

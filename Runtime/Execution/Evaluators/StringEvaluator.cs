@@ -149,22 +149,8 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var varType = node.GetData("variableType");
-                    if (varType == "string" || varType == "image" || varType == "audio" || varType == "character")
-                    {
-                        var charPath = node.GetData("characterPath");
-                        var varName = node.GetData("variableName");
-                        var characterData = ctx.FindCharacter(charPath);
-                        if (characterData != null)
-                        {
-                            if (characterData.Variables != null &&
-                                characterData.Variables.TryGetValue(varName, out var charVar))
-                            {
-                                return charVar.GetString();
-                            }
-                        }
-                    }
-                    return "";
+                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    return charVar?.GetString() ?? "";
                 }
 
                 // Image/Audio/Character array elements return string paths

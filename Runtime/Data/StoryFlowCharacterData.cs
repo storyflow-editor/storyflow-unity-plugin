@@ -12,6 +12,7 @@ namespace StoryFlow.Data
     {
         public string Name;
         public Sprite Image;
+        public string ImageAssetKey;
         public Dictionary<string, StoryFlowVariant> Variables;
 
         /// <summary>
@@ -29,6 +30,7 @@ namespace StoryFlow.Data
         {
             Name = other.Name;
             Image = other.Image;
+            ImageAssetKey = other.ImageAssetKey;
             Variables = new Dictionary<string, StoryFlowVariant>();
             VariablesList = new List<StoryFlowVariable>();
             if (other.VariablesList != null)

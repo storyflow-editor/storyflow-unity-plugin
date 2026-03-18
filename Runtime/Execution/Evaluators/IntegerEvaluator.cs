@@ -278,22 +278,8 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var varType = node.GetData("variableType");
-                    if (varType == "integer")
-                    {
-                        var charPath = node.GetData("characterPath");
-                        var varName = node.GetData("variableName");
-                        var characterData = ctx.FindCharacter(charPath);
-                        if (characterData != null)
-                        {
-                            if (characterData.Variables != null &&
-                                characterData.Variables.TryGetValue(varName, out var charVar))
-                            {
-                                return charVar.GetInt();
-                            }
-                        }
-                    }
-                    return 0;
+                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    return charVar?.GetInt() ?? 0;
                 }
 
                 // Dialogue input option value
