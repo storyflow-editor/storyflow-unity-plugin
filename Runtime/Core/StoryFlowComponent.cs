@@ -218,10 +218,6 @@ namespace StoryFlow
             // Notify manager
             manager.NotifyDialogueStarted();
 
-            // Fire events
-            OnDialogueStarted?.Invoke();
-            OnDialogueStartedEvent?.Invoke();
-
             // Auto-create fallback UI if none assigned
             if (DialogueUI == null)
             {
@@ -231,6 +227,10 @@ namespace StoryFlow
             // Auto-initialize UI binding if not already bound
             if (DialogueUI != null && !DialogueUI.IsBoundTo(this))
                 DialogueUI.InitializeWithComponent(this);
+
+            // Fire events (after UI is created and bound so it receives them)
+            OnDialogueStarted?.Invoke();
+            OnDialogueStartedEvent?.Invoke();
 
             NotifyScriptStarted(script.ScriptPath);
 

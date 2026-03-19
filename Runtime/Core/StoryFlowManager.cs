@@ -40,7 +40,11 @@ namespace StoryFlow
             if (Instance != null) return;
 
             // Check if one already exists in the scene
+#if UNITY_2023_1_OR_NEWER
+            var existing = UnityEngine.Object.FindFirstObjectByType<StoryFlowManager>();
+#else
             var existing = UnityEngine.Object.FindObjectOfType<StoryFlowManager>();
+#endif
             if (existing != null) return;
 
             // Auto-create
@@ -79,7 +83,8 @@ namespace StoryFlow
 
         /// <summary>
         /// Finds the StoryFlowProjectAsset in the project. Searches Resources first,
-        /// then falls back to scanning all loaded assets.
+        /// then falls back to scanning all loaded assets. In the editor, uses AssetDatabase
+        /// as a final fallback to find assets that aren't currently loaded in memory.
         /// </summary>
         private static StoryFlowProjectAsset FindProjectAsset()
         {
@@ -90,6 +95,17 @@ namespace StoryFlow
             // Scan all loaded ScriptableObjects (works for assets loaded via addressables or direct reference)
             var all = Resources.FindObjectsOfTypeAll<StoryFlowProjectAsset>();
             if (all.Length > 0) return all[0];
+
+#if UNITY_EDITOR
+            // Editor fallback: use AssetDatabase to find unloaded assets
+            var guids = UnityEditor.AssetDatabase.FindAssets("t:StoryFlowProjectAsset");
+            foreach (var guid in guids)
+            {
+                var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(path);
+                if (asset != null) return asset;
+            }
+#endif
 
             return null;
         }

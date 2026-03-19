@@ -34,7 +34,11 @@ namespace StoryFlow.UI
         public void Build()
         {
             // EventSystem (required for UI clicks)
+#if UNITY_2023_1_OR_NEWER
+            if (Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
+#else
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+#endif
             {
                 var esObj = new GameObject("EventSystem");
                 esObj.AddComponent<UnityEngine.EventSystems.EventSystem>();
@@ -118,7 +122,11 @@ namespace StoryFlow.UI
             _bodyText = bodyObj.AddComponent<TextMeshProUGUI>();
             _bodyText.fontSize = 16;
             _bodyText.color = Color.white;
+#if UNITY_2023_1_OR_NEWER
+            _bodyText.textWrappingMode = TMPro.TextWrappingModes.Normal;
+#else
             _bodyText.enableWordWrapping = true;
+#endif
             var bodyLayout = bodyObj.AddComponent<LayoutElement>();
             bodyLayout.minHeight = 40;
 
