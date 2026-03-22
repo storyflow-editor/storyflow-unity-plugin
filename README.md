@@ -18,13 +18,14 @@ Runtime plugin for [StoryFlow Editor](https://storyflow-editor.com) - a visual n
 
 - Unity 2022.3 LTS or newer (including Unity 6)
 - Newtonsoft.Json and TextMeshPro (resolved automatically by Package Manager)
+- StoryFlow Editor (for creating and exporting projects)
 
 ## Installation
 
 Open your Unity project, go to **Window > Package Manager**, click **+** > **Add package from git URL**, and enter:
 
 ```
-https://github.com/StoryFlowEditor/storyflow-unity.git
+https://github.com/storyflow-editor/storyflow-unity-plugin.git
 ```
 
 ## Quick Start
@@ -92,7 +93,7 @@ Contributions are welcome! Please read the guidelines below before submitting.
 4. Open a Pull Request targeting the `dev` branch
 5. We'll review and merge when ready
 
-Please open an [issue](https://github.com/StoryFlowEditor/storyflow-unity/issues) first for large changes so we can discuss the approach.
+Please open an [issue](https://github.com/storyflow-editor/storyflow-unity-plugin/issues) first for large changes so we can discuss the approach.
 
 ## Changelog
 
