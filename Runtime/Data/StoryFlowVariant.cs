@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Newtonsoft.Json.Linq;
 
 namespace StoryFlow.Data
 {
@@ -127,6 +128,33 @@ namespace StoryFlow.Data
         public static StoryFlowVariant Float(float value) => new() { Type = StoryFlowVariableType.Float, FloatValue = value };
         public static StoryFlowVariant String(string value) => new() { Type = StoryFlowVariableType.String, StringValue = value ?? "" };
         public static StoryFlowVariant Enum(string value) => new() { Type = StoryFlowVariableType.Enum, EnumValue = value ?? "" };
+
+        /// <summary>
+        /// Deserializes an array StoryFlowVariant from a JSON array string (e.g. ["a","b"]).
+        /// Each element is deserialized as the given element type.
+        /// </summary>
+        public static StoryFlowVariant DeserializeArrayFromJson(StoryFlowVariableType elementType, string json)
+        {
+            var variant = new StoryFlowVariant { Type = elementType };
+            variant.ArrayValue = new List<StoryFlowVariant>();
+
+            if (string.IsNullOrEmpty(json)) return variant;
+
+            try
+            {
+                var array = JArray.Parse(json);
+                foreach (var item in array)
+                {
+                    variant.ArrayValue.Add(DeserializeFromJson(elementType, item.ToString()));
+                }
+            }
+            catch (Exception)
+            {
+                // If JSON parsing fails, return empty array
+            }
+
+            return variant;
+        }
 
         /// <summary>
         /// Deserializes a StoryFlowVariant from a type and a plain-text JSON value string.

@@ -96,6 +96,13 @@ namespace StoryFlow
         private bool _waitingForAudioAdvance;
         private bool _audioAdvanceAllowSkip;
 
+        /// <summary>
+        /// The audio clip currently assigned to the dialogue audio source.
+        /// Used to detect changes and avoid restarting the same clip on re-render
+        /// (matches editor behavior where audio only changes when the reference changes).
+        /// </summary>
+        public AudioClip CurrentDialogueAudioClip { get; private set; }
+
         // =====================================================================
         // Unity Lifecycle
         // =====================================================================
@@ -202,9 +209,13 @@ namespace StoryFlow
                 return;
             }
 
+            // Reset audio tracking so the first dialogue node's audio always plays
+            CurrentDialogueAudioClip = null;
+
             // Create and initialize the execution context
             _context = new StoryFlowExecutionContext();
             _context.Project = GetProject();
+            _context.LanguageCode = LanguageCode;
             _context.Initialize(
                 script,
                 manager.GlobalVariables,
@@ -243,7 +254,6 @@ namespace StoryFlow
                 return;
             }
 
-            _context.IsEnteringDialogueViaEdge = true;
             ProcessNode(startNode);
         }
 
@@ -285,7 +295,6 @@ namespace StoryFlow
             }
 
             _context.IsWaitingForInput = false;
-            _context.IsEnteringDialogueViaEdge = true;
             _context.ShouldPause = false;
 
             // Clear node runtime caches for fresh evaluation
@@ -340,7 +349,6 @@ namespace StoryFlow
             }
 
             _context.IsWaitingForInput = false;
-            _context.IsEnteringDialogueViaEdge = true;
             _context.ShouldPause = false;
 
             // Clear node runtime caches for fresh evaluation
@@ -498,7 +506,6 @@ namespace StoryFlow
                 var targetNode = _context.CurrentScript?.GetNode(onChangeEdge.Target);
                 if (targetNode != null)
                 {
-                    _context.IsEnteringDialogueViaEdge = false;
                     ProcessNode(targetNode);
                 }
             }
@@ -848,10 +855,6 @@ namespace StoryFlow
                 return;
             }
 
-            // Mark fresh entry only when target is a dialogue node (matches Godot/Unreal)
-            if (targetNode.Type == StoryFlowNodeType.Dialogue)
-                _context.IsEnteringDialogueViaEdge = true;
-
             _context.NextNode = targetNode;
         }
 
@@ -966,6 +969,7 @@ namespace StoryFlow
             _dialogueAudioSource.volume = DialogueVolumeMultiplier;
 
             _dialogueAudioSource.Play();
+            CurrentDialogueAudioClip = clip;
         }
 
         /// <summary>
@@ -978,6 +982,7 @@ namespace StoryFlow
                 _dialogueAudioSource.Stop();
                 _dialogueAudioSource.clip = null;
             }
+            CurrentDialogueAudioClip = null;
             _waitingForAudioAdvance = false;
             _audioAdvanceAllowSkip = false;
         }

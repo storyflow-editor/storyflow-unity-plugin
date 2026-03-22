@@ -253,9 +253,9 @@ namespace StoryFlow.Execution
         public static string EvaluateStringWithDefault(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string defaultValue)
         {
             var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
-            if (edge == null) return defaultValue;
+            if (edge == null) return ctx != null ? ctx.ResolveStringKey(defaultValue) : defaultValue;
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
-            if (sourceNode == null) return defaultValue;
+            if (sourceNode == null) return ctx.ResolveStringKey(defaultValue);
             return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
         }
 

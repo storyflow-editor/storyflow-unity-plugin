@@ -49,11 +49,11 @@ namespace StoryFlow.Execution
             {
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (state.CachedOutput != null)
-                    return state.CachedOutput.GetString();
+                    return ctx.ResolveStringKey(state.CachedOutput.GetString());
 
                 string result = EvaluateFromNodeInternal(ctx, node);
                 state.CachedOutput = StoryFlowVariant.String(result);
-                return result;
+                return ctx.ResolveStringKey(result);
             }
             finally
             {

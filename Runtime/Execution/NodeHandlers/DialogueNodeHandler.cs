@@ -28,10 +28,6 @@ namespace StoryFlow.Execution.NodeHandlers
             // Track the last dialogue node so Set* nodes with no outgoing edge can return here
             context.LastDialogueNodeId = node.Id;
 
-            // Determine if this is a fresh entry via edge (audio should play)
-            // or a return from a Set* node (audio should not re-trigger)
-            bool isFreshEntry = context.IsEnteringDialogueViaEdge;
-
             // Build dialogue state
             var state = context.CurrentDialogueState;
             state.NodeId = node.Id;
@@ -238,8 +234,9 @@ namespace StoryFlow.Execution.NodeHandlers
             context.IsWaitingForInput = true;
             context.ShouldPause = true;
 
-            // 10. Handle audio on fresh entry only
-            if (isFreshEntry)
+            // 10. Handle audio — only act when the audio clip changes (matches editor behavior).
+            // On re-render from a Set* fallthrough the clip is the same, so audio keeps playing.
+            if (state.Audio != component.CurrentDialogueAudioClip)
             {
                 if (state.Audio != null)
                 {
@@ -262,10 +259,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
-            // 11. Reset the edge entry flag
-            context.IsEnteringDialogueViaEdge = false;
-
-            // 12. Notify UI
+            // 11. Notify UI
             component.BroadcastDialogueUpdate();
         }
     }

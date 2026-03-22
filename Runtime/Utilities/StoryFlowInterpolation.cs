@@ -42,12 +42,22 @@ namespace StoryFlow.Utilities
                 // Try local variables first
                 var localVar = context.FindVariableByName(varName, searchLocal: true, searchGlobal: false);
                 if (localVar != null)
-                    return localVar.Value.ToString();
+                {
+                    var value = localVar.Value.ToString();
+                    if (localVar.Type == StoryFlowVariableType.String)
+                        value = context.ResolveStringKey(value);
+                    return value;
+                }
 
                 // Then global variables
                 var globalVar = context.FindVariableByName(varName, searchLocal: false, searchGlobal: true);
                 if (globalVar != null)
-                    return globalVar.Value.ToString();
+                {
+                    var value = globalVar.Value.ToString();
+                    if (globalVar.Type == StoryFlowVariableType.String)
+                        value = context.ResolveStringKey(value);
+                    return value;
+                }
 
                 // Not found — return original placeholder
                 return match.Value;

@@ -65,8 +65,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 var dialogueNode = context.CurrentScript.GetNode(context.LastDialogueNodeId);
                 if (dialogueNode != null)
                 {
-                    // Do NOT set IsEnteringDialogueViaEdge = true — we want audio to NOT re-trigger
-                    component.GetContext().NextNode = dialogueNode;
+                    context.NextNode = dialogueNode;
                     return;
                 }
             }

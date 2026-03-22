@@ -44,17 +44,16 @@ namespace StoryFlow.Execution
         /// <summary>True when execution is paused by external request.</summary>
         public bool IsPaused { get; set; }
 
-        /// <summary>
-        /// True when we are entering a dialogue node via a normal execution edge
-        /// (as opposed to returning from a Set* node with no outgoing edge).
-        /// </summary>
-        public bool IsEnteringDialogueViaEdge { get; set; }
-
         /// <summary>The currently built dialogue state for display.</summary>
         public StoryFlowDialogueState CurrentDialogueState { get; set; }
 
         /// <summary>Persistent background image set by SetBackgroundImage nodes.</summary>
         public Sprite PersistentBackgroundImage { get; set; }
+
+        /// <summary>
+        /// Language code for localized string lookup (e.g. "en"). Set by the owning StoryFlowComponent.
+        /// </summary>
+        public string LanguageCode { get; set; } = "en";
 
         /// <summary>
         /// Transient field set by the evaluator before calling FromNode methods.
@@ -150,7 +149,6 @@ namespace StoryFlow.Execution
             IsWaitingForInput = false;
             IsExecuting = false;
             IsPaused = false;
-            IsEnteringDialogueViaEdge = false;
             EvaluationDepth = 0;
             NextNode = null;
             ShouldPause = false;
@@ -464,6 +462,20 @@ namespace StoryFlow.Execution
             return null;
         }
 
+        /// <summary>
+        /// Resolves a string key through the localized strings dictionary.
+        /// The JSON export stores all string-type values (variable defaults, inline node values,
+        /// array elements) as keys into the strings table. This method resolves a key to its
+        /// actual text, falling back to the raw value if the key is not found.
+        /// </summary>
+        public string ResolveStringKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return key;
+
+            var resolved = GetString(LanguageCode + "." + key);
+            return resolved ?? key;
+        }
+
         // =====================================================================
         // Character Lookup
         // =====================================================================
@@ -515,7 +527,6 @@ namespace StoryFlow.Execution
             IsWaitingForInput = false;
             IsExecuting = false;
             IsPaused = false;
-            IsEnteringDialogueViaEdge = false;
             EvaluationDepth = 0;
             NextNode = null;
             ShouldPause = false;

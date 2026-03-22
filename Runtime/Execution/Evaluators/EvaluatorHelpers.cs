@@ -72,7 +72,7 @@ namespace StoryFlow.Execution
                 if (sourceNode != null)
                     return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
             }
-            return node.GetData("value1");
+            return ctx.ResolveStringKey(node.GetData("value1"));
         }
 
         internal static string EvaluateStringInput2(StoryFlowExecutionContext ctx, StoryFlowNode node)
@@ -84,7 +84,7 @@ namespace StoryFlow.Execution
                 if (sourceNode != null)
                     return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
             }
-            return node.GetData("value2");
+            return ctx.ResolveStringKey(node.GetData("value2"));
         }
 
         internal static string EvaluateEnumInput1(StoryFlowExecutionContext ctx, StoryFlowNode node)

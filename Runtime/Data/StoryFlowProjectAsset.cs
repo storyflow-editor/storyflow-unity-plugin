@@ -104,7 +104,9 @@ namespace StoryFlow.Data
                     Type = entry.Type,
                     IsArray = entry.IsArray,
                     EnumValues = entry.EnumValues != null ? new List<string>(entry.EnumValues) : new List<string>(),
-                    Value = DeserializeVariant(entry.Type, entry.DefaultValueJson)
+                    Value = entry.IsArray
+                        ? StoryFlowVariant.DeserializeArrayFromJson(entry.Type, entry.DefaultValueJson)
+                        : DeserializeVariant(entry.Type, entry.DefaultValueJson)
                 };
                 _globalVariables[entry.Id] = variable;
             }

@@ -171,7 +171,9 @@ namespace StoryFlow.Data
                     EnumValues = sv.EnumValues != null ? new List<string>(sv.EnumValues) : new List<string>(),
                     IsInput = sv.IsInput,
                     IsOutput = sv.IsOutput,
-                    Value = DeserializeVariant(sv.Type, sv.DefaultValueJson)
+                    Value = sv.IsArray
+                        ? StoryFlowVariant.DeserializeArrayFromJson(sv.Type, sv.DefaultValueJson)
+                        : DeserializeVariant(sv.Type, sv.DefaultValueJson)
                 };
                 _variables[sv.Id] = variable;
             }
@@ -269,9 +271,20 @@ namespace StoryFlow.Data
             var targetHandle = StoryFlowHandles.Target(nodeId, targetHandleSuffix);
             if (_targetNodeIndex.TryGetValue(nodeId, out var edges))
             {
+                // Try exact match first
                 foreach (var edge in edges)
                 {
                     if (edge.TargetHandle == targetHandle)
+                        return edge;
+                }
+
+                // Fallback: prefix match for handles with trailing option ID.
+                // The editor appends a numbered suffix to handles (e.g., "string-2", "string-array-1")
+                // while the runtime constants omit it (e.g., "string", "string-array").
+                var prefix = targetHandle + "-";
+                foreach (var edge in edges)
+                {
+                    if (edge.TargetHandle != null && edge.TargetHandle.StartsWith(prefix))
                         return edge;
                 }
             }
