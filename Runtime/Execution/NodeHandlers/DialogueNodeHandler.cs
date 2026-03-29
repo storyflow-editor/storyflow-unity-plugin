@@ -135,6 +135,11 @@ namespace StoryFlow.Execution.NodeHandlers
                     foreach (var block in blocks)
                     {
                         var blockId = block.Value<string>("id") ?? "";
+
+                        // Check visibility condition (same mechanism as options)
+                        if (!StoryFlowEvaluator.EvaluateOptionVisibility(context, node, blockId))
+                            continue;
+
                         var blockTextKey = block.Value<string>("text") ?? "";
                         string blockRawText = null;
                         if (!string.IsNullOrEmpty(blockTextKey))

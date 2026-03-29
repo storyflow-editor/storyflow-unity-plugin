@@ -191,10 +191,32 @@ namespace StoryFlow.UI
                 }
             }
 
-            // Clear old buttons
+            // Clear old buttons and text blocks
             foreach (var btn in _optionButtons)
                 if (btn != null) Destroy(btn);
             _optionButtons.Clear();
+
+            // Build text blocks (non-interactive labels)
+            if (state.TextBlocks != null && state.TextBlocks.Count > 0)
+            {
+                foreach (var block in state.TextBlocks)
+                {
+                    var obj = new GameObject("TextBlock");
+                    obj.transform.SetParent(_optionsContainer, false);
+                    obj.AddComponent<RectTransform>();
+                    obj.AddComponent<LayoutElement>().minHeight = 24;
+                    var tmp = obj.AddComponent<TextMeshProUGUI>();
+                    tmp.text = block.Text ?? "";
+                    tmp.fontSize = 16;
+                    tmp.color = Color.white;
+#if UNITY_2023_1_OR_NEWER
+                    tmp.textWrappingMode = TMPro.TextWrappingModes.Normal;
+#else
+                    tmp.enableWordWrapping = true;
+#endif
+                    _optionButtons.Add(obj);
+                }
+            }
 
             // Build option buttons
             if (state.Options != null && state.Options.Count > 0)

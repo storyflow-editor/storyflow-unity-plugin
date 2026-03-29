@@ -145,8 +145,17 @@ namespace StoryFlow.UI
                     dialogueImage.sprite = state.Image;
             }
 
-            // --- Options ---
+            // --- Text blocks & Options ---
             ClearOptionButtons();
+            ClearTextBlocks();
+
+            if (state.TextBlocks != null && state.TextBlocks.Count > 0)
+            {
+                foreach (var block in state.TextBlocks)
+                {
+                    CreateTextBlock(block);
+                }
+            }
 
             if (state.Options != null && state.Options.Count > 0)
             {
@@ -169,6 +178,7 @@ namespace StoryFlow.UI
             if (dialoguePanel != null)
                 dialoguePanel.SetActive(false);
 
+            ClearTextBlocks();
             DestroyPool();
         }
 
@@ -238,6 +248,38 @@ namespace StoryFlow.UI
                     button.onClick.AddListener(() => OnOptionClicked(capturedId));
                 }
             }
+        }
+
+        // -------------------------------------------------------------------
+        // Text block management (reuses option button prefab as non-interactive label)
+        // -------------------------------------------------------------------
+
+        private readonly List<GameObject> textBlockPool = new();
+
+        private void CreateTextBlock(StoryFlowTextBlock block)
+        {
+            if (optionButtonPrefab == null || optionsContainer == null) return;
+
+            var go = Instantiate(optionButtonPrefab, optionsContainer);
+            var tmpText = go.GetComponentInChildren<TextMeshProUGUI>();
+            if (tmpText != null)
+                tmpText.text = block.Text ?? "";
+
+            var button = go.GetComponent<Button>();
+            if (button != null)
+                button.interactable = false;
+
+            textBlockPool.Add(go);
+        }
+
+        private void ClearTextBlocks()
+        {
+            foreach (var go in textBlockPool)
+            {
+                if (go != null)
+                    Destroy(go);
+            }
+            textBlockPool.Clear();
         }
 
         private void ClearOptionButtons()
