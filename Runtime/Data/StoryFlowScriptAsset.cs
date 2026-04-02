@@ -4,7 +4,6 @@ using UnityEngine;
 
 namespace StoryFlow.Data
 {
-    [CreateAssetMenu(menuName = "StoryFlow/Script Asset", order = 2)]
     public class StoryFlowScriptAsset : ScriptableObject
     {
         public string ScriptPath;

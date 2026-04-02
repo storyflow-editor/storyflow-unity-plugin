@@ -4,7 +4,6 @@ using UnityEngine;
 
 namespace StoryFlow.Data
 {
-    [CreateAssetMenu(menuName = "StoryFlow/Project Asset", order = 1)]
     public class StoryFlowProjectAsset : ScriptableObject
     {
         [Header("Metadata")]

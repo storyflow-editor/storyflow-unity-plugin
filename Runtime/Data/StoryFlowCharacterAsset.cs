@@ -4,7 +4,6 @@ using UnityEngine;
 
 namespace StoryFlow.Data
 {
-    [CreateAssetMenu(menuName = "StoryFlow/Character Asset", order = 3)]
     public class StoryFlowCharacterAsset : ScriptableObject
     {
         public string CharacterName;

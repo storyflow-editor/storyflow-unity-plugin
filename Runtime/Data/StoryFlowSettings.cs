@@ -2,7 +2,6 @@ using UnityEngine;
 
 namespace StoryFlow.Data
 {
-    [CreateAssetMenu(menuName = "StoryFlow/Settings", order = 0)]
     public class StoryFlowSettings : ScriptableObject
     {
         [Header("Default Project")]
