@@ -230,10 +230,10 @@ namespace StoryFlow.Execution.NodeHandlers
 
             if (currentIndex < loopArray.Count)
             {
-                // Set current element as cached output for downstream nodes
-                runtimeState.CachedOutput = new StoryFlowVariant(loopArray[currentIndex]);
+                // Clear evaluation caches from previous iteration so boolean chains re-evaluate
+                context.ClearNodeRuntimeStates();
 
-                // Push loop context for break/continue support
+                // Push loop context for this iteration
                 var loopType = GetElementTypeName(elementType);
                 context.PushLoop(new LoopContext(node.Id, currentIndex, loopType));
 
@@ -246,6 +246,11 @@ namespace StoryFlow.Execution.NodeHandlers
                 runtimeState.LoopArray = null;
                 runtimeState.LoopIndex = 0;
                 runtimeState.CachedOutput = null;
+
+                // Only pop if the top frame belongs to this loop
+                var top = context.PeekLoop();
+                if (top != null && top.NodeId == node.Id)
+                    context.PopLoop();
 
                 // Follow completed edge
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopCompleted);
@@ -268,8 +273,10 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Pop the loop context for this iteration
-            context.PopLoop();
+            // Pop the loop context for this iteration (only if it matches this loop)
+            var top = context.PeekLoop();
+            if (top != null && top.NodeId == loopNodeId)
+                context.PopLoop();
 
             // Increment index
             runtimeState.LoopIndex++;

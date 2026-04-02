@@ -94,6 +94,11 @@ namespace StoryFlow.Data
             foreach (var v in Variables)
             {
                 var copy = new StoryFlowVariable(v);
+                // Deserialize array from JSON if ArrayValue was lost during Unity serialization
+                if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                {
+                    copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                }
                 data.VariablesList.Add(copy);
                 data.Variables[copy.Name] = copy.Value;
             }

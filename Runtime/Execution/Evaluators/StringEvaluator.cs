@@ -47,12 +47,15 @@ namespace StoryFlow.Execution
 
             try
             {
+                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
+                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (state.CachedOutput != null)
+                if (!isForEach && state.CachedOutput != null)
                     return ctx.ResolveStringKey(state.CachedOutput.GetString());
 
                 string result = EvaluateFromNodeInternal(ctx, node);
-                state.CachedOutput = StoryFlowVariant.String(result);
+                if (!isForEach)
+                    state.CachedOutput = StoryFlowVariant.String(result);
                 return ctx.ResolveStringKey(result);
             }
             finally

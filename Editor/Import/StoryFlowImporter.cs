@@ -326,10 +326,11 @@ namespace StoryFlow.Editor
                 JObject charStrings = charactersJson.Value<JObject>("strings");
                 JObject charAssets = charactersJson.Value<JObject>("assets");
 
-                // Build character string lookup
+                // Merge character strings into global strings and build local lookup
                 var charStringLookup = new Dictionary<string, string>();
                 if (charStrings != null)
                 {
+                    globalStringEntries.AddRange(FlattenStrings(charStrings));
                     foreach (var langProp in charStrings.Properties())
                     {
                         var langObj = langProp.Value as JObject;
@@ -566,7 +567,10 @@ namespace StoryFlow.Editor
                         Name = varName,
                         Type = varType,
                         Value = defaultValue,
-                        IsArray = isArray
+                        IsArray = isArray,
+                        DefaultValueJson = isArray && varObj["value"] != null
+                            ? varObj["value"].ToString(Newtonsoft.Json.Formatting.None)
+                            : null
                     });
                 }
             }
@@ -635,6 +639,17 @@ namespace StoryFlow.Editor
                     {
                         Key = mappedKey,
                         Value = valueStr
+                    });
+                }
+
+                // Character variable nodes: the export uses "variable" for the variable name,
+                // but runtime code reads "variableName". Add the mapping when characterPath is present.
+                if (nodeObj["characterPath"] != null && nodeObj["variable"] != null)
+                {
+                    serializedNode.Data.Add(new StoryFlowScriptAsset.SerializedKV
+                    {
+                        Key = "variableName",
+                        Value = nodeObj.Value<string>("variable") ?? ""
                     });
                 }
 

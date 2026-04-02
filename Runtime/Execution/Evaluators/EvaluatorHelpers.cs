@@ -12,6 +12,32 @@ namespace StoryFlow.Execution
     internal static class EvaluatorHelpers
     {
         // =====================================================================
+        // ForEach node detection
+        // =====================================================================
+
+        /// <summary>
+        /// Returns true if the node type is a forEach loop variant.
+        /// ForEach nodes should not participate in general evaluation caching
+        /// because cross-type cache writes (e.g., int index vs string element) conflict.
+        /// </summary>
+        internal static bool IsForEachNode(StoryFlowNodeType type)
+        {
+            switch (type)
+            {
+                case StoryFlowNodeType.ForEachBoolLoop:
+                case StoryFlowNodeType.ForEachIntLoop:
+                case StoryFlowNodeType.ForEachFloatLoop:
+                case StoryFlowNodeType.ForEachStringLoop:
+                case StoryFlowNodeType.ForEachImageLoop:
+                case StoryFlowNodeType.ForEachCharacterLoop:
+                case StoryFlowNodeType.ForEachAudioLoop:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        // =====================================================================
         // Dual-input evaluation with fallback to node data
         // =====================================================================
 

@@ -15,6 +15,13 @@ namespace StoryFlow.Data
         public bool IsInput;
         public bool IsOutput;
 
+        /// <summary>
+        /// JSON-serialized default value for array variables.
+        /// ArrayValue on StoryFlowVariant is [NonSerialized], so arrays survive Unity
+        /// serialization through this field and are deserialized at runtime.
+        /// </summary>
+        public string DefaultValueJson;
+
         public StoryFlowVariable()
         {
             Value = new StoryFlowVariant();
@@ -31,6 +38,7 @@ namespace StoryFlow.Data
             EnumValues = other.EnumValues != null ? new List<string>(other.EnumValues) : new List<string>();
             IsInput = other.IsInput;
             IsOutput = other.IsOutput;
+            DefaultValueJson = other.DefaultValueJson;
         }
     }
 }

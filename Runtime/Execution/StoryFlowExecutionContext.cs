@@ -427,6 +427,12 @@ namespace StoryFlow.Execution
         /// <summary>Current depth of the loop stack.</summary>
         public int LoopStackDepth => loopStack.Count;
 
+        /// <summary>Returns the loop context at the given index (0 = bottom), or null if out of range.</summary>
+        public LoopContext PeekLoopAt(int index)
+        {
+            return index >= 0 && index < loopStack.Count ? loopStack[index] : null;
+        }
+
         /// <summary>Clears the entire loop stack. Called when reaching an End node.</summary>
         public void ClearLoopStack()
         {

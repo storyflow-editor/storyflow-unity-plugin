@@ -55,6 +55,13 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
+            // Handle getCharacterVar nodes that can return arrays
+            if (sourceNode.Type == StoryFlowNodeType.GetCharacterVar)
+            {
+                var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, sourceNode);
+                return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
+            }
+
             var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
@@ -101,6 +108,13 @@ namespace StoryFlow.Execution
 
             try
             {
+                // Handle getCharacterVar nodes that can return arrays
+                if (node.Type == StoryFlowNodeType.GetCharacterVar)
+                {
+                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
+                }
+
                 // Array-producing nodes: GetXxxArray, SetXxxArray
                 var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
