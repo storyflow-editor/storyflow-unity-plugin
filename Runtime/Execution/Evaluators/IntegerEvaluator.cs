@@ -259,7 +259,7 @@ namespace StoryFlow.Execution
                     return arr[idx].GetInt();
                 }
 
-                // ForEach loop — returns current index or element depending on context
+                // ForEach loop — returns current index or element depending on source handle
                 case StoryFlowNodeType.ForEachBoolLoop:
                 case StoryFlowNodeType.ForEachIntLoop:
                 case StoryFlowNodeType.ForEachFloatLoop:
@@ -269,6 +269,16 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.ForEachAudioLoop:
                 {
                     var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.Contains(StoryFlowHandles.In_IntegerIndex))
+                        return runtimeState.LoopIndex;
+                    // ForEachIntLoop: return element value when not requesting index
+                    if (node.Type == StoryFlowNodeType.ForEachIntLoop &&
+                        runtimeState.LoopArray != null && runtimeState.LoopIndex >= 0 &&
+                        runtimeState.LoopIndex < runtimeState.LoopArray.Count)
+                    {
+                        return runtimeState.LoopArray[runtimeState.LoopIndex].GetInt();
+                    }
                     return runtimeState.LoopIndex;
                 }
 
