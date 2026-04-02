@@ -73,9 +73,10 @@ namespace StoryFlow.Editor
             }
         }
 
-        // --- EditorPrefs keys for auto-reconnect across domain reloads ---
+        // --- EditorPrefs keys ---
         private const string PrefKeyWasConnected = "StoryFlow_LiveSync_WasConnected";
         private const string PrefKeyPort = "StoryFlow_LiveSync_Port";
+        private const string PrefKeyOutputPath = "StoryFlow_LiveSync_OutputPath";
 
         private void OnEnable()
         {
@@ -86,11 +87,14 @@ namespace StoryFlow.Editor
             logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(
                 "Packages/com.storyflow.unity/Editor/Resources/storyflow_logo.png");
 
+            // Restore persisted settings
+            port = EditorPrefs.GetInt(PrefKeyPort, 9000);
+            outputPath = EditorPrefs.GetString(PrefKeyOutputPath, "Assets/StoryFlow");
+
             // Auto-reconnect if we were connected before domain reload
             if (EditorPrefs.GetBool(PrefKeyWasConnected, false))
             {
                 EditorPrefs.DeleteKey(PrefKeyWasConnected);
-                port = EditorPrefs.GetInt(PrefKeyPort, 9000);
                 Connect();
             }
         }
@@ -115,6 +119,7 @@ namespace StoryFlow.Editor
                 // Save connection state before domain reload
                 EditorPrefs.SetBool(PrefKeyWasConnected, true);
                 EditorPrefs.SetInt(PrefKeyPort, port);
+                EditorPrefs.SetString(PrefKeyOutputPath, outputPath);
             }
         }
 
@@ -185,6 +190,7 @@ namespace StoryFlow.Editor
             EditorGUILayout.Space(4);
 
             // --- Port setting ---
+            EditorGUI.BeginChangeCheck();
             EditorGUILayout.BeginHorizontal();
             {
                 EditorGUILayout.LabelField("Port", GUILayout.Width(30));
@@ -197,6 +203,12 @@ namespace StoryFlow.Editor
             // --- Output path ---
             EditorGUILayout.LabelField("Output Path", EditorStyles.label);
             outputPath = EditorGUILayout.TextField(outputPath);
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                EditorPrefs.SetInt(PrefKeyPort, port);
+                EditorPrefs.SetString(PrefKeyOutputPath, outputPath);
+            }
 
             EditorGUILayout.Space(4);
 
