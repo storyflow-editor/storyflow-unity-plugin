@@ -71,42 +71,48 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Evaluate the new value based on variable type
+            // Evaluate the new value based on variable type.
+            // Pass the node's inline value as the fallback default when no input edge is connected.
             switch (variableType)
             {
                 case "boolean":
                 {
-                    bool val = StoryFlowEvaluator.EvaluateBoolean(context, node.Id, StoryFlowHandles.In_Boolean);
+                    bool fallback = node.GetDataBool("value", targetVar.Value.GetBool());
+                    bool val = StoryFlowEvaluator.EvaluateBooleanWithDefault(context, node.Id, StoryFlowHandles.In_Boolean, fallback);
                     targetVar.Value.SetBool(val);
                     break;
                 }
                 case "integer":
                 {
-                    int val = StoryFlowEvaluator.EvaluateInteger(context, node.Id, StoryFlowHandles.In_Integer);
+                    int fallback = node.GetDataInt("value", targetVar.Value.GetInt());
+                    int val = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, StoryFlowHandles.In_Integer, fallback);
                     targetVar.Value.SetInt(val);
                     break;
                 }
                 case "float":
                 {
-                    float val = StoryFlowEvaluator.EvaluateFloat(context, node.Id, StoryFlowHandles.In_Float);
+                    float fallback = node.GetDataFloat("value", targetVar.Value.GetFloat());
+                    float val = StoryFlowEvaluator.EvaluateFloatWithDefault(context, node.Id, StoryFlowHandles.In_Float, fallback);
                     targetVar.Value.SetFloat(val);
                     break;
                 }
                 case "string":
                 {
-                    string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+                    string fallback = node.GetData("value", targetVar.Value.GetString());
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_String, fallback);
                     targetVar.Value.SetString(val);
                     break;
                 }
                 case "enum":
                 {
-                    string val = StoryFlowEvaluator.EvaluateEnum(context, node.Id, StoryFlowHandles.In_Enum);
+                    string fallback = node.GetData("value", targetVar.Value.GetEnum());
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
                     targetVar.Value.SetEnum(val);
                     break;
                 }
                 default:
                 {
-                    string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_String, node.GetData("value"));
                     targetVar.Value.SetString(val);
                     break;
                 }
