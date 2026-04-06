@@ -557,25 +557,102 @@ namespace StoryFlow
         // Variable Access (by display name)
         // =====================================================================
 
+        /// <summary>
+        /// Finds a variable by display name, falling back to the manager's global
+        /// variables when no dialogue is active (context is null).
+        /// </summary>
+        private StoryFlowVariable FindVariableByName(string name, bool global)
+        {
+            // During dialogue, the context has everything wired up
+            if (_context != null)
+            {
+                return global
+                    ? _context.FindVariableByName(name, false, true)
+                    : _context.FindVariableByName(name, true, true);
+            }
+
+            // Outside dialogue: local variables aren't available
+            if (!global)
+            {
+                Debug.LogWarning($"[StoryFlow] Cannot access local variable \"{name}\" outside of active dialogue.");
+                return null;
+            }
+
+            // Outside dialogue: scan manager's globals by display name
+            var manager = StoryFlowManager.Instance;
+            if (manager != null)
+            {
+                foreach (var kvp in manager.GlobalVariables)
+                {
+                    if (kvp.Value.Name == name)
+                        return kvp.Value;
+                }
+            }
+
+            Debug.LogWarning($"[StoryFlow] Global variable \"{name}\" not found.");
+            return null;
+        }
+
+        /// <summary>
+        /// Finds a runtime character by path, falling back to the manager when
+        /// no dialogue is active.
+        /// </summary>
+        private StoryFlowCharacterData FindCharacter(string charPath)
+        {
+            if (string.IsNullOrEmpty(charPath)) return null;
+
+            // During dialogue, the context has characters wired up
+            if (_context != null)
+                return _context.FindCharacter(charPath);
+
+            // Outside dialogue: look up directly from the manager
+            var manager = StoryFlowManager.Instance;
+            if (manager != null)
+            {
+                var normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(charPath);
+                if (manager.RuntimeCharacters.TryGetValue(normalizedPath, out var character))
+                    return character;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Resolves a string table key to localized text using the component's LanguageCode.
+        /// Works both during and outside of active dialogue.
+        /// </summary>
+        private string ResolveString(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return key;
+            var fullKey = LanguageCode + "." + key;
+
+            // During dialogue, context handles script + global string lookup
+            if (_context != null)
+                return _context.GetString(fullKey) ?? key;
+
+            // Outside dialogue, resolve through the project's global strings
+            var project = GetProject();
+            if (project != null)
+                return project.GetGlobalString(fullKey) ?? key;
+
+            return key;
+        }
+
         /// <summary>Gets a boolean variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
         public bool GetBoolVariable(string name, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             return v?.Value.GetBool() ?? false;
         }
 
         /// <summary>Sets a boolean variable by its display name. When global is true, targets only global scope.</summary>
         public void SetBoolVariable(string name, bool value, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             if (v != null)
             {
                 v.Value.SetBool(value);
-                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -587,22 +664,18 @@ namespace StoryFlow
         /// <summary>Gets an integer variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
         public int GetIntVariable(string name, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             return v?.Value.GetInt() ?? 0;
         }
 
         /// <summary>Sets an integer variable by its display name. When global is true, targets only global scope.</summary>
         public void SetIntVariable(string name, int value, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             if (v != null)
             {
                 v.Value.SetInt(value);
-                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -614,22 +687,18 @@ namespace StoryFlow
         /// <summary>Gets a float variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
         public float GetFloatVariable(string name, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             return v?.Value.GetFloat() ?? 0f;
         }
 
         /// <summary>Sets a float variable by its display name. When global is true, targets only global scope.</summary>
         public void SetFloatVariable(string name, float value, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             if (v != null)
             {
                 v.Value.SetFloat(value);
-                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -641,22 +710,18 @@ namespace StoryFlow
         /// <summary>Gets a string variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
         public string GetStringVariable(string name, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             return v?.Value.GetString() ?? "";
         }
 
         /// <summary>Sets a string variable by its display name. When global is true, targets only global scope.</summary>
         public void SetStringVariable(string name, string value, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             if (v != null)
             {
                 v.Value.SetString(value);
-                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -668,22 +733,18 @@ namespace StoryFlow
         /// <summary>Gets an enum variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
         public string GetEnumVariable(string name, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             return v?.Value.GetEnum() ?? "";
         }
 
         /// <summary>Sets an enum variable by its display name. When global is true, targets only global scope.</summary>
         public void SetEnumVariable(string name, string value, bool global = false)
         {
-            var v = global
-                ? _context?.FindVariableByName(name, false, true)
-                : _context?.FindVariableByName(name, true, true);
+            var v = FindVariableByName(name, global);
             if (v != null)
             {
                 v.Value.SetEnum(value);
-                bool isGlobal = _context != null && !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -698,13 +759,20 @@ namespace StoryFlow
         /// </summary>
         public StoryFlowVariant GetCharacterVariable(string charPath, string varName)
         {
-            if (_context == null) return null;
-
-            var characterData = _context.FindCharacter(charPath);
+            var characterData = FindCharacter(charPath);
             if (characterData == null)
             {
                 Debug.LogWarning($"[StoryFlow] GetCharacterVariable: character at \"{charPath}\" not found.");
                 return null;
+            }
+
+            // Handle built-in "Name" field (stored as string table key — resolve it)
+            if (string.Equals(varName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var resolved = ResolveString(characterData.Name);
+                var result = new StoryFlowVariant();
+                result.SetString(resolved);
+                return result;
             }
 
             var v = characterData.FindVariableByName(varName);
@@ -721,9 +789,7 @@ namespace StoryFlow
         /// </summary>
         public void SetCharacterVariable(string charPath, string varName, StoryFlowVariant value)
         {
-            if (_context == null) return;
-
-            var characterData = _context.FindCharacter(charPath);
+            var characterData = FindCharacter(charPath);
             if (characterData == null)
             {
                 Debug.LogWarning($"[StoryFlow] SetCharacterVariable: character at \"{charPath}\" not found.");
@@ -774,9 +840,7 @@ namespace StoryFlow
         /// </summary>
         public string GetLocalizedString(string key)
         {
-            if (string.IsNullOrEmpty(key)) return key;
-            var fullKey = LanguageCode + "." + key;
-            return _context?.GetString(fullKey) ?? key;
+            return ResolveString(key);
         }
 
         // =====================================================================
