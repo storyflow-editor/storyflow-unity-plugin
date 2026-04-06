@@ -18,6 +18,8 @@ namespace StoryFlow.Execution.NodeHandlers
             bool conditionValue = StoryFlowEvaluator.EvaluateBoolean(
                 context, node.Id, StoryFlowHandles.In_Boolean + "-condition");
 
+            component.Trace($"BRANCH {node.Id} condition={conditionValue.ToString().ToLower()}");
+
             if (conditionValue)
             {
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_True);

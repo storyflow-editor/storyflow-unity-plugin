@@ -30,6 +30,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 variable.Value.ArrayValue = inputArray != null ? new List<StoryFlowVariant>(inputArray) : new List<StoryFlowVariant>();
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[{variable.Value.ArrayValue.Count} elements]");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else
@@ -105,6 +106,11 @@ namespace StoryFlow.Execution.NodeHandlers
 
             array.Add(value);
 
+            // Store result array in cached output so downstream nodes (e.g., RunScript array params)
+            // connected to this node's output can read it (matches HTML's setNodeOutputValue)
+            var runtimeState = context.GetNodeRuntimeState(node.Id);
+            runtimeState.CachedOutput = new StoryFlowVariant { ArrayValue = array };
+
             // Update the source array variable
             UpdateConnectedArrayVariable(context, component, node, elementType, array);
 
@@ -141,6 +147,10 @@ namespace StoryFlow.Execution.NodeHandlers
                 array.RemoveAt(index);
             }
 
+            // Store result in cached output for downstream consumers
+            var runtimeState = context.GetNodeRuntimeState(node.Id);
+            runtimeState.CachedOutput = new StoryFlowVariant { ArrayValue = array };
+
             // Update the source array variable
             UpdateConnectedArrayVariable(context, component, node, elementType, array);
 
@@ -171,6 +181,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 variable.Value.ArrayValue = new List<StoryFlowVariant>();
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else
@@ -189,11 +200,16 @@ namespace StoryFlow.Execution.NodeHandlers
                         {
                             sourceVar.Value.ArrayValue = new List<StoryFlowVariant>();
                             bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
+                            component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
                             component.BroadcastVariableChanged(sourceVar, isGlobal);
                         }
                     }
                 }
             }
+
+            // Store result in cached output for downstream consumers
+            var clearRtState = context.GetNodeRuntimeState(node.Id);
+            clearRtState.CachedOutput = new StoryFlowVariant { ArrayValue = new List<StoryFlowVariant>() };
 
             // Follow flow edge
             var flowHandle = StoryFlowHandles.Source(node.Id, StoryFlowHandles.Out_Flow);
@@ -236,6 +252,9 @@ namespace StoryFlow.Execution.NodeHandlers
                 // Push loop context for this iteration
                 var loopType = GetElementTypeName(elementType);
                 context.PushLoop(new LoopContext(node.Id, currentIndex, loopType));
+
+                // Trace: log each loop iteration
+                component.Trace($"LOOP {node.Id} index={currentIndex} value={loopArray[currentIndex]}");
 
                 // Execute loop body
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopBody);
@@ -411,6 +430,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 sourceVar.Value.ArrayValue = newArray;
                 bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
+                component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[{newArray.Count} elements]");
                 component.BroadcastVariableChanged(sourceVar, isGlobal);
             }
         }

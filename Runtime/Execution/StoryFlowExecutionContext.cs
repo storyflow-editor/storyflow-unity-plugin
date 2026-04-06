@@ -62,6 +62,12 @@ namespace StoryFlow.Execution
         /// </summary>
         public string LastSourceHandle { get; set; }
 
+        /// <summary>
+        /// Execution trace logging enabled. Set from the owning StoryFlowComponent's TraceEnabled field.
+        /// When true, all execution events are logged with the [SF-TRACE] prefix for cross-runtime comparison.
+        /// </summary>
+        public bool TraceEnabled { get; set; }
+
         // =====================================================================
         // Internal State
         // =====================================================================
@@ -133,7 +139,14 @@ namespace StoryFlow.Execution
             {
                 foreach (var kvp in script.Variables)
                 {
-                    localVariables[kvp.Key] = new StoryFlowVariable(kvp.Value);
+                    var copy = new StoryFlowVariable(kvp.Value);
+                    // Re-hydrate array from DefaultValueJson if ArrayValue was lost
+                    // (e.g. after Unity serialization round-trip, since ArrayValue is [NonSerialized])
+                    if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                    {
+                        copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                    }
+                    localVariables[kvp.Key] = copy;
                 }
             }
 
@@ -349,7 +362,15 @@ namespace StoryFlow.Execution
             // Restore local variables
             localVariables.Clear();
             foreach (var kvp in frame.SavedLocalVariables)
-                localVariables[kvp.Key] = new StoryFlowVariable(kvp.Value);
+            {
+                var copy = new StoryFlowVariable(kvp.Value);
+                // Re-hydrate array from DefaultValueJson if ArrayValue was lost
+                if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                {
+                    copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                }
+                localVariables[kvp.Key] = copy;
+            }
 
             // Invalidate name index since we swapped local variables
             localVariableNameIndex = null;

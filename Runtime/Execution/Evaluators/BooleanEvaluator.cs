@@ -59,6 +59,13 @@ namespace StoryFlow.Execution
 
                 if (!isForEach)
                     state.CachedOutput = StoryFlowVariant.Bool(result);
+
+                if (ctx.TraceEnabled)
+                {
+                    var typeName = !string.IsNullOrEmpty(node.RawType) ? node.RawType : node.Type.ToString();
+                    Debug.Log($"[SF-TRACE] EVAL {node.Id} {typeName} result={result.ToString().ToLower()}");
+                }
+
                 return result;
             }
             finally
@@ -76,7 +83,13 @@ namespace StoryFlow.Execution
                 {
                     var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
-                    return variable?.Value?.GetBool() ?? false;
+                    bool val = variable?.Value?.GetBool() ?? false;
+                    if (ctx.TraceEnabled && variable != null)
+                    {
+                        bool isGlobal = !ctx.LocalVariables.ContainsKey(variable.Id);
+                        Debug.Log($"[SF-TRACE] VAR GET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={val.ToString().ToLower()}");
+                    }
+                    return val;
                 }
 
                 case StoryFlowNodeType.AndBool:

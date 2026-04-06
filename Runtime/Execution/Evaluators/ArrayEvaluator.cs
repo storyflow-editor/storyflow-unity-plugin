@@ -62,6 +62,14 @@ namespace StoryFlow.Execution
                 return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
             }
 
+            // Handle array modify nodes (add/remove/clear) that output their result array.
+            // These nodes don't have a 'variable' field — their output is stored in CachedOutput.
+            if (IsArrayModifyNode(sourceNode.Type))
+            {
+                var state = ctx.GetNodeRuntimeState(sourceNode.Id);
+                return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
+            }
+
             var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
@@ -115,6 +123,13 @@ namespace StoryFlow.Execution
                     return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
+                // Handle array modify nodes (add/remove/clear) that output their result array
+                if (IsArrayModifyNode(node.Type))
+                {
+                    var state = ctx.GetNodeRuntimeState(node.Id);
+                    return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
+                }
+
                 // Array-producing nodes: GetXxxArray, SetXxxArray
                 var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
@@ -129,6 +144,41 @@ namespace StoryFlow.Execution
             finally
             {
                 ctx.EvaluationDepth--;
+            }
+        }
+
+        /// <summary>
+        /// Returns true if the node type is an array modify operation (add/remove/clear/set)
+        /// whose output is stored in CachedOutput rather than a variable field.
+        /// </summary>
+        private static bool IsArrayModifyNode(StoryFlowNodeType type)
+        {
+            switch (type)
+            {
+                case StoryFlowNodeType.AddBoolArrayElement:
+                case StoryFlowNodeType.AddIntArrayElement:
+                case StoryFlowNodeType.AddFloatArrayElement:
+                case StoryFlowNodeType.AddStringArrayElement:
+                case StoryFlowNodeType.AddImageArrayElement:
+                case StoryFlowNodeType.AddCharacterArrayElement:
+                case StoryFlowNodeType.AddAudioArrayElement:
+                case StoryFlowNodeType.RemoveBoolArrayElement:
+                case StoryFlowNodeType.RemoveIntArrayElement:
+                case StoryFlowNodeType.RemoveFloatArrayElement:
+                case StoryFlowNodeType.RemoveStringArrayElement:
+                case StoryFlowNodeType.RemoveImageArrayElement:
+                case StoryFlowNodeType.RemoveCharacterArrayElement:
+                case StoryFlowNodeType.RemoveAudioArrayElement:
+                case StoryFlowNodeType.ClearBoolArray:
+                case StoryFlowNodeType.ClearIntArray:
+                case StoryFlowNodeType.ClearFloatArray:
+                case StoryFlowNodeType.ClearStringArray:
+                case StoryFlowNodeType.ClearImageArray:
+                case StoryFlowNodeType.ClearCharacterArray:
+                case StoryFlowNodeType.ClearAudioArray:
+                    return true;
+                default:
+                    return false;
             }
         }
     }

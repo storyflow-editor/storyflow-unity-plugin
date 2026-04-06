@@ -24,6 +24,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 variable.Value.SetBool(value);
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={value.ToString().ToLower()}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else

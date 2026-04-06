@@ -40,6 +40,8 @@ namespace StoryFlow.Execution.NodeHandlers
                 if (characterData != null)
                 {
                     state.Character = characterData;
+                    if (!string.IsNullOrEmpty(characterData.ImageAssetKey))
+                        component.Trace($"CHAR IMAGE \"{characterData.ImageAssetKey}\"");
                 }
                 else
                 {
@@ -79,6 +81,7 @@ namespace StoryFlow.Execution.NodeHandlers
 
             if (!string.IsNullOrEmpty(imageKey))
             {
+                component.Trace($"IMAGE \"{imageKey}\"");
                 var sprite = component.ResolveAsset<Sprite>(imageKey);
                 if (sprite != null)
                 {
@@ -105,6 +108,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var audioKey = node.GetData("audio");
             if (!string.IsNullOrEmpty(audioKey))
             {
+                component.Trace($"AUDIO \"{audioKey}\"");
                 state.Audio = component.ResolveAsset<AudioClip>(audioKey);
             }
             else

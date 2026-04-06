@@ -112,6 +112,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
+            component.Trace($"VAR SET \"{characterPath}.{variableName}\" global=false value={targetVar.Value}");
             component.BroadcastVariableChanged(targetVar, false);
 
             FollowFlowOrFallthrough(component, context, node);

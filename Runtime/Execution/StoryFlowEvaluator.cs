@@ -280,6 +280,11 @@ namespace StoryFlow.Execution
                     return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
                 case StoryFlowVariableType.Enum:
                     return StoryFlowVariant.Enum(EvaluateEnum(ctx, nodeId, targetHandleSuffix));
+                case StoryFlowVariableType.Image:
+                case StoryFlowVariableType.Audio:
+                case StoryFlowVariableType.Character:
+                    // Image, audio, and character types are stored as string paths/keys
+                    return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
                 default:
                     return new StoryFlowVariant();
             }
@@ -287,7 +292,7 @@ namespace StoryFlow.Execution
 
         /// <summary>
         /// Evaluates a typed value from an input edge based on a type name string
-        /// (e.g. "boolean", "integer", "float", "string", "enum").
+        /// (e.g. "boolean", "integer", "float", "string", "enum", "image", "audio", "character").
         /// </summary>
         public static StoryFlowVariant EvaluateTyped(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string typeName)
         {
@@ -303,9 +308,46 @@ namespace StoryFlow.Execution
                     return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
                 case "enum":
                     return StoryFlowVariant.Enum(EvaluateEnum(ctx, nodeId, targetHandleSuffix));
+                case "image":
+                case "audio":
+                case "character":
+                    // Image, audio, and character types are stored as string paths/keys
+                    return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
                 default:
                     return new StoryFlowVariant();
             }
+        }
+
+        /// <summary>
+        /// Evaluates a typed array value from an input edge based on a type name string.
+        /// Returns a StoryFlowVariant with ArrayValue populated, or null if no input edge.
+        /// </summary>
+        public static StoryFlowVariant EvaluateTypedArray(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string typeName)
+        {
+            StoryFlowVariableType elementType;
+            switch (typeName)
+            {
+                case "boolean": elementType = StoryFlowVariableType.Boolean; break;
+                case "integer": elementType = StoryFlowVariableType.Integer; break;
+                case "float":   elementType = StoryFlowVariableType.Float;   break;
+                case "string":  elementType = StoryFlowVariableType.String;  break;
+                case "enum":    elementType = StoryFlowVariableType.Enum;    break;
+                case "image":   elementType = StoryFlowVariableType.Image;   break;
+                case "audio":   elementType = StoryFlowVariableType.Audio;   break;
+                case "character": elementType = StoryFlowVariableType.Character; break;
+                default:        elementType = StoryFlowVariableType.String;  break;
+            }
+
+            var array = ArrayEvaluator.EvaluateTypedArray(ctx, nodeId, targetHandleSuffix, elementType);
+            if (array == null || array.Count == 0)
+            {
+                // Check if there's actually an input edge — if not, return null to signal "no connection"
+                var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
+                if (edge == null) return null;
+            }
+
+            var variant = new StoryFlowVariant { Type = elementType, ArrayValue = array };
+            return variant;
         }
     }
 }

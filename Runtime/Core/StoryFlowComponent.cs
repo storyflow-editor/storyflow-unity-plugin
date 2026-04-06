@@ -35,6 +35,10 @@ namespace StoryFlow
         [Tooltip("Optional dialogue UI handler. Receives dialogue state updates for rendering.")]
         public StoryFlowDialogueUI DialogueUI;
 
+        [Header("Debugging")]
+        [Tooltip("Enable execution trace logging ([SF-TRACE] prefix) for cross-runtime comparison.")]
+        public bool TraceEnabled = true;
+
         [Header("Audio")]
         [Tooltip("When true, stops any playing dialogue audio when the dialogue session ends.")]
         public bool StopAudioOnDialogueEnd = true;
@@ -216,6 +220,7 @@ namespace StoryFlow
             _context = new StoryFlowExecutionContext();
             _context.Project = GetProject();
             _context.LanguageCode = LanguageCode;
+            _context.TraceEnabled = TraceEnabled;
             _context.Initialize(
                 script,
                 manager.GlobalVariables,
@@ -883,6 +888,13 @@ namespace StoryFlow
 
                 _context.CurrentNodeId = current.Id;
 
+                // Trace: log every node that enters the processing loop
+                if (TraceEnabled)
+                {
+                    var typeName = !string.IsNullOrEmpty(current.RawType) ? current.RawType : current.Type.ToString();
+                    Trace($"NODE {current.Id} {typeName}");
+                }
+
                 try
                 {
                     StoryFlowNodeDispatcher.ProcessNode(this, current);
@@ -917,6 +929,14 @@ namespace StoryFlow
             {
                 BroadcastError($"Target node not found: {targetNodeId}");
                 return;
+            }
+
+            // Trace: log edge traversal
+            if (TraceEnabled)
+            {
+                // Extract source node ID from the source handle (format: "source-{nodeId}-{suffix}")
+                var sourceNodeId = _context.CurrentNodeId ?? "";
+                Trace($"EDGE {sourceNodeId}:{sourceHandle} -> {targetNodeId}");
             }
 
             _context.NextNode = targetNode;
@@ -987,6 +1007,16 @@ namespace StoryFlow
         internal void BroadcastAudioPlayRequested(AudioClip clip, bool loop)
         {
             OnAudioPlayRequested?.Invoke(clip, loop);
+        }
+
+        /// <summary>
+        /// Logs an execution trace message with the [SF-TRACE] prefix.
+        /// Only emits when TraceEnabled is true on this component.
+        /// </summary>
+        internal void Trace(string message)
+        {
+            if (TraceEnabled)
+                Debug.Log("[SF-TRACE] " + message);
         }
 
         /// <summary>Fires the OnScriptStarted event.</summary>

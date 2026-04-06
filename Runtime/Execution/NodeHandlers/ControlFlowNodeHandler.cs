@@ -118,6 +118,7 @@ namespace StoryFlow.Execution.NodeHandlers
                     }
                 }
 
+                component.Trace($"SCRIPT RETURN \"{scriptPath}\"");
                 component.NotifyScriptEnded(scriptPath);
 
                 // Continue from the return node's output edge
@@ -215,9 +216,20 @@ namespace StoryFlow.Execution.NodeHandlers
                         {
                             var paramId = param.Value<string>("id") ?? "";
                             var paramType = param.Value<string>("type") ?? "";
-                            var handleSuffix = paramType + "-param-" + paramId;
+                            var isArray = param.Value<bool?>("isArray") ?? false;
 
-                            var value = StoryFlowEvaluator.EvaluateTyped(context, node.Id, handleSuffix, paramType);
+                            StoryFlowVariant value;
+                            if (isArray)
+                            {
+                                var handleSuffix = paramType + "-array-param-" + paramId;
+                                value = StoryFlowEvaluator.EvaluateTypedArray(context, node.Id, handleSuffix, paramType);
+                            }
+                            else
+                            {
+                                var handleSuffix = paramType + "-param-" + paramId;
+                                value = StoryFlowEvaluator.EvaluateTyped(context, node.Id, handleSuffix, paramType);
+                            }
+
                             if (value != null)
                             {
                                 paramValues[paramId] = value;
@@ -247,17 +259,49 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 foreach (var kvp in targetScript.Variables)
                 {
-                    newLocals[kvp.Key] = new StoryFlowVariable(kvp.Value);
+                    var copy = new StoryFlowVariable(kvp.Value);
+                    // Re-hydrate array from DefaultValueJson if ArrayValue was lost
+                    // (e.g. after Unity serialization round-trip, since ArrayValue is [NonSerialized])
+                    if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                    {
+                        copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                    }
+                    newLocals[kvp.Key] = copy;
                 }
             }
 
-            // Apply input parameter values to the new script's local variables
-            foreach (var kvp in paramValues)
+            // Apply input parameters by matching scriptInterface param names to variable names.
+            // ScriptInterface param IDs differ from variable IDs, so we match by name.
+            // Build a name→paramId lookup from the scriptInterface
+            var paramNameToValue = new Dictionary<string, StoryFlowVariant>();
+            if (!string.IsNullOrEmpty(scriptInterfaceJson))
+            {
+                try
+                {
+                    var si2 = JObject.Parse(scriptInterfaceJson);
+                    var params2 = si2["parameters"] as JArray;
+                    if (params2 != null)
+                    {
+                        foreach (var p in params2)
+                        {
+                            var pId = p.Value<string>("id") ?? "";
+                            var pName = p.Value<string>("name") ?? "";
+                            if (!string.IsNullOrEmpty(pName) && paramValues.ContainsKey(pId))
+                            {
+                                paramNameToValue[pName] = paramValues[pId];
+                            }
+                        }
+                    }
+                }
+                catch { /* already logged above */ }
+            }
+
+            foreach (var kvp in paramNameToValue)
             {
                 foreach (var localKvp in newLocals)
                 {
                     var localVar = localKvp.Value;
-                    if (localVar.IsInput && localVar.Id == kvp.Key)
+                    if (localVar.IsInput && localVar.Name == kvp.Key)
                     {
                         localVar.Value = new StoryFlowVariant(kvp.Value);
                         break;
@@ -276,6 +320,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // Clear node runtime states since we're in a new script
             context.ClearNodeRuntimeStates();
 
+            component.Trace($"SCRIPT CALL \"{scriptId}\"");
             component.NotifyScriptStarted(scriptId);
 
             // Process the start node

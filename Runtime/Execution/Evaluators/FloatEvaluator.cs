@@ -56,6 +56,13 @@ namespace StoryFlow.Execution
                 float result = EvaluateFromNodeInternal(ctx, node);
                 if (!isForEach)
                     state.CachedOutput = StoryFlowVariant.Float(result);
+
+                if (ctx.TraceEnabled)
+                {
+                    var typeName = !string.IsNullOrEmpty(node.RawType) ? node.RawType : node.Type.ToString();
+                    Debug.Log($"[SF-TRACE] EVAL {node.Id} {typeName} result={result.ToString(CultureInfo.InvariantCulture)}");
+                }
+
                 return result;
             }
             finally
@@ -73,7 +80,13 @@ namespace StoryFlow.Execution
                 {
                     var variableId = node.GetData("variable");
                     var variable = ctx.FindVariable(variableId);
-                    return variable?.Value?.GetFloat() ?? 0f;
+                    float val = variable?.Value?.GetFloat() ?? 0f;
+                    if (ctx.TraceEnabled && variable != null)
+                    {
+                        bool isGlobal = !ctx.LocalVariables.ContainsKey(variable.Id);
+                        Debug.Log($"[SF-TRACE] VAR GET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={val.ToString(CultureInfo.InvariantCulture)}");
+                    }
+                    return val;
                 }
 
                 case StoryFlowNodeType.PlusFloat:

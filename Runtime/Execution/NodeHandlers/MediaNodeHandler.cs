@@ -21,6 +21,8 @@ namespace StoryFlow.Execution.NodeHandlers
             string imageKey = StoryFlowEvaluator.EvaluateStringWithDefault(
                 context, node.Id, StoryFlowHandles.In_Image, node.GetData("value"));
 
+            component.Trace($"IMAGE \"{imageKey ?? ""}\"");
+
             // Find and update the variable
             var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
@@ -29,6 +31,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 variable.Value.Type = StoryFlowVariableType.Image;
                 variable.Value.StringValue = imageKey ?? "";
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={imageKey ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else
@@ -59,6 +62,8 @@ namespace StoryFlow.Execution.NodeHandlers
             // Evaluate the image input
             string imageKey = StoryFlowEvaluator.EvaluateStringWithDefault(
                 context, node.Id, StoryFlowHandles.In_ImageInput, node.GetData("value"));
+
+            component.Trace($"IMAGE \"{imageKey ?? ""}\"");
 
             if (!string.IsNullOrEmpty(imageKey))
             {
@@ -105,6 +110,8 @@ namespace StoryFlow.Execution.NodeHandlers
             string audioKey = StoryFlowEvaluator.EvaluateStringWithDefault(
                 context, node.Id, StoryFlowHandles.In_Audio, node.GetData("value"));
 
+            component.Trace($"AUDIO \"{audioKey ?? ""}\"");
+
             // Find and update the variable
             var variableId = node.GetData("variable");
             var variable = context.FindVariable(variableId);
@@ -113,6 +120,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 variable.Value.Type = StoryFlowVariableType.Audio;
                 variable.Value.StringValue = audioKey ?? "";
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={audioKey ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else
@@ -145,6 +153,8 @@ namespace StoryFlow.Execution.NodeHandlers
                 context, node.Id, StoryFlowHandles.In_AudioInput, node.GetData("value"));
 
             bool audioLoop = node.GetDataBool("audioLoop");
+
+            component.Trace($"AUDIO \"{audioKey ?? ""}\"");
 
             if (!string.IsNullOrEmpty(audioKey))
             {
@@ -192,6 +202,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 variable.Value.Type = StoryFlowVariableType.Character;
                 variable.Value.StringValue = characterPath ?? "";
                 bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={characterPath ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
             else
