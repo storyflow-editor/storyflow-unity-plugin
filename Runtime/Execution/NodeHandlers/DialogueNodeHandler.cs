@@ -17,6 +17,10 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
+            // Check if this is a fresh entry or returning from a Set* node
+            bool isFreshEntry = context.EnteringDialogueViaEdge;
+            context.EnteringDialogueViaEdge = false;
+
             // Dialogue nodes cannot be used inside forEach loops
             var loopCtx = context.PeekLoop();
             if (loopCtx != null)
@@ -40,8 +44,17 @@ namespace StoryFlow.Execution.NodeHandlers
                 if (characterData != null)
                 {
                     state.Character = characterData;
+
+                    // Re-resolve character image from ImageAssetKey each time.
+                    // SetCharacterVar Image updates ImageAssetKey but not the Sprite field,
+                    // so we must resolve the current key to keep the UI in sync.
                     if (!string.IsNullOrEmpty(characterData.ImageAssetKey))
+                    {
+                        var charSprite = component.ResolveAsset<Sprite>(characterData.ImageAssetKey);
+                        if (charSprite != null)
+                            characterData.Image = charSprite;
                         component.Trace($"CHAR IMAGE \"{characterData.ImageAssetKey}\"");
+                    }
                 }
                 else
                 {
@@ -243,9 +256,10 @@ namespace StoryFlow.Execution.NodeHandlers
             context.IsWaitingForInput = true;
             context.ShouldPause = true;
 
-            // 10. Handle audio — only act when the audio clip changes (matches editor behavior).
-            // On re-render from a Set* fallthrough the clip is the same, so audio keeps playing.
-            if (state.Audio != component.CurrentDialogueAudioClip)
+            // 10. Handle audio — only on fresh entry (not on re-render from Set* fallthrough).
+            // Matches Godot's is_fresh_entry approach: prevents dialogue audio from
+            // overwriting PlayAudio clips or restarting on variable-change re-renders.
+            if (isFreshEntry)
             {
                 if (state.Audio != null)
                 {

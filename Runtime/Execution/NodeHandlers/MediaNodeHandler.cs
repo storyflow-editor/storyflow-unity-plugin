@@ -161,7 +161,9 @@ namespace StoryFlow.Execution.NodeHandlers
                 var clip = component.ResolveAsset<AudioClip>(audioKey);
                 if (clip != null)
                 {
-                    // Fire event for game code to handle (per design: PlayAudio broadcasts, not plays directly)
+                    // Play audio directly (same as dialogue audio handling)
+                    component.PlayDialogueAudio(clip, audioLoop);
+                    // Also fire event for game code that wants to handle it
                     component.BroadcastAudioPlayRequested(clip, audioLoop);
                 }
                 else

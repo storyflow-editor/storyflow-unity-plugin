@@ -52,10 +52,10 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Handle built-in "Image" field
+            // Handle built-in "Image" field (uses image-type handle, not string)
             if (string.Equals(variableName, "Image", System.StringComparison.OrdinalIgnoreCase))
             {
-                string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
+                string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_Image);
                 characterData.ImageAssetKey = val;
                 FollowFlowOrFallthrough(component, context, node);
                 return;

@@ -314,6 +314,9 @@ namespace StoryFlow
             var targetNode = _context.CurrentScript.GetNode(edge.Target);
             if (targetNode == null) return;
 
+            if (targetNode.Type == Data.StoryFlowNodeType.Dialogue)
+                _context.EnteringDialogueViaEdge = true;
+
             ProcessNode(targetNode);
         }
 
@@ -367,6 +370,9 @@ namespace StoryFlow
 
             var targetNode = _context.CurrentScript.GetNode(edge.Target);
             if (targetNode == null) return;
+
+            if (targetNode.Type == Data.StoryFlowNodeType.Dialogue)
+                _context.EnteringDialogueViaEdge = true;
 
             ProcessNode(targetNode);
         }
@@ -938,6 +944,10 @@ namespace StoryFlow
                 var sourceNodeId = _context.CurrentNodeId ?? "";
                 Trace($"EDGE {sourceNodeId}:{sourceHandle} -> {targetNodeId}");
             }
+
+            // Mark fresh entry when following an edge into a dialogue node
+            if (targetNode.Type == Data.StoryFlowNodeType.Dialogue)
+                _context.EnteringDialogueViaEdge = true;
 
             _context.NextNode = targetNode;
         }

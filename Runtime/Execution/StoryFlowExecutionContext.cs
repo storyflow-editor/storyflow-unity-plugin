@@ -112,6 +112,13 @@ namespace StoryFlow.Execution
         /// </summary>
         public string LastDialogueNodeId { get; set; }
 
+        /// <summary>
+        /// Set by ProcessNextNode when the target is a Dialogue node (entered via flow edge).
+        /// When false, the dialogue is being re-rendered from a Set* fallthrough — audio should
+        /// not restart. Matches Godot's entering_dialogue_via_edge approach.
+        /// </summary>
+        public bool EnteringDialogueViaEdge { get; set; }
+
         // =====================================================================
         // Initialization
         // =====================================================================
@@ -166,6 +173,7 @@ namespace StoryFlow.Execution
             NextNode = null;
             ShouldPause = false;
             LastDialogueNodeId = null;
+            EnteringDialogueViaEdge = false;
         }
 
         // =====================================================================
@@ -558,6 +566,7 @@ namespace StoryFlow.Execution
             NextNode = null;
             ShouldPause = false;
             LastDialogueNodeId = null;
+            EnteringDialogueViaEdge = false;
             PersistentBackgroundImage = null;
 
             CurrentDialogueState = new StoryFlowDialogueState();

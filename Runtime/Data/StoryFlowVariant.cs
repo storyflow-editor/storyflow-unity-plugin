@@ -84,7 +84,12 @@ namespace StoryFlow.Data
 
         public string GetString(string defaultValue = "")
         {
-            return Type == StoryFlowVariableType.String ? StringValue : defaultValue;
+            // Image, Audio, and Character types also store their values in StringValue
+            return (Type == StoryFlowVariableType.String ||
+                    Type == StoryFlowVariableType.Image ||
+                    Type == StoryFlowVariableType.Audio ||
+                    Type == StoryFlowVariableType.Character)
+                ? StringValue : defaultValue;
         }
 
         public string GetEnum(string defaultValue = "")
