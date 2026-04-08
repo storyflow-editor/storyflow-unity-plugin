@@ -898,11 +898,7 @@ namespace StoryFlow.Editor
                 string normalizedRel = relativePath.Replace("\\", "/");
                 string existingPath = Path.Combine(imagesDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<Sprite>(existingPath);
-                if (existing != null)
-                {
-                    Debug.Log($"[StoryFlow] Reusing existing image (data-only sync): {existingPath}");
-                    return existing;
-                }
+                if (existing != null) return existing;
 
                 Debug.LogWarning($"[StoryFlow] Image not found: {sourcePath}");
                 return null;
@@ -952,11 +948,7 @@ namespace StoryFlow.Editor
                 string normalizedRel = relativePath.Replace("\\", "/");
                 string existingPath = Path.Combine(audioDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<AudioClip>(existingPath);
-                if (existing != null)
-                {
-                    Debug.Log($"[StoryFlow] Reusing existing audio (data-only sync): {existingPath}");
-                    return existing;
-                }
+                if (existing != null) return existing;
 
                 Debug.LogWarning($"[StoryFlow] Audio not found: {sourcePath}");
                 return null;
