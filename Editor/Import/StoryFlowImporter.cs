@@ -913,7 +913,7 @@ namespace StoryFlow.Editor
             File.Copy(sourcePath, destPath, overwrite: true);
             AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
 
-            // Configure as sprite
+            // Configure as sprite: single mode, full rect mesh, bottom-center pivot
             var importer = AssetImporter.GetAtPath(destPath) as TextureImporter;
             if (importer != null)
             {
@@ -921,7 +921,22 @@ namespace StoryFlow.Editor
                 if (importer.textureType != TextureImporterType.Sprite)
                 {
                     importer.textureType = TextureImporterType.Sprite;
+                    needsReimport = true;
+                }
+                if (importer.spriteImportMode != SpriteImportMode.Single)
+                {
                     importer.spriteImportMode = SpriteImportMode.Single;
+                    needsReimport = true;
+                }
+                var settings = new TextureImporterSettings();
+                importer.ReadTextureSettings(settings);
+                if (settings.spriteMeshType != SpriteMeshType.FullRect ||
+                    settings.spriteAlignment != (int)SpriteAlignment.BottomCenter)
+                {
+                    settings.spriteMeshType = SpriteMeshType.FullRect;
+                    settings.spriteAlignment = (int)SpriteAlignment.BottomCenter;
+                    settings.spritePivot = new Vector2(0.5f, 0f);
+                    importer.SetTextureSettings(settings);
                     needsReimport = true;
                 }
                 if (needsReimport)

@@ -13,6 +13,17 @@ using UnityEngine.Events;
 namespace StoryFlow
 {
     /// <summary>
+    /// Built-in UI style for the auto-created fallback dialogue UI.
+    /// </summary>
+    public enum BuiltInUIStyle
+    {
+        /// <summary>Default panel with character portrait inside the dialogue box.</summary>
+        Default,
+        /// <summary>Large character portrait anchored to bottom center of screen, separate from the dialogue panel.</summary>
+        Portrait,
+    }
+
+    /// <summary>
     /// Main per-actor runtime component for StoryFlow dialogue execution.
     /// Attach to any GameObject that needs to run dialogue scripts.
     /// Communicates with StoryFlowManager for shared state (global variables, characters).
@@ -32,8 +43,11 @@ namespace StoryFlow
         public string LanguageCode = "en";
 
         [Header("UI")]
-        [Tooltip("Optional dialogue UI handler. Receives dialogue state updates for rendering.")]
+        [Tooltip("Optional dialogue UI handler. Receives dialogue state updates for rendering. When not assigned, a built-in UI is auto-created based on the selected style.")]
         public StoryFlowDialogueUI DialogueUI;
+
+        [Tooltip("Built-in UI style used when no DialogueUI is assigned. Default shows the character portrait inside the dialogue panel. Portrait shows a large character image anchored to the bottom center of the screen.")]
+        public BuiltInUIStyle UIStyle = BuiltInUIStyle.Default;
 
         [Header("Debugging")]
         [Tooltip("Enable execution trace logging ([SF-TRACE] prefix) for cross-runtime comparison.")]
@@ -1174,9 +1188,13 @@ namespace StoryFlow
 
         private void CreateFallbackUI()
         {
+            string typeName = UIStyle == BuiltInUIStyle.Portrait
+                ? "StoryFlow.UI.StoryFlowRuntimeUIPortrait"
+                : "StoryFlow.UI.StoryFlowRuntimeUI";
+
             // Use System.Type lookup to avoid hard reference (allows build verify to exclude the UI file)
-            var uiType = System.Type.GetType("StoryFlow.UI.StoryFlowRuntimeUI, StoryFlow.Runtime");
-            if (uiType == null) uiType = System.Type.GetType("StoryFlow.UI.StoryFlowRuntimeUI");
+            var uiType = System.Type.GetType(typeName + ", StoryFlow.Runtime");
+            if (uiType == null) uiType = System.Type.GetType(typeName);
             if (uiType != null)
             {
                 var runtimeUI = gameObject.AddComponent(uiType);
