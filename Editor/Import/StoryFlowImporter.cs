@@ -405,11 +405,9 @@ namespace StoryFlow.Editor
             // --- Create / update project asset ---
             string projectAssetPath = Path.Combine(outputPath, "Project.asset");
             var projectAsset = AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(projectAssetPath);
-            if (projectAsset == null)
-            {
+            bool isNewProject = projectAsset == null;
+            if (isNewProject)
                 projectAsset = ScriptableObject.CreateInstance<StoryFlowProjectAsset>();
-                AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
-            }
 
             projectAsset.Version = version;
             projectAsset.ApiVersion = apiVersion;
@@ -433,6 +431,10 @@ namespace StoryFlow.Editor
             projectAsset.CharacterReferences = characterReferences;
             projectAsset.GlobalVariableEntries = globalVariableEntries;
             projectAsset.GlobalStringEntries = globalStringEntries;
+
+            // Create asset AFTER all data is set so the first disk write contains full state
+            if (isNewProject)
+                AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
 
             EditorUtility.SetDirty(projectAsset);
             AssetDatabase.SaveAssets();
@@ -458,11 +460,9 @@ namespace StoryFlow.Editor
             EnsureDirectory(Path.GetDirectoryName(assetPath));
 
             var scriptAsset = AssetDatabase.LoadAssetAtPath<StoryFlowScriptAsset>(assetPath);
-            if (scriptAsset == null)
-            {
+            bool isNewScript = scriptAsset == null;
+            if (isNewScript)
                 scriptAsset = ScriptableObject.CreateInstance<StoryFlowScriptAsset>();
-                AssetDatabase.CreateAsset(scriptAsset, assetPath);
-            }
 
             scriptAsset.ScriptPath = scriptPath;
             scriptAsset.StartNodeId = scriptJson.Value<string>("startNode") ?? "0";
@@ -503,6 +503,10 @@ namespace StoryFlow.Editor
             if (flowsArr != null)
                 scriptAsset.SetFlows(ParseFlows(flowsArr));
 
+            // Create asset AFTER all data is set so the first disk write contains full state
+            if (isNewScript)
+                AssetDatabase.CreateAsset(scriptAsset, assetPath);
+
             EditorUtility.SetDirty(scriptAsset);
             return scriptAsset;
         }
@@ -523,11 +527,9 @@ namespace StoryFlow.Editor
             EnsureDirectory(Path.GetDirectoryName(assetPath));
 
             var charAsset = AssetDatabase.LoadAssetAtPath<StoryFlowCharacterAsset>(assetPath);
-            if (charAsset == null)
-            {
+            bool isNewChar = charAsset == null;
+            if (isNewChar)
                 charAsset = ScriptableObject.CreateInstance<StoryFlowCharacterAsset>();
-                AssetDatabase.CreateAsset(charAsset, assetPath);
-            }
 
             charAsset.CharacterPath = normalizedPath;
 
@@ -575,6 +577,10 @@ namespace StoryFlow.Editor
                 }
             }
             charAsset.Variables = variables;
+
+            // Create asset AFTER all data is set so the first disk write contains full state
+            if (isNewChar)
+                AssetDatabase.CreateAsset(charAsset, assetPath);
 
             EditorUtility.SetDirty(charAsset);
             return charAsset;
@@ -888,6 +894,16 @@ namespace StoryFlow.Editor
             string sourcePath = Path.Combine(buildDirectory, relativePath);
             if (!File.Exists(sourcePath))
             {
+                // Fallback: asset may already exist from a previous full sync (data-only sync)
+                string normalizedRel = relativePath.Replace("\\", "/");
+                string existingPath = Path.Combine(imagesDir, normalizedRel);
+                var existing = AssetDatabase.LoadAssetAtPath<Sprite>(existingPath);
+                if (existing != null)
+                {
+                    Debug.Log($"[StoryFlow] Reusing existing image (data-only sync): {existingPath}");
+                    return existing;
+                }
+
                 Debug.LogWarning($"[StoryFlow] Image not found: {sourcePath}");
                 return null;
             }
@@ -932,6 +948,16 @@ namespace StoryFlow.Editor
             string sourcePath = Path.Combine(buildDirectory, relativePath);
             if (!File.Exists(sourcePath))
             {
+                // Fallback: asset may already exist from a previous full sync (data-only sync)
+                string normalizedRel = relativePath.Replace("\\", "/");
+                string existingPath = Path.Combine(audioDir, normalizedRel);
+                var existing = AssetDatabase.LoadAssetAtPath<AudioClip>(existingPath);
+                if (existing != null)
+                {
+                    Debug.Log($"[StoryFlow] Reusing existing audio (data-only sync): {existingPath}");
+                    return existing;
+                }
+
                 Debug.LogWarning($"[StoryFlow] Audio not found: {sourcePath}");
                 return null;
             }
