@@ -736,7 +736,8 @@ namespace StoryFlow
         public string GetStringVariable(string name, bool global = false)
         {
             var v = FindVariableByName(name, global);
-            return v?.Value.GetString() ?? "";
+            var raw = v?.Value.GetString() ?? "";
+            return ResolveString(raw);
         }
 
         /// <summary>Sets a string variable by its display name. When global is true, targets only global scope.</summary>
@@ -832,6 +833,35 @@ namespace StoryFlow
             }
 
             Debug.LogWarning($"[StoryFlow] SetCharacterVariable: variable \"{varName}\" not found on character \"{charPath}\".");
+        }
+
+        /// <summary>
+        /// Gets an array variable by its display name.
+        /// Returns a list of StoryFlowVariant elements — call GetString(), GetInt(), etc. on each.
+        /// String and enum values are resolved through the string table automatically.
+        /// When global is true, searches only global; otherwise searches local first then global.
+        /// </summary>
+        public List<StoryFlowVariant> GetArrayVariable(string name, bool global = false)
+        {
+            var v = FindVariableByName(name, global);
+            if (v == null || !v.IsArray) return new List<StoryFlowVariant>();
+            var array = v.Value.GetArray();
+
+            // Return resolved copies so we don't mutate the stored variants
+            var result = new List<StoryFlowVariant>(array.Count);
+            foreach (var item in array)
+            {
+                var copy = new StoryFlowVariant(item);
+                if (copy.Type == StoryFlowVariableType.String ||
+                    copy.Type == StoryFlowVariableType.Image ||
+                    copy.Type == StoryFlowVariableType.Audio ||
+                    copy.Type == StoryFlowVariableType.Character)
+                    copy.StringValue = ResolveString(copy.StringValue);
+                else if (copy.Type == StoryFlowVariableType.Enum)
+                    copy.EnumValue = ResolveString(copy.EnumValue);
+                result.Add(copy);
+            }
+            return result;
         }
 
         /// <summary>
