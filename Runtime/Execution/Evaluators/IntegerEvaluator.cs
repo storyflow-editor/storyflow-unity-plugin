@@ -179,7 +179,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInBoolArray:
                 {
                     var arr = ArrayEvaluator.EvaluateBoolArray(ctx, node.Id, StoryFlowHandles.In_BoolArray);
-                    bool val = BooleanEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Boolean);
+                    bool val = StoryFlowEvaluator.EvaluateBooleanWithDefault(ctx, node.Id, StoryFlowHandles.In_Boolean, node.GetDataBool("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -190,7 +190,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInIntArray:
                 {
                     var arr = ArrayEvaluator.EvaluateIntArray(ctx, node.Id, StoryFlowHandles.In_IntArray);
-                    int val = Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int val = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -201,7 +201,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInFloatArray:
                 {
                     var arr = ArrayEvaluator.EvaluateFloatArray(ctx, node.Id, StoryFlowHandles.In_FloatArray);
-                    float val = FloatEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Float);
+                    float val = StoryFlowEvaluator.EvaluateFloatWithDefault(ctx, node.Id, StoryFlowHandles.In_Float, node.GetDataFloat("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -212,7 +212,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInStringArray:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
-                    string val = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_String);
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(ctx, node.Id, StoryFlowHandles.In_String, node.GetData("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -223,7 +223,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInImageArray:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_ImageArray);
-                    string val = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Image);
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(ctx, node.Id, StoryFlowHandles.In_Image, node.GetData("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -234,7 +234,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInCharacterArray:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_CharacterArray);
-                    string val = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Character);
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(ctx, node.Id, StoryFlowHandles.In_Character, node.GetData("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
@@ -245,7 +245,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.FindInAudioArray:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_AudioArray);
-                    string val = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Audio);
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(ctx, node.Id, StoryFlowHandles.In_Audio, node.GetData("value"));
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {

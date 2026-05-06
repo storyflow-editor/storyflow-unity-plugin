@@ -113,6 +113,7 @@ namespace StoryFlow
         private bool _isDialogueActive;
         private bool _waitingForAudioAdvance;
         private bool _audioAdvanceAllowSkip;
+        private bool _isRefreshingDialogue;
 
         /// <summary>
         /// The audio clip currently assigned to the dialogue audio source.
@@ -862,6 +863,352 @@ namespace StoryFlow
                 result.Add(copy);
             }
             return result;
+        }
+
+        /// <summary>
+        /// Sets a boolean array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="values">New element values. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetBoolArrayVariable(string variableName, List<bool> values, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetBoolArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (values != null)
+            {
+                foreach (var b in values)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Boolean,
+                        BoolValue = b
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets an integer array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="values">New element values. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetIntArrayVariable(string variableName, List<int> values, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (values != null)
+            {
+                foreach (var i in values)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Integer,
+                        IntValue = i
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets a float array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="values">New element values. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetFloatArrayVariable(string variableName, List<float> values, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetFloatArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (values != null)
+            {
+                foreach (var f in values)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Float,
+                        FloatValue = f
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets a string array variable by its display name. Pass raw runtime strings — they are
+        /// stored as-is and round-tripped cleanly through <see cref="GetArrayVariable"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="values">New element values. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// <para>
+        /// Localization: stored values are language-locked. They bypass the strings table and will
+        /// not be re-translated when <see cref="LanguageCode"/> changes. Prefer this for IDs, flags,
+        /// or player input; for translatable display text, set the value at the editor variable
+        /// default and leave it for the strings table to resolve.
+        /// </para>
+        /// </remarks>
+        public void SetStringArrayVariable(string variableName, List<string> values, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (values != null)
+            {
+                foreach (var s in values)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.String,
+                        StringValue = s ?? ""
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets an enum array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="values">New element values (enum option strings). A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// <para>
+        /// Localization: stored values are language-locked. They bypass the strings table and will
+        /// not be re-translated when <see cref="LanguageCode"/> changes. Enum values are typically
+        /// code-like identifiers, so this rarely matters in practice.
+        /// </para>
+        /// </remarks>
+        public void SetEnumArrayVariable(string variableName, List<string> values, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetEnumArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (values != null)
+            {
+                foreach (var e in values)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Enum,
+                        EnumValue = e ?? ""
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets an image array variable by its display name. Each entry is the asset key used by
+        /// the runtime to resolve a Unity sprite via <see cref="ResolveAsset{T}"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="assetKeys">New asset keys. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetImageArrayVariable(string variableName, List<string> assetKeys, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetImageArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (assetKeys != null)
+            {
+                foreach (var key in assetKeys)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Image,
+                        StringValue = key ?? ""
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets an audio array variable by its display name. Each entry is the asset key used by
+        /// the runtime to resolve a Unity AudioClip via <see cref="ResolveAsset{T}"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="assetKeys">New asset keys. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetAudioArrayVariable(string variableName, List<string> assetKeys, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetAudioArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (assetKeys != null)
+            {
+                foreach (var key in assetKeys)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Audio,
+                        StringValue = key ?? ""
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Sets a character array variable by its display name. Each entry is the character path
+        /// used by the runtime to resolve character data via <see cref="GetCharacterVariable"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="characterPaths">New character paths. A null list is treated as an empty array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void SetCharacterArrayVariable(string variableName, List<string> characterPaths, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] SetCharacterArrayVariable: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            var newArray = new List<StoryFlowVariant>();
+            if (characterPaths != null)
+            {
+                foreach (var path in characterPaths)
+                {
+                    newArray.Add(new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.Character,
+                        StringValue = path ?? ""
+                    });
+                }
+            }
+
+            variable.Value.ArrayValue = newArray;
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        // Re-renders the current dialogue node after a public Set*ArrayVariable call so that
+        // option visibility and text interpolation pick up the new array values. Mirrors the
+        // fallthrough in BooleanNodeHandler.SetNodeFallthrough but calls ProcessNode directly
+        // because the public setter runs outside the iterative ProcessNode loop. The re-entry
+        // guard prevents recursion when the setter is called from inside OnDialogueUpdated.
+        private void RefreshCurrentDialogueAfterArraySet()
+        {
+            if (_isRefreshingDialogue) return;
+            if (_context == null || string.IsNullOrEmpty(_context.LastDialogueNodeId)) return;
+
+            var dialogueNode = _context.CurrentScript?.GetNode(_context.LastDialogueNodeId);
+            if (dialogueNode == null) return;
+
+            _context.EnteringDialogueViaEdge = false;
+            _isRefreshingDialogue = true;
+            try { ProcessNode(dialogueNode); }
+            finally { _isRefreshingDialogue = false; }
         }
 
         /// <summary>
