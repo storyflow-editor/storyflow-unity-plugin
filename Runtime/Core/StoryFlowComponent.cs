@@ -1484,6 +1484,11 @@ namespace StoryFlow
         // Mirrors the fallthrough in BooleanNodeHandler.SetNodeFallthrough but calls ProcessNode
         // directly because the public setter runs outside the iterative ProcessNode loop. The
         // re-entry guard prevents recursion when the setter is called from inside OnDialogueUpdated.
+        // Clears all node CachedOutput values so option-visibility conditions that read array
+        // length or findIn*Array indices via integer/float comparison chains see fresh values
+        // rather than caches from the previous render. ProcessBooleanChain only walks boolean
+        // chains, so without this clear, integer/float caches downstream of comparisons leak
+        // stale results between renders.
         private void RefreshCurrentDialogueAfterArraySet()
         {
             if (_isRefreshingDialogue) return;
@@ -1492,6 +1497,7 @@ namespace StoryFlow
             var dialogueNode = _context.CurrentScript?.GetNode(_context.LastDialogueNodeId);
             if (dialogueNode == null) return;
 
+            _context.ClearNodeRuntimeStates();
             _context.EnteringDialogueViaEdge = false;
             _isRefreshingDialogue = true;
             try { ProcessNode(dialogueNode); }
