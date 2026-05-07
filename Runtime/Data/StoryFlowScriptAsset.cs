@@ -277,23 +277,23 @@ namespace StoryFlow.Data
                         return edge;
                 }
 
-                // Fallback: prefix match for handles with a trailing numeric option ID.
-                // The editor appends a numeric suffix to handles (e.g., "string-2", "string-array-1")
-                // while the runtime constants omit it (e.g., "string", "string-array"). Only accept
-                // a purely numeric trailing segment to prevent the suffix "string" from matching
-                // "string-array-1" or "boolean" from matching "boolean-condition".
+                // Fallback: prefix match for handles with a single trailing token (no further
+                // hyphen). The editor appends a single suffix segment to handles — usually a
+                // numeric option ID like "string-2" / "string-array-1", but sometimes a literal
+                // keyword like "string-array-array" (forEach array input) or "boolean-condition"
+                // (Branch). The runtime constants omit it (e.g., "string", "string-array"), so we
+                // accept any one-token suffix. Rejecting anything with an internal hyphen prevents
+                // the suffix "string" from incorrectly matching "string-array-1" / "string-array-array"
+                // (the array-input handles), or "string-array" from matching "string-array-param-XXX"
+                // (the runScript-param handles, which are resolved via exact match instead).
                 var prefix = targetHandle + "-";
                 foreach (var edge in edges)
                 {
                     if (edge.TargetHandle == null || !edge.TargetHandle.StartsWith(prefix)) continue;
                     var rest = edge.TargetHandle.Substring(prefix.Length);
                     if (rest.Length == 0) continue;
-                    bool allDigits = true;
-                    for (int i = 0; i < rest.Length; i++)
-                    {
-                        if (rest[i] < '0' || rest[i] > '9') { allDigits = false; break; }
-                    }
-                    if (allDigits) return edge;
+                    if (rest.IndexOf('-') >= 0) continue;
+                    return edge;
                 }
             }
             return null;
