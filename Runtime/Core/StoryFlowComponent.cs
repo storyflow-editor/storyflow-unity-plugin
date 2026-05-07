@@ -1192,11 +1192,298 @@ namespace StoryFlow
             RefreshCurrentDialogueAfterArraySet();
         }
 
-        // Re-renders the current dialogue node after a public Set*ArrayVariable call so that
-        // option visibility and text interpolation pick up the new array values. Mirrors the
-        // fallthrough in BooleanNodeHandler.SetNodeFallthrough but calls ProcessNode directly
-        // because the public setter runs outside the iterative ProcessNode loop. The re-entry
-        // guard prevents recursion when the setter is called from inside OnDialogueUpdated.
+        /// <summary>
+        /// Appends a boolean to a boolean array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="value">Element to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddBoolArrayElement(string variableName, bool value, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddBoolArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Boolean,
+                BoolValue = value
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends an integer to an integer array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="value">Element to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddIntArrayElement(string variableName, int value, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddIntArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Integer,
+                IntValue = value
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends a float to a float array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="value">Element to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddFloatArrayElement(string variableName, float value, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddFloatArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Float,
+                FloatValue = value
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends a string to a string array variable by its display name. Pass a raw runtime
+        /// string — it is stored as-is and round-tripped cleanly through <see cref="GetArrayVariable"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="value">Element to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// <para>
+        /// Localization: stored values are language-locked. They bypass the strings table and will
+        /// not be re-translated when <see cref="LanguageCode"/> changes. Prefer this for IDs, flags,
+        /// or player input; for translatable display text, set the value at the editor variable
+        /// default and leave it for the strings table to resolve.
+        /// </para>
+        /// </remarks>
+        public void AddStringArrayElement(string variableName, string value, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddStringArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.String,
+                StringValue = value ?? ""
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends an enum option to an enum array variable by its display name.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="value">Element to append at the end of the array (enum option string).</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// <para>
+        /// Localization: stored values are language-locked. They bypass the strings table and will
+        /// not be re-translated when <see cref="LanguageCode"/> changes. Enum values are typically
+        /// code-like identifiers, so this rarely matters in practice.
+        /// </para>
+        /// </remarks>
+        public void AddEnumArrayElement(string variableName, string value, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddEnumArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Enum,
+                EnumValue = value ?? ""
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends an asset key to an image array variable by its display name. The key is the
+        /// identifier the runtime uses to resolve a Unity sprite via <see cref="ResolveAsset{T}"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="assetKey">Asset key to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddImageArrayElement(string variableName, string assetKey, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddImageArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Image,
+                StringValue = assetKey ?? ""
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends an asset key to an audio array variable by its display name. The key is the
+        /// identifier the runtime uses to resolve a Unity AudioClip via <see cref="ResolveAsset{T}"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="assetKey">Asset key to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddAudioArrayElement(string variableName, string assetKey, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddAudioArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Audio,
+                StringValue = assetKey ?? ""
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        /// <summary>
+        /// Appends a character path to a character array variable by its display name. The path
+        /// is the identifier the runtime uses to resolve character data via <see cref="GetCharacterVariable"/>.
+        /// </summary>
+        /// <param name="variableName">Display name of the array variable.</param>
+        /// <param name="characterPath">Character path to append at the end of the array.</param>
+        /// <param name="global">When true, targets only the global scope; otherwise searches local first then global.</param>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// </remarks>
+        public void AddCharacterArrayElement(string variableName, string characterPath, bool global = false)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] AddCharacterArrayElement: variable \"{variableName}\" not found.");
+                return;
+            }
+
+            if (variable.Value.ArrayValue == null)
+                variable.Value.ArrayValue = new List<StoryFlowVariant>();
+
+            variable.Value.ArrayValue.Add(new StoryFlowVariant
+            {
+                Type = StoryFlowVariableType.Character,
+                StringValue = characterPath ?? ""
+            });
+
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
+        // Re-renders the current dialogue node after a public Set*ArrayVariable / Add*ArrayElement
+        // call so that option visibility and text interpolation pick up the new array values.
+        // Mirrors the fallthrough in BooleanNodeHandler.SetNodeFallthrough but calls ProcessNode
+        // directly because the public setter runs outside the iterative ProcessNode loop. The
+        // re-entry guard prevents recursion when the setter is called from inside OnDialogueUpdated.
         private void RefreshCurrentDialogueAfterArraySet()
         {
             if (_isRefreshingDialogue) return;
