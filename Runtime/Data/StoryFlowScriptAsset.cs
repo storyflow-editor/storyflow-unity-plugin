@@ -277,14 +277,23 @@ namespace StoryFlow.Data
                         return edge;
                 }
 
-                // Fallback: prefix match for handles with trailing option ID.
-                // The editor appends a numbered suffix to handles (e.g., "string-2", "string-array-1")
-                // while the runtime constants omit it (e.g., "string", "string-array").
+                // Fallback: prefix match for handles with a trailing numeric option ID.
+                // The editor appends a numeric suffix to handles (e.g., "string-2", "string-array-1")
+                // while the runtime constants omit it (e.g., "string", "string-array"). Only accept
+                // a purely numeric trailing segment to prevent the suffix "string" from matching
+                // "string-array-1" or "boolean" from matching "boolean-condition".
                 var prefix = targetHandle + "-";
                 foreach (var edge in edges)
                 {
-                    if (edge.TargetHandle != null && edge.TargetHandle.StartsWith(prefix))
-                        return edge;
+                    if (edge.TargetHandle == null || !edge.TargetHandle.StartsWith(prefix)) continue;
+                    var rest = edge.TargetHandle.Substring(prefix.Length);
+                    if (rest.Length == 0) continue;
+                    bool allDigits = true;
+                    for (int i = 0; i < rest.Length; i++)
+                    {
+                        if (rest[i] < '0' || rest[i] > '9') { allDigits = false; break; }
+                    }
+                    if (allDigits) return edge;
                 }
             }
             return null;
