@@ -76,6 +76,12 @@ namespace StoryFlow.Execution
 
         private static bool EvaluateFromNodeInternal(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
+            // Forward-compat: warn once per dialogue run when a script wires an
+            // unrecognized node type into a boolean input. Returning the silent default
+            // here can flip branch direction; the log gives the author a signal.
+            if (ctx.MaybeWarnUnknownNode(node))
+                return false;
+
             switch (node.Type)
             {
                 case StoryFlowNodeType.GetBool:

@@ -91,6 +91,14 @@ namespace StoryFlow.Execution
         /// <summary>Per-node cached runtime states.</summary>
         private readonly Dictionary<string, NodeRuntimeState> nodeRuntimeStates = new();
 
+        /// <summary>
+        /// Tracks source node IDs for which an "unsupported node type" warning has already
+        /// been logged during the current dialogue run. Prevents log spam when the same
+        /// unknown node is read by an evaluator multiple times per pass.
+        /// Reset by <see cref="Initialize"/> and <see cref="Reset"/>.
+        /// </summary>
+        private readonly HashSet<string> warnedUnknownNodes = new();
+
         /// <summary>Current recursion depth for expression evaluation.</summary>
         public int EvaluationDepth { get; set; }
 
@@ -174,6 +182,7 @@ namespace StoryFlow.Execution
             ShouldPause = false;
             LastDialogueNodeId = null;
             EnteringDialogueViaEdge = false;
+            warnedUnknownNodes.Clear();
         }
 
         // =====================================================================
@@ -309,6 +318,27 @@ namespace StoryFlow.Execution
         {
             foreach (var kvp in nodeRuntimeStates)
                 kvp.Value.ClearCache();
+        }
+
+        /// <summary>
+        /// Logs a one-shot warning when an evaluator is asked to read a value from a node
+        /// whose type the plugin does not recognize (<see cref="StoryFlowNodeType.Unknown"/>).
+        /// Subsequent reads of the same node within the current dialogue run are silent so
+        /// the console does not flood. Returns true if the node was Unknown (the caller
+        /// should then fall through to its default-value path), false otherwise.
+        /// </summary>
+        public bool MaybeWarnUnknownNode(StoryFlowNode node)
+        {
+            if (node == null || node.Type != StoryFlowNodeType.Unknown)
+                return false;
+
+            if (warnedUnknownNodes.Add(node.Id))
+            {
+                var typeName = !string.IsNullOrEmpty(node.RawType) ? node.RawType : node.Type.ToString();
+                Debug.LogWarning($"[StoryFlow] Unsupported node type '{typeName}' at node {node.Id}, returning default value");
+            }
+
+            return true;
         }
 
         // =====================================================================
@@ -576,6 +606,7 @@ namespace StoryFlow.Execution
             loopStack.Clear();
             localVariables.Clear();
             nodeRuntimeStates.Clear();
+            warnedUnknownNodes.Clear();
 
             localVariableNameIndex = null;
             globalVariableNameIndex = null;

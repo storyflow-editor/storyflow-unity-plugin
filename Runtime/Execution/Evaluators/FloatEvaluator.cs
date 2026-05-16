@@ -73,6 +73,11 @@ namespace StoryFlow.Execution
 
         private static float EvaluateFromNodeInternal(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
+            // Forward-compat: warn once per dialogue run when a script wires an
+            // unrecognized node type into a float input.
+            if (ctx.MaybeWarnUnknownNode(node))
+                return 0f;
+
             switch (node.Type)
             {
                 case StoryFlowNodeType.GetFloat:

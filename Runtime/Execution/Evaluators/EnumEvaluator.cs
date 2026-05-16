@@ -73,6 +73,11 @@ namespace StoryFlow.Execution
 
         private static string EvaluateFromNodeInternal(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
+            // Forward-compat: warn once per dialogue run when a script wires an
+            // unrecognized node type into an enum input.
+            if (ctx.MaybeWarnUnknownNode(node))
+                return "";
+
             switch (node.Type)
             {
                 case StoryFlowNodeType.GetEnum:

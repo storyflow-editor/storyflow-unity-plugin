@@ -73,6 +73,12 @@ namespace StoryFlow.Execution
 
         private static int EvaluateFromNodeInternal(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
+            // Forward-compat: warn once per dialogue run when a script wires an
+            // unrecognized node type into an integer input. The silent default would
+            // otherwise let SetInt and friends quietly store 0 from a newer node type.
+            if (ctx.MaybeWarnUnknownNode(node))
+                return 0;
+
             switch (node.Type)
             {
                 case StoryFlowNodeType.GetInt:

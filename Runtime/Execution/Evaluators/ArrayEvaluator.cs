@@ -55,6 +55,11 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
+            // Forward-compat: warn once per dialogue run when a script wires an
+            // unrecognized node type into an array input.
+            if (ctx.MaybeWarnUnknownNode(sourceNode))
+                return new List<StoryFlowVariant>();
+
             // Handle getCharacterVar nodes that can return arrays
             if (sourceNode.Type == StoryFlowNodeType.GetCharacterVar)
             {
@@ -116,6 +121,11 @@ namespace StoryFlow.Execution
 
             try
             {
+                // Forward-compat: warn once per dialogue run when a script wires an
+                // unrecognized node type into a typed-array input.
+                if (ctx.MaybeWarnUnknownNode(node))
+                    return new List<StoryFlowVariant>();
+
                 // Handle getCharacterVar nodes that can return arrays
                 if (node.Type == StoryFlowNodeType.GetCharacterVar)
                 {
