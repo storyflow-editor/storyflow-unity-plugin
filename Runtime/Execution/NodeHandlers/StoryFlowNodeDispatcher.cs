@@ -300,7 +300,11 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
                 else
                 {
-                    Debug.LogWarning($"[StoryFlow] No handler registered for node type: {node.Type} (node {node.Id})");
+                    // Unknown node type: log and follow the default outgoing edge so
+                    // newer scripts do not freeze on plugin versions that predate the
+                    // node type. Custom handlers are responsible for their own advance.
+                    Debug.LogWarning($"[StoryFlow] Unsupported node type '{typeName}' at node {node.Id}, skipping");
+                    component.ProcessNextNodeFromSource(node.Id);
                 }
             }
         }
