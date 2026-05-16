@@ -48,6 +48,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
                 characterData.Name = val;
+                component.BroadcastCharacterVariableChanged(characterPath, variableName, StoryFlowVariant.String(val));
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }
@@ -57,6 +58,7 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_Image);
                 characterData.ImageAssetKey = val;
+                component.BroadcastCharacterVariableChanged(characterPath, variableName, StoryFlowVariant.String(val));
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }
@@ -120,6 +122,7 @@ namespace StoryFlow.Execution.NodeHandlers
 
             component.Trace($"VAR SET \"{characterPath}.{variableName}\" global=false value={targetVar.Value}");
             component.BroadcastVariableChanged(targetVar, false);
+            component.BroadcastCharacterVariableChanged(characterPath, variableName, targetVar.Value);
 
             FollowFlowOrFallthrough(component, context, node);
         }

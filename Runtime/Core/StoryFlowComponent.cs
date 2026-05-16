@@ -80,6 +80,13 @@ namespace StoryFlow
         /// <summary>Fired when a variable value changes during execution. Parameters: the variable, isGlobal flag.</summary>
         public event Action<StoryFlowVariable, bool> OnVariableChanged;
 
+        /// <summary>
+        /// Fired when a character variable changes during execution. Parameters: characterPath, variableName, value.
+        /// Fires for the built-in "Name" and "Image" fields as well as custom character variables, so non-speaker
+        /// UIs can react to SetCharacterVar mutations without inspecting the dialogue state.
+        /// </summary>
+        public event Action<string, string, StoryFlowVariant> OnCharacterVariableChanged;
+
         /// <summary>Fired when execution enters a new script via RunScript. Parameter: script path.</summary>
         public event Action<string> OnScriptStarted;
 
@@ -802,6 +809,14 @@ namespace StoryFlow
                 return result;
             }
 
+            // Handle built-in "Image" field (current portrait asset key)
+            if (string.Equals(varName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var result = new StoryFlowVariant();
+                result.SetString(characterData.ImageAssetKey ?? "");
+                return result;
+            }
+
             var v = characterData.FindVariableByName(varName);
             if (v != null)
                 return v.Value;
@@ -837,6 +852,80 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Returns the live runtime character data for a path, or null if no character is
+        /// registered there. Useful when game code needs to read several fields without making
+        /// a separate <see cref="GetCharacterVariable"/> call per field.
+        /// </summary>
+        public StoryFlowCharacterData GetCharacter(string characterPath)
+        {
+            return FindCharacter(characterPath);
+        }
+
+        /// <summary>
+        /// Returns the names of all custom variables defined on a character.
+        /// Does not include the built-in "Name" and "Image" fields, which are always
+        /// available via <see cref="GetCharacterVariable"/> regardless of declaration.
+        /// Returns an empty list if the character is missing.
+        /// </summary>
+        public List<string> GetCharacterVariables(string characterPath)
+        {
+            var out_ = new List<string>();
+            var characterData = FindCharacter(characterPath);
+            if (characterData == null) return out_;
+
+            if (characterData.VariablesList != null)
+            {
+                foreach (var v in characterData.VariablesList)
+                {
+                    if (v != null && !string.IsNullOrEmpty(v.Name))
+                        out_.Add(v.Name);
+                }
+            }
+            else if (characterData.Variables != null)
+            {
+                foreach (var kvp in characterData.Variables)
+                    out_.Add(kvp.Key);
+            }
+            return out_;
+        }
+
+        /// <summary>
+        /// Resolves a character's portrait to a Sprite.
+        /// When <paramref name="assetKey"/> is empty (default), uses the character's current
+        /// <see cref="StoryFlowCharacterData.ImageAssetKey"/>, which reflects any runtime mutations
+        /// from SetCharacterVar("Image", ...). Pass a non-empty asset key to resolve an alternate
+        /// pose, e.g. one stored in a custom image-typed character variable.
+        /// Walks the standard three asset pools in priority order: character → script → project.
+        /// Returns null if nothing resolves.
+        /// </summary>
+        public Sprite GetCharacterPortrait(string characterPath, string assetKey = "")
+        {
+            var characterData = FindCharacter(characterPath);
+            if (characterData == null) return null;
+
+            var key = !string.IsNullOrEmpty(assetKey) ? assetKey : characterData.ImageAssetKey;
+            if (string.IsNullOrEmpty(key)) return null;
+
+            // 1. Check the character asset's resolved-asset pool first.
+            var project = GetProject();
+            if (project != null)
+            {
+                var normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(characterPath);
+                var characterAsset = project.GetCharacterAsset(normalizedPath);
+                if (characterAsset != null &&
+                    characterAsset.ResolvedAssets != null &&
+                    characterAsset.ResolvedAssets.TryGetValue(key, out var charAsset) &&
+                    charAsset is Sprite charSprite)
+                {
+                    return charSprite;
+                }
+            }
+
+            // 2. Fall back to the standard script → project cascade.
+            return ResolveAsset<Sprite>(key);
+        }
+
+        /// <summary>
         /// Gets an array variable by its display name.
         /// Returns a list of StoryFlowVariant elements — call GetString(), GetInt(), etc. on each.
         /// String and enum values are resolved through the string table automatically.
@@ -863,6 +952,47 @@ namespace StoryFlow
                 result.Add(copy);
             }
             return result;
+        }
+
+        /// <summary>
+        /// Reads a script or global variable of type character-array and returns the character
+        /// paths stored in it. Each path is suitable for <see cref="GetCharacter"/>,
+        /// <see cref="GetCharacterVariable"/>, and <see cref="GetCharacterPortrait"/>.
+        /// </summary>
+        /// <remarks>
+        /// This reads a <em>script variable whose element type is character</em>, which is distinct
+        /// from <see cref="GetCharacterVariable"/>, which reads a variable that lives <em>on</em> a
+        /// character. Returns an empty list with a warning when the variable is missing, not an
+        /// array, or not a character array.
+        /// </remarks>
+        public List<string> GetCharacterArrayVariable(string variableName)
+        {
+            var out_ = new List<string>();
+            var variable = FindVariableByName(variableName, false);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] GetCharacterArrayVariable: variable \"{variableName}\" not found.");
+                return out_;
+            }
+            if (!variable.IsArray)
+            {
+                Debug.LogWarning($"[StoryFlow] GetCharacterArrayVariable: variable \"{variableName}\" is not an array.");
+                return out_;
+            }
+            if (variable.Type != StoryFlowVariableType.Character)
+            {
+                Debug.LogWarning($"[StoryFlow] GetCharacterArrayVariable: variable \"{variableName}\" is not a character array.");
+                return out_;
+            }
+
+            var array = variable.Value?.ArrayValue;
+            if (array == null) return out_;
+            foreach (var item in array)
+            {
+                if (item != null)
+                    out_.Add(item.StringValue ?? "");
+            }
+            return out_;
         }
 
         /// <summary>
@@ -1679,6 +1809,16 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Broadcasts a character variable change notification. Fires alongside (not instead of)
+        /// <see cref="OnVariableChanged"/> when a SetCharacterVar node mutates the built-in
+        /// "Name"/"Image" fields or a custom character variable.
+        /// </summary>
+        internal void BroadcastCharacterVariableChanged(string characterPath, string variableName, StoryFlowVariant value)
+        {
+            OnCharacterVariableChanged?.Invoke(characterPath, variableName, value);
+        }
+
+        /// <summary>
         /// Logs an error and broadcasts it to listeners.
         /// </summary>
         internal void BroadcastError(string message)
@@ -1845,6 +1985,7 @@ namespace StoryFlow
             OnDialogueUpdated = null;
             OnDialogueEnded = null;
             OnVariableChanged = null;
+            OnCharacterVariableChanged = null;
             OnError = null;
             OnAudioPlayRequested = null;
             OnBackgroundImageChanged = null;
