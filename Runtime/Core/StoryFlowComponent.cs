@@ -21,6 +21,8 @@ namespace StoryFlow
         Default,
         /// <summary>Large character portrait anchored to bottom center of screen, separate from the dialogue panel.</summary>
         Portrait,
+        /// <summary>No fallback UI is created. Use when handling dialogue rendering yourself via C# events on StoryFlowComponent.</summary>
+        None,
     }
 
     /// <summary>
@@ -43,10 +45,10 @@ namespace StoryFlow
         public string LanguageCode = "en";
 
         [Header("UI")]
-        [Tooltip("Optional dialogue UI handler. Receives dialogue state updates for rendering. When not assigned, a built-in UI is auto-created based on the selected style.")]
+        [Tooltip("Optional dialogue UI handler. Receives dialogue state updates for rendering. When not assigned, a built-in UI is auto-created based on the selected UI Style (or skipped entirely when UIStyle is set to None).")]
         public StoryFlowDialogueUI DialogueUI;
 
-        [Tooltip("Built-in UI style used when no DialogueUI is assigned. Default shows the character portrait inside the dialogue panel. Portrait shows a large character image anchored to the bottom center of the screen.")]
+        [Tooltip("Built-in UI style used when no DialogueUI is assigned. Default shows the character portrait inside the dialogue panel. Portrait shows a large character image anchored to the bottom center of the screen. None disables the fallback so you can handle rendering yourself via C# events.")]
         public BuiltInUIStyle UIStyle = BuiltInUIStyle.Default;
 
         [Header("Debugging")]
@@ -256,8 +258,8 @@ namespace StoryFlow
             // Notify manager
             manager.NotifyDialogueStarted();
 
-            // Auto-create fallback UI if none assigned
-            if (DialogueUI == null)
+            // Auto-create fallback UI if none assigned (unless explicitly disabled via UIStyle = None)
+            if (DialogueUI == null && UIStyle != BuiltInUIStyle.None)
             {
                 CreateFallbackUI();
             }
