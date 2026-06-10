@@ -144,6 +144,20 @@ namespace StoryFlow.Data
             return MapValue ??= new List<StoryFlowMapEntry>();
         }
 
+        /// <summary>
+        /// DELIBERATELY aliases this variant's map storage to the source variant's LIVE
+        /// entry list (no copy). Used by setMap on script/global variable chains: the HTML
+        /// runtime assigns the _runtimeMap REFERENCE, so after setMap(b ← getMap(a)) a later
+        /// clearMap(a) also empties b. Clears the array storage (array/map mutual exclusivity,
+        /// same rule as <see cref="SetMap"/>).
+        /// </summary>
+        public void SetMapAlias(StoryFlowVariant source)
+        {
+            Type = StoryFlowVariableType.Map;
+            MapValue = source?.GetMap() ?? new List<StoryFlowMapEntry>();
+            ArrayValue = null;
+        }
+
         public void Reset()
         {
             BoolValue = false;

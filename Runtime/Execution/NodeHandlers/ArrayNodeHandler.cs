@@ -277,7 +277,8 @@ namespace StoryFlow.Execution.NodeHandlers
         }
 
         /// <summary>
-        /// Continues the next iteration of a forEach loop.
+        /// Continues the next iteration of a forEach loop (array or map — the dispatcher
+        /// re-routes the loop node to the right handler by node type).
         /// Called when loop body execution reaches a Set* node with no outgoing edge,
         /// or when the loop body naturally completes back to the forEach node.
         /// </summary>
@@ -286,7 +287,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
             var runtimeState = context.GetNodeRuntimeState(loopNodeId);
 
-            if (runtimeState.LoopArray == null)
+            if (runtimeState.LoopArray == null && runtimeState.LoopMapEntries == null)
             {
                 Debug.LogWarning($"[StoryFlow] ContinueForEachLoop: no active loop for node {loopNodeId}.");
                 return;

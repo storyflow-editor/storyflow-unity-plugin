@@ -47,14 +47,16 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
-                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
+                // ForEach nodes and map reads — skip evaluation cache (cross-type conflicts /
+                // live map storage; see the matching block in BooleanEvaluator for the rationale)
+                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
+                                 EvaluatorHelpers.IsMapReadNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (!isForEach && state.CachedOutput != null)
+                if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetEnum();
 
                 string result = EvaluateFromNodeInternal(ctx, node);
-                if (!isForEach)
+                if (!skipCache)
                     state.CachedOutput = StoryFlowVariant.Enum(result);
 
                 if (ctx.TraceEnabled)
@@ -125,6 +127,31 @@ namespace StoryFlow.Execution
                             }
                         }
                     }
+                    return "";
+                }
+
+                // Map op branches on the node's keyType/valueType data (K/V in node data —
+                // see the BooleanEvaluator map arms for the pattern note)
+                case StoryFlowNodeType.GetMapValue:
+                {
+                    if (node.GetData("valueType") == "enum")
+                    {
+                        MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
+                        return mapValue?.GetEnum() ?? "";
+                    }
+                    return "";
+                }
+
+                // forEachMap Key/Value (enum) — discriminate by SourceHandle suffix; see
+                // the BooleanEvaluator's ForEachMap arm for the full pattern note
+                case StoryFlowNodeType.ForEachMap:
+                {
+                    var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.EndsWith("-key") && node.GetData("keyType") == "enum")
+                        return runtimeState.LoopKey?.GetEnum() ?? "";
+                    if (sourceHandle.EndsWith("-value") && node.GetData("valueType") == "enum")
+                        return runtimeState.LoopValue?.GetEnum() ?? "";
                     return "";
                 }
 

@@ -49,15 +49,21 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
-                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
+                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts.
+                // Map reads (getMapValue/hasMapKey/mapSize) are never memoized either: maps
+                // resolve to LIVE variable storage and in-place mutations must be observable
+                // on the next read (see EvaluatorHelpers.IsMapReadNode). forEachMap key/value
+                // reads come from the iteration snapshot, not the live map, but forEachMap
+                // is already cache-exempt via IsForEachNode.
+                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
+                                 EvaluatorHelpers.IsMapReadNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (!isForEach && state.CachedOutput != null)
+                if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetBool();
 
                 bool result = EvaluateFromNodeInternal(ctx, node);
 
-                if (!isForEach)
+                if (!skipCache)
                     state.CachedOutput = StoryFlowVariant.Bool(result);
 
                 if (ctx.TraceEnabled)
@@ -348,6 +354,47 @@ namespace StoryFlow.Execution
                     {
                         return runtimeState.LoopArray[runtimeState.LoopIndex].GetBool();
                     }
+                    return false;
+                }
+
+                // Map op arms branch on the node's OWN keyType/valueType data strings — a
+                // NEW pattern for these evaluators: catalog map ops carry K/V in node data,
+                // unlike array ops which encode the element type in the node type itself.
+                case StoryFlowNodeType.GetMapValue:
+                {
+                    // getMapValue exposes two outputs sharing one node:
+                    //   "source-{id}-{valueType}-value" and "source-{id}-boolean-isValid".
+                    // Discriminate by SourceHandle suffix (precedent: runScript "-out-" parsing).
+                    bool found = MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.EndsWith("-isValid"))
+                        return found; // IsValid is always boolean, regardless of valueType
+                    if (node.GetData("valueType") == "boolean")
+                        return mapValue?.GetBool() ?? false;
+                    return false;
+                }
+
+                case StoryFlowNodeType.HasMapKey:
+                {
+                    // Key FIRST, then the map — input-order parity with the HTML runtime
+                    var key = MapEvaluator.EvaluateMapOpKeyInput(ctx, node, "2");
+                    var map = MapEvaluator.EvaluateMapInput(ctx, node, "1");
+                    return map != null && MapEvaluator.FindMapEntryByKey(map, node.GetData("keyType"), key) >= 0;
+                }
+
+                // forEachMap Key/Value — two outputs share one node:
+                //   "source-{id}-{keyType}-key" and "source-{id}-{valueType}-value".
+                // Reads come from the iteration SNAPSHOT (LoopKey/LoopValue), which survives
+                // the per-iteration cache clear. keyType can't be "boolean" per spec — the
+                // key branch is unreachable, included for symmetry with the other evaluators.
+                case StoryFlowNodeType.ForEachMap:
+                {
+                    var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.EndsWith("-key") && node.GetData("keyType") == "boolean")
+                        return runtimeState.LoopKey?.GetBool() ?? false;
+                    if (sourceHandle.EndsWith("-value") && node.GetData("valueType") == "boolean")
+                        return runtimeState.LoopValue?.GetBool() ?? false;
                     return false;
                 }
 

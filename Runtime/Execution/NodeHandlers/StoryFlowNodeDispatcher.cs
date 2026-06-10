@@ -265,6 +265,22 @@ namespace StoryFlow.Execution.NodeHandlers
             // ================================================================
             Handlers[StoryFlowNodeType.GetCharacterVar] = NoOp;
             Handlers[StoryFlowNodeType.SetCharacterVar] = CharacterVarNodeHandler.HandleSetCharacterVar;
+
+            // ================================================================
+            // Map Variables
+            // ================================================================
+            Handlers[StoryFlowNodeType.GetMap] = NoOp;
+            Handlers[StoryFlowNodeType.SetMap] = MapNodeHandler.HandleSetMap;
+            Handlers[StoryFlowNodeType.GetMapValue] = NoOp;
+            Handlers[StoryFlowNodeType.SetMapValue] = MapNodeHandler.HandleMapModify;
+            Handlers[StoryFlowNodeType.HasMapKey] = NoOp;
+            Handlers[StoryFlowNodeType.MapSize] = NoOp;
+            Handlers[StoryFlowNodeType.MapKeys] = NoOp;
+            Handlers[StoryFlowNodeType.MapValues] = NoOp;
+            Handlers[StoryFlowNodeType.RemoveMapKey] = MapNodeHandler.HandleMapModify;
+            Handlers[StoryFlowNodeType.ClearMap] = MapNodeHandler.HandleMapModify;
+            // Map entry iteration (snapshot-at-init semantics — see HandleForEachMap)
+            Handlers[StoryFlowNodeType.ForEachMap] = MapNodeHandler.HandleForEachMap;
         }
 
         /// <summary>

@@ -64,6 +64,48 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
+            // Map-typed character variables take a dedicated path: resolve the wired map
+            // input (optionId "input") and SNAPSHOT it into the character's own storage.
+            // HTML parity (updateCharacterVariable → setCharacterVariableValue): the
+            // character stores an independent copy, never an alias of the source
+            // variable's live map.
+            if (variableType == "map")
+            {
+                // Missing K/V types: the map input handle cannot be built — HTML
+                // short-circuits with NO write (and no trace), but exec still continues.
+                if (string.IsNullOrEmpty(node.GetData("keyType")) || string.IsNullOrEmpty(node.GetData("valueType")))
+                {
+                    FollowFlowOrFallthrough(component, context, node);
+                    return;
+                }
+
+                // Unwired or unresolved → empty (HTML defaults the new value to a fresh Map)
+                var newEntries = MapEvaluator.CopyEntries(
+                    MapEvaluator.EvaluateMapInput(context, node, "input"));
+
+                // Trace shape matches the map pin on HandleSetMap (size=, not value=).
+                // HTML traces before the write check — trace-then-gate order is parity.
+                component.Trace($"VAR SET \"{characterPath}.{variableName}\" global=false size={newEntries.Count}");
+
+                // Write only when the variable exists and is map-typed (HTML's
+                // setCharacterVariableValue type-mismatch → false, no write). Name/Image
+                // built-ins are never map-typed, so the custom-variable lookup suffices.
+                var mapVar = characterData.FindVariableByName(variableName);
+                if (mapVar != null && mapVar.Type == StoryFlowVariableType.Map)
+                {
+                    mapVar.Value.SetMap(newEntries); // fresh storage — never aliases the source
+                    component.BroadcastVariableChanged(mapVar, false);
+                    component.BroadcastCharacterVariableChanged(characterPath, variableName, mapVar.Value);
+                }
+                else
+                {
+                    Debug.LogWarning($"[StoryFlow] SetCharacterVar: map write skipped - variable '{variableName}' on '{characterPath}' missing or not map-typed (node {node.Id}).");
+                }
+
+                FollowFlowOrFallthrough(component, context, node);
+                return;
+            }
+
             // Find the variable in the character's variables list
             StoryFlowVariable targetVar = characterData.FindVariableByName(variableName);
 

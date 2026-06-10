@@ -88,6 +88,12 @@ namespace StoryFlow.Execution
                 return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
             }
 
+            // mapKeys/mapValues project the resolved map's entries into a FRESH array
+            if (sourceNode.Type == StoryFlowNodeType.MapKeys || sourceNode.Type == StoryFlowNodeType.MapValues)
+            {
+                return ProjectMapEntries(ctx, sourceNode);
+            }
+
             var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
@@ -167,6 +173,12 @@ namespace StoryFlow.Execution
                     return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
+                // mapKeys/mapValues project the resolved map's entries into a FRESH array
+                if (node.Type == StoryFlowNodeType.MapKeys || node.Type == StoryFlowNodeType.MapValues)
+                {
+                    return ProjectMapEntries(ctx, node);
+                }
+
                 // Array-producing nodes: GetXxxArray, SetXxxArray
                 var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
@@ -182,6 +194,28 @@ namespace StoryFlow.Execution
             {
                 ctx.EvaluationDepth--;
             }
+        }
+
+        /// <summary>
+        /// Projects a mapKeys/mapValues node's resolved map (input "1") into a fresh array,
+        /// in insertion order. Typed per the node's keyType/valueType: keys come out as
+        /// key-typed variants, values as value-typed variants. FRESH per pull — elements are
+        /// deep copies, so the projected array never aliases the live map's entry variants,
+        /// and the result is never cached (live map mutations must be visible on re-pull).
+        /// </summary>
+        private static List<StoryFlowVariant> ProjectMapEntries(StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            var map = MapEvaluator.EvaluateMapInput(ctx, node, "1");
+            var result = new List<StoryFlowVariant>(map?.Count ?? 0);
+            if (map == null) return result;
+
+            bool keys = node.Type == StoryFlowNodeType.MapKeys;
+            foreach (var entry in map)
+            {
+                var element = keys ? entry.Key : entry.Value;
+                result.Add(element != null ? new StoryFlowVariant(element) : new StoryFlowVariant());
+            }
+            return result;
         }
 
         /// <summary>

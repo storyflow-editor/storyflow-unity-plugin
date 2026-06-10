@@ -47,14 +47,16 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
-                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
+                // ForEach nodes and map reads — skip evaluation cache (cross-type conflicts /
+                // live map storage; see the matching block in BooleanEvaluator for the rationale)
+                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
+                                 EvaluatorHelpers.IsMapReadNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (!isForEach && state.CachedOutput != null)
+                if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetFloat();
 
                 float result = EvaluateFromNodeInternal(ctx, node);
-                if (!isForEach)
+                if (!skipCache)
                     state.CachedOutput = StoryFlowVariant.Float(result);
 
                 if (ctx.TraceEnabled)
@@ -172,6 +174,32 @@ namespace StoryFlow.Execution
                     {
                         return runtimeState.LoopArray[runtimeState.LoopIndex].GetFloat();
                     }
+                    return 0f;
+                }
+
+                // Map op branches on the node's valueType data (K/V in node data — see the
+                // BooleanEvaluator map arms for the pattern note)
+                case StoryFlowNodeType.GetMapValue:
+                {
+                    if (node.GetData("valueType") == "float")
+                    {
+                        MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
+                        return mapValue?.GetFloat() ?? 0f;
+                    }
+                    return 0f;
+                }
+
+                // forEachMap Key/Value (float) — discriminate by SourceHandle suffix; see
+                // the BooleanEvaluator's ForEachMap arm for the full pattern note. keyType
+                // can't be "float" per spec — the key branch is unreachable, kept for symmetry.
+                case StoryFlowNodeType.ForEachMap:
+                {
+                    var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.EndsWith("-key") && node.GetData("keyType") == "float")
+                        return runtimeState.LoopKey?.GetFloat() ?? 0f;
+                    if (sourceHandle.EndsWith("-value") && node.GetData("valueType") == "float")
+                        return runtimeState.LoopValue?.GetFloat() ?? 0f;
                     return 0f;
                 }
 

@@ -31,6 +31,27 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.ForEachImageLoop:
                 case StoryFlowNodeType.ForEachCharacterLoop:
                 case StoryFlowNodeType.ForEachAudioLoop:
+                case StoryFlowNodeType.ForEachMap:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns true if the node type is a pure map read (getMapValue/hasMapKey/mapSize).
+        /// Map reads are never memoized: maps resolve to LIVE variable storage and in-place
+        /// mutations (setMapValue/removeMapKey/clearMap) must be observable on the next read.
+        /// The HTML runtime recomputes map reads inline the same way. mapKeys/mapValues flow
+        /// through ArrayEvaluator, which has no cache, so they need no entry here.
+        /// </summary>
+        internal static bool IsMapReadNode(StoryFlowNodeType type)
+        {
+            switch (type)
+            {
+                case StoryFlowNodeType.GetMapValue:
+                case StoryFlowNodeType.HasMapKey:
+                case StoryFlowNodeType.MapSize:
                     return true;
                 default:
                     return false;

@@ -47,14 +47,16 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
-                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
+                // ForEach nodes and map reads — skip evaluation cache (cross-type conflicts /
+                // live map storage; see the matching block in BooleanEvaluator for the rationale)
+                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
+                                 EvaluatorHelpers.IsMapReadNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (!isForEach && state.CachedOutput != null)
+                if (!skipCache && state.CachedOutput != null)
                     return ctx.ResolveStringKey(state.CachedOutput.GetString());
 
                 string result = EvaluateFromNodeInternal(ctx, node);
-                if (!isForEach)
+                if (!skipCache)
                     state.CachedOutput = StoryFlowVariant.String(result);
 
                 if (ctx.TraceEnabled)
@@ -215,6 +217,45 @@ namespace StoryFlow.Execution
                         runtimeState.LoopIndex < runtimeState.LoopArray.Count)
                     {
                         return runtimeState.LoopArray[runtimeState.LoopIndex].GetString();
+                    }
+                    return "";
+                }
+
+                // Map op branches on the node's valueType data (K/V in node data — see the
+                // BooleanEvaluator map arms for the pattern note). All string-family value
+                // types funnel through here; enum values live in EnumValue, hence the
+                // type-gated read via MapEvaluator.AsText.
+                case StoryFlowNodeType.GetMapValue:
+                {
+                    var mapValueType = node.GetData("valueType");
+                    if (mapValueType == "string" || mapValueType == "enum" || mapValueType == "image" ||
+                        mapValueType == "character" || mapValueType == "audio")
+                    {
+                        MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
+                        return mapValue != null ? MapEvaluator.AsText(mapValue) : "";
+                    }
+                    return "";
+                }
+
+                // forEachMap Key/Value (string-family) — discriminate by SourceHandle suffix;
+                // see the BooleanEvaluator's ForEachMap arm for the full pattern note. Keys
+                // cover string/enum; values cover the full string family.
+                case StoryFlowNodeType.ForEachMap:
+                {
+                    var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    var mapKeyType = node.GetData("keyType");
+                    var mapValueType = node.GetData("valueType");
+                    if (sourceHandle.EndsWith("-key") && runtimeState.LoopKey != null &&
+                        (mapKeyType == "string" || mapKeyType == "enum"))
+                    {
+                        return MapEvaluator.AsText(runtimeState.LoopKey);
+                    }
+                    if (sourceHandle.EndsWith("-value") && runtimeState.LoopValue != null &&
+                        (mapValueType == "string" || mapValueType == "enum" || mapValueType == "image" ||
+                         mapValueType == "character" || mapValueType == "audio"))
+                    {
+                        return MapEvaluator.AsText(runtimeState.LoopValue);
                     }
                     return "";
                 }

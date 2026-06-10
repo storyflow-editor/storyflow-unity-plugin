@@ -89,6 +89,19 @@ namespace StoryFlow.Execution
         /// <summary>The array being iterated for forEach nodes.</summary>
         public List<StoryFlowVariant> LoopArray;
 
+        /// <summary>
+        /// The entry snapshot being iterated for forEachMap nodes. Like <see cref="LoopArray"/>,
+        /// deliberately NOT wiped by <see cref="ClearCache"/> — the loop handler clears
+        /// evaluation caches between iterations and the loop fields must survive that.
+        /// </summary>
+        public List<StoryFlowMapEntry> LoopMapEntries;
+
+        /// <summary>Current entry's key for forEachMap (read via the "-key" source handle).</summary>
+        public StoryFlowVariant LoopKey;
+
+        /// <summary>Current entry's value for forEachMap (read via the "-value" source handle).</summary>
+        public StoryFlowVariant LoopValue;
+
         /// <summary>Named output values (used by RunScript nodes for typed outputs).</summary>
         public Dictionary<string, StoryFlowVariant> OutputValues;
 

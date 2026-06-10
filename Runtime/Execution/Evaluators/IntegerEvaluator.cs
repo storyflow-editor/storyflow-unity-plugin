@@ -47,14 +47,16 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts
-                bool isForEach = EvaluatorHelpers.IsForEachNode(node.Type);
+                // ForEach nodes and map reads — skip evaluation cache (cross-type conflicts /
+                // live map storage; see the matching block in BooleanEvaluator for the rationale)
+                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
+                                 EvaluatorHelpers.IsMapReadNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
-                if (!isForEach && state.CachedOutput != null)
+                if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetInt();
 
                 int result = EvaluateFromNodeInternal(ctx, node);
-                if (!isForEach)
+                if (!skipCache)
                     state.CachedOutput = StoryFlowVariant.Int(result);
 
                 if (ctx.TraceEnabled)
@@ -299,6 +301,39 @@ namespace StoryFlow.Execution
                         return runtimeState.LoopArray[runtimeState.LoopIndex].GetInt();
                     }
                     return runtimeState.LoopIndex;
+                }
+
+                // Map ops branch on the node's keyType/valueType data (K/V in node data —
+                // see the BooleanEvaluator map arms for the pattern note)
+                case StoryFlowNodeType.MapSize:
+                {
+                    // Unresolved/missing-K-V map input falls through to 0 (HTML runtime parity)
+                    var map = MapEvaluator.EvaluateMapInput(ctx, node, "1");
+                    return map?.Count ?? 0;
+                }
+
+                case StoryFlowNodeType.GetMapValue:
+                {
+                    if (node.GetData("valueType") == "integer")
+                    {
+                        MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
+                        return mapValue?.GetInt() ?? 0;
+                    }
+                    return 0;
+                }
+
+                // forEachMap Key/Value (integer) — discriminate by SourceHandle suffix
+                // ("-key"/"-value"); reads come from the iteration snapshot, see the
+                // BooleanEvaluator's ForEachMap arm for the full pattern note
+                case StoryFlowNodeType.ForEachMap:
+                {
+                    var runtimeState = ctx.GetNodeRuntimeState(node.Id);
+                    string sourceHandle = ctx.LastSourceHandle ?? "";
+                    if (sourceHandle.EndsWith("-key") && node.GetData("keyType") == "integer")
+                        return runtimeState.LoopKey?.GetInt() ?? 0;
+                    if (sourceHandle.EndsWith("-value") && node.GetData("valueType") == "integer")
+                        return runtimeState.LoopValue?.GetInt() ?? 0;
+                    return 0;
                 }
 
                 // GetCharacterVar / SetCharacterVar returning integer

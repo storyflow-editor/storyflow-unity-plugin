@@ -61,6 +61,28 @@ namespace StoryFlow.Data
         public const string In_AudioInput = "audio-audio-input";
         public const string In_CharacterInput = "character-character-input";
 
+        // Map handles — the key/value types are baked into the handle ID itself:
+        //   Source: "source-{nodeId}-map-{keyType}-{valueType}"             (no optionId)
+        //   Target: "target-{nodeId}-map-{keyType}-{valueType}-{optionId}"
+        // Target optionIds: "1" (pure reads: getMapValue/hasMapKey/mapSize/mapKeys/
+        // mapValues), "2" (setMap + mutators: setMapValue/removeMapKey/clearMap),
+        // "map" (forEachMap), "input" (setCharacterVar's map input) — optionIds are
+        // NOT always digits, so map handles must be resolved by EXACT match only.
+        // FindInputEdge's prefix fallback already rejects multi-hyphen rests, so a
+        // short suffix like "map" can never accidentally match these handles.
+
+        /// <summary>Builds a map source handle suffix: "map-{keyType}-{valueType}".</summary>
+        public static string OutMap(string keyType, string valueType)
+        {
+            return string.Concat("map-", keyType, "-", valueType);
+        }
+
+        /// <summary>Builds a map target handle suffix: "map-{keyType}-{valueType}-{optionId}".</summary>
+        public static string InMap(string keyType, string valueType, string optionId)
+        {
+            return string.Concat("map-", keyType, "-", valueType, "-", optionId);
+        }
+
         public static string Source(string nodeId, string suffix = "")
         {
             return string.Concat("source-", nodeId, "-", suffix);

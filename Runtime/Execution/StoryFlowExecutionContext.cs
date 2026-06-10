@@ -99,6 +99,13 @@ namespace StoryFlow.Execution
         /// </summary>
         private readonly HashSet<string> warnedUnknownNodes = new();
 
+        /// <summary>
+        /// Tracks map op node IDs already warned about missing keyType/valueType data
+        /// during the current dialogue run (same dedup pattern as <see cref="warnedUnknownNodes"/>).
+        /// Reset by <see cref="Initialize"/> and <see cref="Reset"/>.
+        /// </summary>
+        private readonly HashSet<string> warnedMapNodes = new();
+
         /// <summary>Current recursion depth for expression evaluation.</summary>
         public int EvaluationDepth { get; set; }
 
@@ -188,6 +195,7 @@ namespace StoryFlow.Execution
             LastDialogueNodeId = null;
             EnteringDialogueViaEdge = false;
             warnedUnknownNodes.Clear();
+            warnedMapNodes.Clear();
         }
 
         // =====================================================================
@@ -346,6 +354,25 @@ namespace StoryFlow.Execution
             return true;
         }
 
+        /// <summary>
+        /// Logs a one-shot warning when a map op node is missing its keyType/valueType
+        /// data (the map input handle cannot be built without them, so resolution fails
+        /// to defaults). Deduped per node per dialogue run. Returns true if the warning
+        /// condition holds (caller should fall through to its default-value path).
+        /// </summary>
+        public bool MaybeWarnMissingMapTypes(StoryFlowNode node)
+        {
+            if (node == null) return true;
+
+            if (warnedMapNodes.Add(node.Id))
+            {
+                var typeName = !string.IsNullOrEmpty(node.RawType) ? node.RawType : node.Type.ToString();
+                Debug.LogWarning($"[StoryFlow] Map node '{typeName}' at node {node.Id} is missing keyType/valueType data, returning default value");
+            }
+
+            return true;
+        }
+
         // =====================================================================
         // Call Stack (RunScript — cross-script calls with return)
         // =====================================================================
@@ -370,9 +397,19 @@ namespace StoryFlow.Execution
                     : null,
             };
 
-            // Deep copy current local variables
+            // Deep copy current local variables. Map storage is deliberately re-pointed at
+            // the LIVE entry list afterwards: HTML call frames hold live variable references
+            // (runtime-core.js pushCallStack saves gameState.variables.slice()), so map
+            // aliasing established before a runScript call must survive the call and restore
+            // (the Unreal port shares map storage the same way via TSharedPtr). Scalars and
+            // arrays keep the pre-existing deep-copy semantics.
             foreach (var kvp in localVariables)
-                frame.SavedLocalVariables[kvp.Key] = new StoryFlowVariable(kvp.Value);
+            {
+                var copy = new StoryFlowVariable(kvp.Value);
+                if (kvp.Value.Type == StoryFlowVariableType.Map)
+                    copy.Value.MapValue = kvp.Value.Value.MapValue;
+                frame.SavedLocalVariables[kvp.Key] = copy;
+            }
 
             // Save flow call stack
             foreach (var ff in flowCallStack)
@@ -412,10 +449,20 @@ namespace StoryFlow.Execution
                 {
                     copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
                 }
-                // Same for maps (MapValue is [NonSerialized] too)
-                if (copy.Type == StoryFlowVariableType.Map && copy.Value.MapValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                if (copy.Type == StoryFlowVariableType.Map)
                 {
-                    copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
+                    if (kvp.Value.Value.MapValue != null)
+                    {
+                        // Restore the SAVED live entry list, not a copy — map aliasing
+                        // (with globals or sibling locals) must survive the runScript
+                        // round-trip. See the matching share in PushCallFrame.
+                        copy.Value.MapValue = kvp.Value.Value.MapValue;
+                    }
+                    else if (!string.IsNullOrEmpty(copy.DefaultValueJson))
+                    {
+                        // MapValue is [NonSerialized]; re-hydrate like arrays when lost
+                        copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
+                    }
                 }
                 localVariables[kvp.Key] = copy;
             }
