@@ -61,6 +61,12 @@ namespace StoryFlow.Data
             public string DefaultValueJson;
             public bool IsArray;
             public List<string> EnumValues = new();
+
+            // Map variables only (Type == StoryFlowVariableType.Map)
+            public StoryFlowVariableType KeyType;
+            public StoryFlowVariableType ValueType;
+            public List<string> KeyEnumValues = new();
+            public List<string> ValueEnumValues = new();
         }
 
         [Serializable]
@@ -103,9 +109,15 @@ namespace StoryFlow.Data
                     Type = entry.Type,
                     IsArray = entry.IsArray,
                     EnumValues = entry.EnumValues != null ? new List<string>(entry.EnumValues) : new List<string>(),
-                    Value = entry.IsArray
-                        ? StoryFlowVariant.DeserializeArrayFromJson(entry.Type, entry.DefaultValueJson)
-                        : DeserializeVariant(entry.Type, entry.DefaultValueJson)
+                    KeyType = entry.KeyType,
+                    ValueType = entry.ValueType,
+                    KeyEnumValues = entry.KeyEnumValues != null ? new List<string>(entry.KeyEnumValues) : new List<string>(),
+                    ValueEnumValues = entry.ValueEnumValues != null ? new List<string>(entry.ValueEnumValues) : new List<string>(),
+                    Value = entry.Type == StoryFlowVariableType.Map
+                        ? StoryFlowVariant.DeserializeMapFromJson(entry.KeyType, entry.ValueType, entry.DefaultValueJson)
+                        : entry.IsArray
+                            ? StoryFlowVariant.DeserializeArrayFromJson(entry.Type, entry.DefaultValueJson)
+                            : DeserializeVariant(entry.Type, entry.DefaultValueJson)
                 };
                 _globalVariables[entry.Id] = variable;
             }

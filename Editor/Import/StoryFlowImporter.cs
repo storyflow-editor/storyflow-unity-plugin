@@ -224,6 +224,19 @@ namespace StoryFlow.Editor
             // Character Variables
             { "getCharacterVar", StoryFlowNodeType.GetCharacterVar },
             { "setCharacterVar", StoryFlowNodeType.SetCharacterVar },
+
+            // Map Variables
+            { "getMap", StoryFlowNodeType.GetMap },
+            { "setMap", StoryFlowNodeType.SetMap },
+            { "getMapValue", StoryFlowNodeType.GetMapValue },
+            { "setMapValue", StoryFlowNodeType.SetMapValue },
+            { "hasMapKey", StoryFlowNodeType.HasMapKey },
+            { "mapSize", StoryFlowNodeType.MapSize },
+            { "mapKeys", StoryFlowNodeType.MapKeys },
+            { "mapValues", StoryFlowNodeType.MapValues },
+            { "removeMapKey", StoryFlowNodeType.RemoveMapKey },
+            { "clearMap", StoryFlowNodeType.ClearMap },
+            { "forEachMap", StoryFlowNodeType.ForEachMap },
         };
 
         // ================================================================
@@ -240,6 +253,7 @@ namespace StoryFlow.Editor
             { "image", StoryFlowVariableType.Image },
             { "audio", StoryFlowVariableType.Audio },
             { "character", StoryFlowVariableType.Character },
+            { "map", StoryFlowVariableType.Map },
         };
 
         // Supported image file extensions
@@ -561,7 +575,23 @@ namespace StoryFlow.Editor
                     bool isArray = varObj.Value<bool?>("isArray") ?? false;
 
                     var varType = ParseVariableType(varTypeName);
-                    var defaultValue = ParseDefaultValue(varType, varObj["value"], isArray);
+
+                    // Map variables carry declared key/value types and per-side enum values
+                    var keyType = default(StoryFlowVariableType);
+                    var valueType = default(StoryFlowVariableType);
+                    var keyEnumValues = new List<string>();
+                    var valueEnumValues = new List<string>();
+                    if (varType == StoryFlowVariableType.Map)
+                        ParseMapTypeInfo(varObj, out keyType, out valueType, out keyEnumValues, out valueEnumValues);
+
+                    // Map default values are an ordered [{key,value},...] entry array,
+                    // typed per the declared key/value types — not a scalar
+                    var defaultValue = varType == StoryFlowVariableType.Map
+                        ? StoryFlowVariant.DeserializeMapFromJson(keyType, valueType,
+                            varObj["value"] is JArray mapEntries
+                                ? mapEntries.ToString(Newtonsoft.Json.Formatting.None)
+                                : null)
+                        : ParseDefaultValue(varType, varObj["value"], isArray);
 
                     variables.Add(new StoryFlowVariable
                     {
@@ -570,7 +600,11 @@ namespace StoryFlow.Editor
                         Type = varType,
                         Value = defaultValue,
                         IsArray = isArray,
-                        DefaultValueJson = isArray && varObj["value"] != null
+                        KeyType = keyType,
+                        ValueType = valueType,
+                        KeyEnumValues = keyEnumValues,
+                        ValueEnumValues = valueEnumValues,
+                        DefaultValueJson = (isArray || varType == StoryFlowVariableType.Map) && varObj["value"] != null
                             ? varObj["value"].ToString(Newtonsoft.Json.Formatting.None)
                             : null
                     });
@@ -609,7 +643,8 @@ namespace StoryFlow.Editor
                 var serializedNode = new StoryFlowScriptAsset.SerializedNode
                 {
                     Id = nodeId,
-                    Type = ParseNodeType(nodeTypeStr)
+                    Type = ParseNodeType(nodeTypeStr),
+                    RawType = nodeTypeStr
                 };
 
                 // Flatten all non-structural fields into the Data dictionary
@@ -713,6 +748,14 @@ namespace StoryFlow.Editor
 
                 var varType = ParseVariableType(varTypeName);
 
+                // Map variables carry declared key/value types and per-side enum values
+                var keyType = default(StoryFlowVariableType);
+                var valueType = default(StoryFlowVariableType);
+                var keyEnumValues = new List<string>();
+                var valueEnumValues = new List<string>();
+                if (varType == StoryFlowVariableType.Map)
+                    ParseMapTypeInfo(varObj, out keyType, out valueType, out keyEnumValues, out valueEnumValues);
+
                 // Serialize the default value to a string
                 string defaultValueJson = SerializeDefaultValue(varType, varObj["value"], isArray);
 
@@ -734,7 +777,11 @@ namespace StoryFlow.Editor
                     IsArray = isArray,
                     EnumValues = enumValues,
                     IsInput = isInput,
-                    IsOutput = isOutput
+                    IsOutput = isOutput,
+                    KeyType = keyType,
+                    ValueType = valueType,
+                    KeyEnumValues = keyEnumValues,
+                    ValueEnumValues = valueEnumValues
                 });
             }
 
@@ -1059,6 +1106,15 @@ namespace StoryFlow.Editor
             bool isArray = varObj.Value<bool?>("isArray") ?? false;
 
             var varType = ParseVariableType(typeName);
+
+            // Map variables carry declared key/value types and per-side enum values
+            var keyType = default(StoryFlowVariableType);
+            var valueType = default(StoryFlowVariableType);
+            var keyEnumValues = new List<string>();
+            var valueEnumValues = new List<string>();
+            if (varType == StoryFlowVariableType.Map)
+                ParseMapTypeInfo(varObj, out keyType, out valueType, out keyEnumValues, out valueEnumValues);
+
             string defaultValueJson = SerializeDefaultValue(varType, varObj["value"], isArray);
 
             var enumValues = new List<string>();
@@ -1076,7 +1132,11 @@ namespace StoryFlow.Editor
                 Type = varType,
                 DefaultValueJson = defaultValueJson,
                 IsArray = isArray,
-                EnumValues = enumValues
+                EnumValues = enumValues,
+                KeyType = keyType,
+                ValueType = valueType,
+                KeyEnumValues = keyEnumValues,
+                ValueEnumValues = valueEnumValues
             };
         }
 
@@ -1107,6 +1167,34 @@ namespace StoryFlow.Editor
         }
 
         /// <summary>
+        /// Parses a map variable's declared keyType/valueType and per-side enum value lists.
+        /// Wire shape: keyType 'string'|'integer'|'enum'; valueType any of the 8 scalar types.
+        /// </summary>
+        private static void ParseMapTypeInfo(JObject varObj,
+            out StoryFlowVariableType keyType, out StoryFlowVariableType valueType,
+            out List<string> keyEnumValues, out List<string> valueEnumValues)
+        {
+            keyType = ParseVariableType(varObj.Value<string>("keyType") ?? "string");
+            valueType = ParseVariableType(varObj.Value<string>("valueType") ?? "string");
+
+            keyEnumValues = new List<string>();
+            JArray keyEnumArr = varObj.Value<JArray>("keyEnumValues");
+            if (keyEnumArr != null)
+            {
+                foreach (var ev in keyEnumArr)
+                    keyEnumValues.Add(ev.ToString());
+            }
+
+            valueEnumValues = new List<string>();
+            JArray valueEnumArr = varObj.Value<JArray>("valueEnumValues");
+            if (valueEnumArr != null)
+            {
+                foreach (var ev in valueEnumArr)
+                    valueEnumValues.Add(ev.ToString());
+            }
+        }
+
+        /// <summary>
         /// Serializes a variable's default value to a string for storage.
         /// </summary>
         private static string SerializeDefaultValue(StoryFlowVariableType type, JToken valueToken, bool isArray)
@@ -1114,9 +1202,12 @@ namespace StoryFlow.Editor
             if (valueToken == null || valueToken.Type == JTokenType.Null)
                 return "";
 
-            if (isArray)
+            if (isArray || type == StoryFlowVariableType.Map)
             {
-                // Arrays are stored as their JSON representation
+                // Arrays and maps are stored as their raw JSON representation. Map entries
+                // ([{key,value},...]) persist verbatim: keys are raw identifiers (never
+                // localized) and string-typed values are strings-table keys, resolved at
+                // runtime read time.
                 return valueToken.ToString(Newtonsoft.Json.Formatting.None);
             }
 

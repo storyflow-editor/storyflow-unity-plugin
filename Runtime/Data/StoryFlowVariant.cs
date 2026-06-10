@@ -6,6 +6,20 @@ using UnityEngine;
 
 namespace StoryFlow.Data
 {
+    /// <summary>
+    /// One map entry. Entry ORDER is observable through mapKeys/mapValues/forEachMap and is
+    /// contractual (must match the editor's serialized order), so map storage is an ordered
+    /// entry list, NOT a Dictionary — C# Dictionary iteration order is not guaranteed.
+    /// Reference semantics on Key/Value give natural aliasing within a chain; boundaries
+    /// that need isolation deep-copy via the StoryFlowVariant copy constructor.
+    /// </summary>
+    [Serializable]
+    public class StoryFlowMapEntry
+    {
+        public StoryFlowVariant Key;
+        public StoryFlowVariant Value;
+    }
+
     [Serializable]
     public class StoryFlowVariant
     {
@@ -16,6 +30,7 @@ namespace StoryFlow.Data
         public string StringValue = "";
         public string EnumValue = "";
         [NonSerialized] public List<StoryFlowVariant> ArrayValue;
+        [NonSerialized] public List<StoryFlowMapEntry> MapValue;
 
         public StoryFlowVariant()
         {
@@ -35,6 +50,16 @@ namespace StoryFlow.Data
                 ArrayValue = new List<StoryFlowVariant>(other.ArrayValue.Count);
                 foreach (var item in other.ArrayValue)
                     ArrayValue.Add(new StoryFlowVariant(item));
+            }
+            if (other.MapValue != null)
+            {
+                MapValue = new List<StoryFlowMapEntry>(other.MapValue.Count);
+                foreach (var entry in other.MapValue)
+                    MapValue.Add(new StoryFlowMapEntry
+                    {
+                        Key = new StoryFlowVariant(entry.Key),
+                        Value = new StoryFlowVariant(entry.Value)
+                    });
             }
         }
 
@@ -103,6 +128,22 @@ namespace StoryFlow.Data
             return ArrayValue ??= new List<StoryFlowVariant>();
         }
 
+        /// <summary>
+        /// Assigns map entries. A variant holds either array or map data, never both,
+        /// so the array storage is cleared (mutual exclusivity).
+        /// </summary>
+        public void SetMap(List<StoryFlowMapEntry> entries)
+        {
+            Type = StoryFlowVariableType.Map;
+            MapValue = entries ?? new List<StoryFlowMapEntry>();
+            ArrayValue = null;
+        }
+
+        public List<StoryFlowMapEntry> GetMap()
+        {
+            return MapValue ??= new List<StoryFlowMapEntry>();
+        }
+
         public void Reset()
         {
             BoolValue = false;
@@ -111,6 +152,7 @@ namespace StoryFlow.Data
             StringValue = "";
             EnumValue = "";
             ArrayValue = null;
+            MapValue = null;
         }
 
         public override string ToString()
@@ -125,6 +167,9 @@ namespace StoryFlow.Data
                 StoryFlowVariableType.Image => StringValue,
                 StoryFlowVariableType.Audio => StringValue,
                 StoryFlowVariableType.Character => StringValue,
+                // Map display formatting is deliberately deferred — interpolation of maps
+                // is out of contract; maps render as an empty string
+                StoryFlowVariableType.Map => "",
                 _ => ""
             };
         }
@@ -200,6 +245,69 @@ namespace StoryFlow.Data
             }
 
             return variant;
+        }
+
+        /// <summary>
+        /// Deserializes a map StoryFlowVariant from a JSON entry-array string
+        /// (e.g. [{"key":"a","value":1},...]). Entry order is contractual and preserved.
+        /// Keys are raw identifiers — never strings-table keys — typed per the declared
+        /// keyType (integer keys parse numerically). String-family values store the
+        /// exported strings-table key / asset id VERBATIM; resolution happens at read time.
+        /// Tolerant: malformed JSON degrades to an empty map, entries without a key are skipped.
+        /// </summary>
+        public static StoryFlowVariant DeserializeMapFromJson(
+            StoryFlowVariableType keyType, StoryFlowVariableType valueType, string json)
+        {
+            var variant = new StoryFlowVariant { Type = StoryFlowVariableType.Map };
+            variant.MapValue = new List<StoryFlowMapEntry>();
+
+            if (string.IsNullOrEmpty(json)) return variant;
+
+            try
+            {
+                var array = JArray.Parse(json);
+                foreach (var item in array)
+                {
+                    var entryObj = item as JObject;
+                    if (entryObj == null) continue;
+
+                    // An entry without a key is unaddressable — skip it
+                    JToken keyToken = entryObj["key"];
+                    if (keyToken == null || keyToken.Type == JTokenType.Null)
+                    {
+                        Debug.LogWarning("[StoryFlow] Skipping map entry with missing key " +
+                                         $"in map JSON '{json}'.");
+                        continue;
+                    }
+
+                    variant.MapValue.Add(new StoryFlowMapEntry
+                    {
+                        Key = DeserializeFromJson(keyType, TokenToInvariantString(keyToken)),
+                        Value = DeserializeFromJson(valueType, TokenToInvariantString(entryObj["value"]))
+                    });
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StoryFlow] Failed to parse map value ({keyType} → {valueType}) " +
+                                 $"from JSON '{json}': {e.Message}. Treating it as an empty map.");
+                variant.MapValue.Clear();
+            }
+
+            return variant;
+        }
+
+        /// <summary>
+        /// Renders a JSON token as plain text with invariant culture for numerics, so
+        /// values round-trip regardless of the process culture (Newtonsoft preserves
+        /// number types). Null tokens render as "" (callers get the type default).
+        /// </summary>
+        private static string TokenToInvariantString(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null) return "";
+            return token is JValue jValue && jValue.Value is IFormattable formattable
+                ? formattable.ToString(null, CultureInfo.InvariantCulture)
+                : token.ToString();
         }
 
         /// <summary>

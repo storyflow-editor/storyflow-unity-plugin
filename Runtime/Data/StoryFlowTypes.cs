@@ -194,6 +194,19 @@ namespace StoryFlow.Data
         // Character variables
         GetCharacterVar,
         SetCharacterVar,
+
+        // Map variables
+        GetMap,
+        SetMap,
+        GetMapValue,
+        SetMapValue,
+        HasMapKey,
+        MapSize,
+        MapKeys,
+        MapValues,
+        RemoveMapKey,
+        ClearMap,
+        ForEachMap,
     }
 
     public enum StoryFlowVariableType
@@ -206,5 +219,6 @@ namespace StoryFlow.Data
         Image,
         Audio,
         Character,
+        Map,
     }
 }

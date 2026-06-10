@@ -72,11 +72,20 @@ namespace StoryFlow.Utilities
         }
 
         /// <summary>
-        /// Rehydrates a saved variable's value, honoring its IsArray flag.
+        /// Rehydrates a saved variable's value, honoring its Map type / IsArray flag.
         /// Counterpart of <see cref="ToSavedVariable"/>.
         /// </summary>
         public static StoryFlowVariant DeserializeSavedVariable(SavedVariable savedVariable)
         {
+            // Maps cannot be WRITTEN to saves yet (ToSavedVariable serializes maps with the
+            // map node handlers); the branch is here for uniformity with the other rehydration
+            // sites and tolerates pre-map saves — missing entry data yields an empty map.
+            if (savedVariable.Type == StoryFlowVariableType.Map)
+            {
+                return StoryFlowVariant.DeserializeMapFromJson(
+                    savedVariable.KeyType, savedVariable.ValueType, savedVariable.ValueJson);
+            }
+
             return savedVariable.IsArray
                 ? StoryFlowVariant.DeserializeArrayFromJson(savedVariable.Type, savedVariable.ValueJson)
                 : StoryFlowVariant.DeserializeFromJson(savedVariable.Type, savedVariable.ValueJson);

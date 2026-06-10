@@ -266,6 +266,11 @@ namespace StoryFlow.Execution.NodeHandlers
                     {
                         copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
                     }
+                    // Same for maps (MapValue is [NonSerialized] too)
+                    if (copy.Type == StoryFlowVariableType.Map && copy.Value.MapValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                    {
+                        copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
+                    }
                     newLocals[kvp.Key] = copy;
                 }
             }

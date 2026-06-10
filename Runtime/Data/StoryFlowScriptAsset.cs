@@ -46,6 +46,14 @@ namespace StoryFlow.Data
         {
             public string Id;
             public StoryFlowNodeType Type;
+
+            /// <summary>
+            /// The original type string from the JSON export (e.g. "setBool"). Carried through
+            /// to StoryFlowNode.RawType so unknown-node logs name the real type and string-keyed
+            /// custom handlers can dispatch on it.
+            /// </summary>
+            public string RawType;
+
             public List<SerializedKV> Data = new();
         }
 
@@ -67,6 +75,12 @@ namespace StoryFlow.Data
             public List<string> EnumValues = new();
             public bool IsInput;
             public bool IsOutput;
+
+            // Map variables only (Type == StoryFlowVariableType.Map)
+            public StoryFlowVariableType KeyType;
+            public StoryFlowVariableType ValueType;
+            public List<string> KeyEnumValues = new();
+            public List<string> ValueEnumValues = new();
         }
 
         [Serializable]
@@ -152,7 +166,7 @@ namespace StoryFlow.Data
             _nodes = new Dictionary<string, StoryFlowNode>(serializedNodes.Count);
             foreach (var sn in serializedNodes)
             {
-                var node = new StoryFlowNode { Id = sn.Id, Type = sn.Type };
+                var node = new StoryFlowNode { Id = sn.Id, Type = sn.Type, RawType = sn.RawType };
                 foreach (var kv in sn.Data)
                     node.Data[kv.Key] = kv.Value;
                 _nodes[sn.Id] = node;
@@ -170,9 +184,15 @@ namespace StoryFlow.Data
                     EnumValues = sv.EnumValues != null ? new List<string>(sv.EnumValues) : new List<string>(),
                     IsInput = sv.IsInput,
                     IsOutput = sv.IsOutput,
-                    Value = sv.IsArray
-                        ? StoryFlowVariant.DeserializeArrayFromJson(sv.Type, sv.DefaultValueJson)
-                        : DeserializeVariant(sv.Type, sv.DefaultValueJson)
+                    KeyType = sv.KeyType,
+                    ValueType = sv.ValueType,
+                    KeyEnumValues = sv.KeyEnumValues != null ? new List<string>(sv.KeyEnumValues) : new List<string>(),
+                    ValueEnumValues = sv.ValueEnumValues != null ? new List<string>(sv.ValueEnumValues) : new List<string>(),
+                    Value = sv.Type == StoryFlowVariableType.Map
+                        ? StoryFlowVariant.DeserializeMapFromJson(sv.KeyType, sv.ValueType, sv.DefaultValueJson)
+                        : sv.IsArray
+                            ? StoryFlowVariant.DeserializeArrayFromJson(sv.Type, sv.DefaultValueJson)
+                            : DeserializeVariant(sv.Type, sv.DefaultValueJson)
                 };
                 _variables[sv.Id] = variable;
             }

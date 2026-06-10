@@ -161,6 +161,11 @@ namespace StoryFlow.Execution
                     {
                         copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
                     }
+                    // Same for maps (MapValue is [NonSerialized] too)
+                    if (copy.Type == StoryFlowVariableType.Map && copy.Value.MapValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                    {
+                        copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
+                    }
                     localVariables[kvp.Key] = copy;
                 }
             }
@@ -406,6 +411,11 @@ namespace StoryFlow.Execution
                 if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
                 {
                     copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                }
+                // Same for maps (MapValue is [NonSerialized] too)
+                if (copy.Type == StoryFlowVariableType.Map && copy.Value.MapValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                {
+                    copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
                 }
                 localVariables[kvp.Key] = copy;
             }
