@@ -262,6 +262,48 @@ namespace StoryFlow.Data
         }
 
         /// <summary>
+        /// Serializes a map StoryFlowVariant to the JSON entry-array dialect
+        /// (e.g. [{"key":"a","value":1},...]) that <see cref="DeserializeMapFromJson"/>
+        /// consumes — the same shape the editor exports. Entry order is preserved,
+        /// keys/values write as native JSON types (numbers/bools unquoted), keyless
+        /// entries are skipped (unaddressable). Returns "[]" when the map is empty/unset.
+        /// </summary>
+        public string SerializeMapToJson()
+        {
+            var array = new JArray();
+            if (MapValue != null)
+            {
+                foreach (var entry in MapValue)
+                {
+                    if (entry?.Key == null) continue;
+                    array.Add(new JObject
+                    {
+                        ["key"] = VariantToJsonToken(entry.Key),
+                        ["value"] = VariantToJsonToken(entry.Value)
+                    });
+                }
+            }
+            return array.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>
+        /// Renders a scalar variant as a native JSON token (number/bool kept as JSON
+        /// types so DeserializeMapFromJson's invariant-culture parse round-trips them;
+        /// string-family and enum values write their stored text verbatim).
+        /// </summary>
+        private static JToken VariantToJsonToken(StoryFlowVariant variant)
+        {
+            if (variant == null) return "";
+            return variant.Type switch
+            {
+                StoryFlowVariableType.Boolean => variant.BoolValue,
+                StoryFlowVariableType.Integer => variant.IntValue,
+                StoryFlowVariableType.Float => variant.FloatValue,
+                _ => variant.ToString()
+            };
+        }
+
+        /// <summary>
         /// Deserializes a map StoryFlowVariant from a JSON entry-array string
         /// (e.g. [{"key":"a","value":1},...]). Entry order is contractual and preserved.
         /// Keys are raw identifiers — never strings-table keys — typed per the declared

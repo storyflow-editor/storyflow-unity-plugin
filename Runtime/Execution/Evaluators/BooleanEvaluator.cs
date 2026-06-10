@@ -328,11 +328,12 @@ namespace StoryFlow.Execution
                     return false;
                 }
 
-                // GetBoolArrayElement returns boolean
+                // GetBoolArrayElement returns boolean. The export dialect stores the inline
+                // index in the "value" field (see the IntegerEvaluator's GetIntArrayElement note).
                 case StoryFlowNodeType.GetBoolArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateBoolArray(ctx, node.Id, StoryFlowHandles.In_BoolArray);
-                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetBool();
                     return false;

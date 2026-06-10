@@ -335,6 +335,26 @@ namespace StoryFlow.Execution
                 case "character":
                     // Image, audio, and character types are stored as string paths/keys
                     return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
+                case "map":
+                {
+                    // RunScript map parameters. Their handles ("map-param-{id}") carry no
+                    // key/value types — the editor's scriptInterface does not bake them in —
+                    // so resolution goes through the explicit-handle map resolver. Maps
+                    // cross the call boundary BY VALUE (the HTML runtime's getTypedInput
+                    // hands over `new Map(...)`): deep-copy the entries so the callee's
+                    // variable never aliases the caller's storage. No edge → null so the
+                    // caller skips the param and the callee keeps its default (HTML's
+                    // `undefined` skip); wired-but-unresolved → empty map (HTML's
+                    // getMapInput empty-Map fallback). SetMap types the callee's variant.
+                    var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
+                    if (edge == null) return null;
+                    var node = ctx.CurrentScript.GetNode(nodeId);
+                    var sourceVar = MapEvaluator.ResolveMapInputVariableByHandle(
+                        ctx, node, targetHandleSuffix, out _);
+                    var variant = new StoryFlowVariant();
+                    variant.SetMap(MapEvaluator.CopyEntries(sourceVar?.Value.GetMap()));
+                    return variant;
+                }
                 default:
                     return new StoryFlowVariant();
             }

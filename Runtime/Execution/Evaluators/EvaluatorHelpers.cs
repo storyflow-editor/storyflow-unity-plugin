@@ -295,11 +295,21 @@ namespace StoryFlow.Execution
         /// </summary>
         internal static StoryFlowVariant ResolveRunScriptOutput(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
+            return ResolveRunScriptOutputByHandle(ctx, node, ctx.LastSourceHandle);
+        }
+
+        /// <summary>
+        /// <see cref="ResolveRunScriptOutput"/> with an EXPLICIT source handle instead of
+        /// ctx.LastSourceHandle. Needed by the map resolver's runScript arm, which walks
+        /// edges itself and holds the terminal edge (LastSourceHandle may be stale there).
+        /// </summary>
+        internal static StoryFlowVariant ResolveRunScriptOutputByHandle(
+            StoryFlowExecutionContext ctx, StoryFlowNode node, string sourceHandle)
+        {
             var runtimeState = ctx.GetNodeRuntimeState(node.Id);
             if (runtimeState.OutputValues == null || runtimeState.OutputValues.Count == 0)
                 return null;
 
-            string sourceHandle = ctx.LastSourceHandle;
             if (string.IsNullOrEmpty(sourceHandle))
             {
                 // Fallback: return first output value

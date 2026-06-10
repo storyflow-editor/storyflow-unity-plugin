@@ -21,9 +21,9 @@ namespace StoryFlow.Data
         public string ValueJson;
         public bool IsArray;
 
-        // Map variables only (Type == StoryFlowVariableType.Map). Written once map save
-        // support lands (with the map node handlers); loads are tolerant — saves that
-        // predate maps simply lack these fields and rehydrate as empty maps.
+        // Map variables only (Type == StoryFlowVariableType.Map): the declared key/value
+        // types the load side parses ValueJson entries with. Loads are tolerant — saves
+        // that predate maps simply lack these fields and rehydrate as empty maps.
         public StoryFlowVariableType KeyType;
         public StoryFlowVariableType ValueType;
     }

@@ -56,9 +56,34 @@ namespace StoryFlow.Utilities
         /// Converts a runtime variable to its saved form. Array values are serialized
         /// as JSON arrays (StoryFlowVariant.ToString cannot represent them), scalars
         /// keep their plain-text form for compatibility with existing saves.
+        /// Map values serialize as the ordered [{key, value}, ...] entry-array dialect
+        /// <see cref="DeserializeSavedVariable"/> consumes, plus KeyType/ValueType so the
+        /// load side parses entries with the declared types. Values persist EXACTLY as
+        /// held in memory: this runtime resolves strings-table keys at READ time (see
+        /// StoryFlowExecutionContext.ResolveStringKey and its StringEvaluator call sites),
+        /// so persisted string-family map values are normally the RAW table keys —
+        /// identical to scalar string variables, whose ToString() also writes the raw
+        /// stored value. Map KEYS are identifiers and never resolve. NOTE: aliasing
+        /// topology does NOT survive a round-trip — every variable serializes its own
+        /// entries, so two variables sharing storage via setMap reload as
+        /// equal-but-detached maps (same posture as the Unreal/Godot/HTML runtimes).
         /// </summary>
         private static SavedVariable ToSavedVariable(StoryFlowVariable variable)
         {
+            if (variable.Type == StoryFlowVariableType.Map)
+            {
+                return new SavedVariable
+                {
+                    Id = variable.Id,
+                    Name = variable.Name,
+                    Type = variable.Type,
+                    ValueJson = variable.Value.SerializeMapToJson(),
+                    IsArray = false,
+                    KeyType = variable.KeyType,
+                    ValueType = variable.ValueType
+                };
+            }
+
             return new SavedVariable
             {
                 Id = variable.Id,
@@ -77,9 +102,9 @@ namespace StoryFlow.Utilities
         /// </summary>
         public static StoryFlowVariant DeserializeSavedVariable(SavedVariable savedVariable)
         {
-            // Maps cannot be WRITTEN to saves yet (ToSavedVariable serializes maps with the
-            // map node handlers); the branch is here for uniformity with the other rehydration
-            // sites and tolerates pre-map saves — missing entry data yields an empty map.
+            // Tolerant map branch: a map record with absent/malformed ValueJson entry
+            // data rehydrates as an empty map (never throws); absent KeyType/ValueType
+            // fall back to the enum default — harmless for an empty entry list.
             if (savedVariable.Type == StoryFlowVariableType.Map)
             {
                 return StoryFlowVariant.DeserializeMapFromJson(

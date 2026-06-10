@@ -104,6 +104,9 @@ namespace StoryFlow.Execution
                     sourceNode.Id, StoryFlowHandles.InMap(keyType, valueType, "2"));
                 if (upstreamEdge == null) return null;
 
+                // Keep the terminal edge — its SourceHandle carries the runScript
+                // "-out-" UUID the RunScript arm below parses.
+                edge = upstreamEdge;
                 sourceNode = ctx.CurrentScript.GetNode(upstreamEdge.Source);
             }
 
@@ -164,12 +167,34 @@ namespace StoryFlow.Execution
                 }
 
                 case StoryFlowNodeType.RunScript:
-                    // TODO(P3): resolve runScript map outputs. HandleEnd already deep-copies
-                    // map-typed outputs into the RunScript node's OutputValues (detached
-                    // snapshot, matching the HTML runtime's read-site conversion), but the
-                    // resolver arm — kind RunScriptOutput, READ-ONLY like charvar chains —
-                    // ships with the runScript map params/outputs work.
-                    return null;
+                {
+                    // Map-typed runScript outputs. HandleEnd already stores each output
+                    // variable's value as a DETACHED deep copy in the node state's
+                    // OutputValues (the HTML runtime converts _outputValues entry arrays
+                    // to a fresh Map at the read site — the call boundary is observably a
+                    // snapshot both ways). Resolve via the terminal edge's "-out-{varId}"
+                    // source handle (the ResolveRunScriptOutput precedent) and flag the
+                    // chain READ-ONLY like charvar chains: mutators no-op, setMap
+                    // snapshots. Missing or non-map output → Unresolved (reads return
+                    // type defaults; setMap wipes to a fresh empty map — HTML's "missing
+                    // _outputValues returns an empty Map" pin).
+                    var outputVariant = EvaluatorHelpers.ResolveRunScriptOutputByHandle(
+                        ctx, sourceNode, edge.SourceHandle);
+                    if (outputVariant == null || outputVariant.Type != StoryFlowVariableType.Map)
+                        return null;
+
+                    sourceKind = MapSourceKind.RunScriptOutput;
+                    // Synthetic wrapper: runScript outputs are variants, not variables.
+                    // Callers only read Value through it (the read-only kind gates every
+                    // mutating/aliasing path before scope checks touch Id).
+                    return new StoryFlowVariable
+                    {
+                        Id = sourceNode.Id,
+                        Name = sourceNode.Id,
+                        Type = StoryFlowVariableType.Map,
+                        Value = outputVariant,
+                    };
+                }
 
                 default:
                     return null;

@@ -957,6 +957,49 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Gets a map variable by its display name.
+        /// Returns the entries as a list of <see cref="StoryFlowMapEntry"/> in insertion
+        /// order (entry order is contractual — it matches the editor and mapKeys/mapValues
+        /// projection). Call GetString(), GetInt(), etc. on each entry's Key/Value.
+        /// String, enum, image, audio, and character VALUES are resolved through the
+        /// string table automatically, mirroring <see cref="GetArrayVariable"/>; map KEYS
+        /// are raw identifiers and are never localized (the runtime-wide map rule).
+        /// When global is true, searches only global; otherwise searches local first then global.
+        /// </summary>
+        /// <remarks>
+        /// The returned list and its entries are DEEP COPIES, never the live storage:
+        /// map variables can share storage with each other (setMap aliasing), so handing
+        /// out the live entry list would let game code corrupt every aliased variable at
+        /// once. Returns an empty list if the variable is missing or is not a map.
+        /// </remarks>
+        public List<StoryFlowMapEntry> GetMapVariable(string name, bool global = false)
+        {
+            var v = FindVariableByName(name, global);
+            if (v == null || v.Type != StoryFlowVariableType.Map) return new List<StoryFlowMapEntry>();
+            var entries = v.Value.GetMap();
+
+            var result = new List<StoryFlowMapEntry>(entries.Count);
+            foreach (var entry in entries)
+            {
+                if (entry == null) continue;
+                var copy = new StoryFlowMapEntry
+                {
+                    Key = entry.Key != null ? new StoryFlowVariant(entry.Key) : new StoryFlowVariant(),
+                    Value = entry.Value != null ? new StoryFlowVariant(entry.Value) : new StoryFlowVariant()
+                };
+                if (copy.Value.Type == StoryFlowVariableType.String ||
+                    copy.Value.Type == StoryFlowVariableType.Image ||
+                    copy.Value.Type == StoryFlowVariableType.Audio ||
+                    copy.Value.Type == StoryFlowVariableType.Character)
+                    copy.Value.StringValue = ResolveString(copy.Value.StringValue);
+                else if (copy.Value.Type == StoryFlowVariableType.Enum)
+                    copy.Value.EnumValue = ResolveString(copy.Value.EnumValue);
+                result.Add(copy);
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Reads a script or global variable of type character-array and returns the character
         /// paths stored in it. Each path is suitable for <see cref="GetCharacter"/>,
         /// <see cref="GetCharacterVariable"/>, and <see cref="GetCharacterPortrait"/>.
@@ -1710,8 +1753,14 @@ namespace StoryFlow
 
                 _context.CurrentNodeId = current.Id;
 
-                // Trace: log every node that enters the processing loop
-                if (TraceEnabled)
+                // Trace: log every node that enters the processing loop.
+                // Trace parity: the HTML runtime never processes start nodes — every
+                // entry point (initial load, runScript, flows) follows the edge out of
+                // node "0" and processes its TARGET directly, so HTML traces contain no
+                // start hop. Unity routes through the start node; suppress its NODE line
+                // (and the matching EDGE line in ProcessNextNode) so traces diff 1:1
+                // against the cross-runtime map-trace-fixture.
+                if (TraceEnabled && current.Type != Data.StoryFlowNodeType.Start)
                 {
                     var typeName = !string.IsNullOrEmpty(current.RawType) ? current.RawType : current.Type.ToString();
                     Trace($"NODE {current.Id} {typeName}");
@@ -1753,12 +1802,18 @@ namespace StoryFlow
                 return;
             }
 
-            // Trace: log edge traversal
+            // Trace: log edge traversal.
+            // Trace parity: suppress the edge OUT of a start node — the HTML runtime
+            // follows it without tracing (see the matching NODE gate in ProcessNode).
             if (TraceEnabled)
             {
-                // Extract source node ID from the source handle (format: "source-{nodeId}-{suffix}")
-                var sourceNodeId = _context.CurrentNodeId ?? "";
-                Trace($"EDGE {sourceNodeId}:{sourceHandle} -> {targetNodeId}");
+                var edgeSourceNode = _context.CurrentScript.GetNode(edge.Source);
+                if (edgeSourceNode == null || edgeSourceNode.Type != Data.StoryFlowNodeType.Start)
+                {
+                    // Extract source node ID from the source handle (format: "source-{nodeId}-{suffix}")
+                    var sourceNodeId = _context.CurrentNodeId ?? "";
+                    Trace($"EDGE {sourceNodeId}:{sourceHandle} -> {targetNodeId}");
+                }
             }
 
             // Mark fresh entry when following an edge into a dialogue node

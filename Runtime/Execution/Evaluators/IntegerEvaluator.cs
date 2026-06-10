@@ -262,11 +262,13 @@ namespace StoryFlow.Execution
                     return -1;
                 }
 
-                // GetIntArrayElement
+                // GetIntArrayElement. The export dialect stores the inline index in the
+                // "value" field (the editor's internal "index" is renamed on export —
+                // same read as Unreal's Data.Value / Godot's "value").
                 case StoryFlowNodeType.GetIntArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateIntArray(ctx, node.Id, StoryFlowHandles.In_IntArray);
-                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetInt();
                     return 0;

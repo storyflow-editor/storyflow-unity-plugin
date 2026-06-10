@@ -127,11 +127,12 @@ namespace StoryFlow.Execution
                     return floatValue.ToString(CultureInfo.InvariantCulture);
                 }
 
-                // GetStringArrayElement
+                // GetStringArrayElement. The export dialect stores the inline index in
+                // the "value" field (see the IntegerEvaluator's GetIntArrayElement note).
                 case StoryFlowNodeType.GetStringArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
-                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetString();
                     return "";
@@ -191,7 +192,7 @@ namespace StoryFlow.Execution
                 {
                     string arraySuffix = EvaluatorHelpers.GetArrayHandleSuffix(node.Type);
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, arraySuffix);
-                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetString();
                     return "";

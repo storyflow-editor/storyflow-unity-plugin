@@ -148,11 +148,12 @@ namespace StoryFlow.Execution
                     return float.TryParse(str, NumberStyles.Float, CultureInfo.InvariantCulture, out float val) ? val : 0f;
                 }
 
-                // GetFloatArrayElement
+                // GetFloatArrayElement. The export dialect stores the inline index in the
+                // "value" field (see the IntegerEvaluator's GetIntArrayElement note).
                 case StoryFlowNodeType.GetFloatArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateFloatArray(ctx, node.Id, StoryFlowHandles.In_FloatArray);
-                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetFloat();
                     return 0f;
