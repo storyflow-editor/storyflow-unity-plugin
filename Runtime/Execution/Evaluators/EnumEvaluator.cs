@@ -150,7 +150,15 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.StringToEnum:
                 {
                     string strVal = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_String);
-                    return strVal ?? "";
+                    // Validate against the enum values list (resolved downstream, like
+                    // IntToEnum): pass a matching value through, otherwise fall back to
+                    // the first value so the result is always a valid enum entry.
+                    var enumValues = EvaluatorHelpers.GetEnumValuesFromNode(ctx, node);
+                    if (enumValues != null && enumValues.Contains(strVal))
+                    {
+                        return strVal;
+                    }
+                    return enumValues != null && enumValues.Count > 0 ? enumValues[0] : "";
                 }
 
                 default:
