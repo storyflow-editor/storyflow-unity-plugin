@@ -31,14 +31,7 @@ namespace StoryFlow.Utilities
             // Serialize global variables
             foreach (var kvp in globalVariables)
             {
-                saveData.GlobalVariables.Add(new SavedVariable
-                {
-                    Id = kvp.Value.Id,
-                    Name = kvp.Value.Name,
-                    Type = kvp.Value.Type,
-                    ValueJson = kvp.Value.Value.ToString(),
-                    IsArray = kvp.Value.IsArray
-                });
+                saveData.GlobalVariables.Add(ToSavedVariable(kvp.Value));
             }
 
             // Serialize runtime characters
@@ -47,14 +40,7 @@ namespace StoryFlow.Utilities
                 var savedChar = new SavedCharacter { Path = kvp.Key };
                 foreach (var v in kvp.Value.VariablesList)
                 {
-                    savedChar.Variables.Add(new SavedVariable
-                    {
-                        Id = v.Id,
-                        Name = v.Name,
-                        Type = v.Type,
-                        ValueJson = v.Value.ToString(),
-                        IsArray = v.IsArray
-                    });
+                    savedChar.Variables.Add(ToSavedVariable(v));
                 }
                 saveData.RuntimeCharacters.Add(savedChar);
             }
@@ -64,6 +50,36 @@ namespace StoryFlow.Utilities
 
             var json = JsonConvert.SerializeObject(saveData, Formatting.Indented);
             File.WriteAllText(GetSavePath(slotName), json);
+        }
+
+        /// <summary>
+        /// Converts a runtime variable to its saved form. Array values are serialized
+        /// as JSON arrays (StoryFlowVariant.ToString cannot represent them), scalars
+        /// keep their plain-text form for compatibility with existing saves.
+        /// </summary>
+        private static SavedVariable ToSavedVariable(StoryFlowVariable variable)
+        {
+            return new SavedVariable
+            {
+                Id = variable.Id,
+                Name = variable.Name,
+                Type = variable.Type,
+                ValueJson = variable.IsArray
+                    ? variable.Value.SerializeArrayToJson()
+                    : variable.Value.ToString(),
+                IsArray = variable.IsArray
+            };
+        }
+
+        /// <summary>
+        /// Rehydrates a saved variable's value, honoring its IsArray flag.
+        /// Counterpart of <see cref="ToSavedVariable"/>.
+        /// </summary>
+        public static StoryFlowVariant DeserializeSavedVariable(SavedVariable savedVariable)
+        {
+            return savedVariable.IsArray
+                ? StoryFlowVariant.DeserializeArrayFromJson(savedVariable.Type, savedVariable.ValueJson)
+                : StoryFlowVariant.DeserializeFromJson(savedVariable.Type, savedVariable.ValueJson);
         }
 
         public static StoryFlowSaveData Load(string slotName)
@@ -114,14 +130,7 @@ namespace StoryFlow.Utilities
                 // Serialize global variables
                 foreach (var kvp in globalVariables)
                 {
-                    saveData.GlobalVariables.Add(new SavedVariable
-                    {
-                        Id = kvp.Value.Id,
-                        Name = kvp.Value.Name,
-                        Type = kvp.Value.Type,
-                        ValueJson = kvp.Value.Value.ToString(),
-                        IsArray = kvp.Value.IsArray
-                    });
+                    saveData.GlobalVariables.Add(ToSavedVariable(kvp.Value));
                 }
 
                 // Serialize runtime characters
@@ -130,14 +139,7 @@ namespace StoryFlow.Utilities
                     var savedChar = new SavedCharacter { Path = kvp.Key };
                     foreach (var v in kvp.Value.VariablesList)
                     {
-                        savedChar.Variables.Add(new SavedVariable
-                        {
-                            Id = v.Id,
-                            Name = v.Name,
-                            Type = v.Type,
-                            ValueJson = v.Value.ToString(),
-                            IsArray = v.IsArray
-                        });
+                        savedChar.Variables.Add(ToSavedVariable(v));
                     }
                     saveData.RuntimeCharacters.Add(savedChar);
                 }

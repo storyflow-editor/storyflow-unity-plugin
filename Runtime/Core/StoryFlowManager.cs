@@ -264,7 +264,7 @@ namespace StoryFlow
             {
                 if (GlobalVariables.TryGetValue(savedVar.Id, out var existing))
                 {
-                    existing.Value = DeserializeVariantFromSave(savedVar.Type, savedVar.ValueJson, savedVar.IsArray);
+                    existing.Value = StoryFlowSaveHelpers.DeserializeSavedVariable(savedVar);
                 }
             }
 
@@ -280,7 +280,7 @@ namespace StoryFlow
                         {
                             if (charVar.Id == savedVar.Id)
                             {
-                                charVar.Value = DeserializeVariantFromSave(savedVar.Type, savedVar.ValueJson, savedVar.IsArray);
+                                charVar.Value = StoryFlowSaveHelpers.DeserializeSavedVariable(savedVar);
                                 // Also update the quick-lookup dictionary
                                 characterData.Variables[charVar.Name] = charVar.Value;
                                 break;
@@ -311,13 +311,6 @@ namespace StoryFlow
         public void DeleteSave(string slotName)
         {
             StoryFlowSaveHelpers.Delete(slotName);
-        }
-
-        private static StoryFlowVariant DeserializeVariantFromSave(StoryFlowVariableType type, string json, bool isArray = false)
-        {
-            return isArray
-                ? StoryFlowVariant.DeserializeArrayFromJson(type, json)
-                : StoryFlowVariant.DeserializeFromJson(type, json);
         }
 
         // =====================================================================

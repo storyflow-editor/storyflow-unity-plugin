@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 namespace StoryFlow.Data
 {
@@ -135,6 +136,39 @@ namespace StoryFlow.Data
         public static StoryFlowVariant Enum(string value) => new() { Type = StoryFlowVariableType.Enum, EnumValue = value ?? "" };
 
         /// <summary>
+        /// Serializes an array StoryFlowVariant to a JSON array string (e.g. ["a","b"] or [1,2]),
+        /// the same dialect the editor importer writes to DefaultValueJson and
+        /// <see cref="DeserializeArrayFromJson"/> consumes. Returns "[]" when the array is empty or unset.
+        /// </summary>
+        public string SerializeArrayToJson()
+        {
+            var array = new JArray();
+            if (ArrayValue != null)
+            {
+                foreach (var item in ArrayValue)
+                {
+                    if (item == null) continue;
+                    switch (item.Type)
+                    {
+                        case StoryFlowVariableType.Boolean:
+                            array.Add(item.BoolValue);
+                            break;
+                        case StoryFlowVariableType.Integer:
+                            array.Add(item.IntValue);
+                            break;
+                        case StoryFlowVariableType.Float:
+                            array.Add(item.FloatValue);
+                            break;
+                        default:
+                            array.Add(item.ToString());
+                            break;
+                    }
+                }
+            }
+            return array.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>
         /// Deserializes an array StoryFlowVariant from a JSON array string (e.g. ["a","b"]).
         /// Each element is deserialized as the given element type.
         /// </summary>
@@ -150,12 +184,19 @@ namespace StoryFlow.Data
                 var array = JArray.Parse(json);
                 foreach (var item in array)
                 {
-                    variant.ArrayValue.Add(DeserializeFromJson(elementType, item.ToString()));
+                    // Numeric elements must be read with invariant culture so arrays
+                    // round-trip regardless of the process culture.
+                    string itemText = item is JValue jValue && jValue.Value is IFormattable formattable
+                        ? formattable.ToString(null, CultureInfo.InvariantCulture)
+                        : item.ToString();
+                    variant.ArrayValue.Add(DeserializeFromJson(elementType, itemText));
                 }
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // If JSON parsing fails, return empty array
+                Debug.LogWarning($"[StoryFlow] Failed to parse array value of type {elementType} " +
+                                 $"from JSON '{json}': {e.Message}. Treating it as an empty array.");
+                variant.ArrayValue.Clear();
             }
 
             return variant;
