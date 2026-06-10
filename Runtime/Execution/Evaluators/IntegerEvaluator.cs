@@ -264,7 +264,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetIntArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateIntArray(ctx, node.Id, StoryFlowHandles.In_IntArray);
-                    int idx = Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetInt();
                     return 0;

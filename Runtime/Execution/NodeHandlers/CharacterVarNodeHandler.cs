@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using StoryFlow.Data;
 using StoryFlow.Utilities;
 using UnityEngine;
@@ -73,6 +74,38 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
+            // Array variables wire through "<type>-array-input" and bypass the scalar path
+            // entirely (mirrors the HTML runtime's updateCharacterVariable).
+            if (node.GetDataBool("isArray"))
+            {
+                List<StoryFlowVariant> newArray;
+                var arrayVariant = StoryFlowEvaluator.EvaluateTypedArray(
+                    context, node.Id, variableType + "-array-input", variableType);
+                if (arrayVariant != null)
+                {
+                    // Wired: assign a container copy so the character variable never
+                    // aliases the source array (matches HTML's .slice() semantics).
+                    newArray = arrayVariant.ArrayValue != null
+                        ? new List<StoryFlowVariant>(arrayVariant.ArrayValue)
+                        : new List<StoryFlowVariant>();
+                }
+                else
+                {
+                    // Unwired: fall back to the node's inline array value, else empty.
+                    newArray = StoryFlowVariant.DeserializeArrayFromJson(
+                        targetVar.Value.Type, node.GetData("value")).ArrayValue;
+                }
+
+                targetVar.Value.ArrayValue = newArray;
+
+                component.Trace($"VAR SET \"{characterPath}.{variableName}\" global=false value=[{newArray.Count} elements]");
+                component.BroadcastVariableChanged(targetVar, false);
+                component.BroadcastCharacterVariableChanged(characterPath, variableName, targetVar.Value);
+
+                FollowFlowOrFallthrough(component, context, node);
+                return;
+            }
+
             // Evaluate the new value based on variable type.
             // Pass the node's inline value as the fallback default when no input edge is connected.
             switch (variableType)
@@ -110,6 +143,32 @@ namespace StoryFlow.Execution.NodeHandlers
                     string fallback = node.GetData("value", targetVar.Value.GetEnum());
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
                     targetVar.Value.SetEnum(val);
+                    break;
+                }
+                // Image/audio/character variables wire through their own typed input
+                // handles and store asset keys/paths as strings (preserving the type).
+                case "image":
+                {
+                    string fallback = node.GetData("value", targetVar.Value.GetString());
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Image, fallback);
+                    targetVar.Value.Type = StoryFlowVariableType.Image;
+                    targetVar.Value.StringValue = val ?? "";
+                    break;
+                }
+                case "audio":
+                {
+                    string fallback = node.GetData("value", targetVar.Value.GetString());
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Audio, fallback);
+                    targetVar.Value.Type = StoryFlowVariableType.Audio;
+                    targetVar.Value.StringValue = val ?? "";
+                    break;
+                }
+                case "character":
+                {
+                    string fallback = node.GetData("value", targetVar.Value.GetString());
+                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Character, fallback);
+                    targetVar.Value.Type = StoryFlowVariableType.Character;
+                    targetVar.Value.StringValue = val ?? "";
                     break;
                 }
                 default:

@@ -326,7 +326,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetBoolArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateBoolArray(ctx, node.Id, StoryFlowHandles.In_BoolArray);
-                    int idx = IntegerEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetBool();
                     return false;

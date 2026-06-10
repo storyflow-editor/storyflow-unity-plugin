@@ -129,7 +129,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetStringArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
-                    int idx = IntegerEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetString();
                     return "";
@@ -167,6 +167,14 @@ namespace StoryFlow.Execution
                     return variable?.Value?.GetString() ?? "";
                 }
 
+                // As an image source the node exposes the image it sets:
+                // connected image input first, then the dropdown value
+                case StoryFlowNodeType.SetBackgroundImage:
+                {
+                    return StoryFlowEvaluator.EvaluateStringWithDefault(
+                        ctx, node.Id, StoryFlowHandles.In_ImageInput, node.GetData("value"));
+                }
+
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
@@ -181,7 +189,7 @@ namespace StoryFlow.Execution
                 {
                     string arraySuffix = EvaluatorHelpers.GetArrayHandleSuffix(node.Type);
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, arraySuffix);
-                    int idx = IntegerEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetString();
                     return "";

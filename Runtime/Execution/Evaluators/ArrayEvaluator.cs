@@ -60,8 +60,21 @@ namespace StoryFlow.Execution
             if (ctx.MaybeWarnUnknownNode(sourceNode))
                 return new List<StoryFlowVariant>();
 
-            // Handle getCharacterVar nodes that can return arrays
-            if (sourceNode.Type == StoryFlowNodeType.GetCharacterVar)
+            // Handle RunScript output arrays — resolve via the node's stored output values
+            if (sourceNode.Type == StoryFlowNodeType.RunScript)
+            {
+                var prevHandle = ctx.LastSourceHandle;
+                ctx.LastSourceHandle = edge.SourceHandle;
+                var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, sourceNode);
+                ctx.LastSourceHandle = prevHandle;
+                return outputValue?.ArrayValue != null
+                    ? new List<StoryFlowVariant>(outputValue.ArrayValue)
+                    : new List<StoryFlowVariant>();
+            }
+
+            // Handle getCharacterVar/setCharacterVar nodes that can return arrays
+            if (sourceNode.Type == StoryFlowNodeType.GetCharacterVar ||
+                sourceNode.Type == StoryFlowNodeType.SetCharacterVar)
             {
                 var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, sourceNode);
                 return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
@@ -100,7 +113,11 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
-            return EvaluateArrayFromNode(ctx, sourceNode, expectedType);
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            var result = EvaluateArrayFromNode(ctx, sourceNode, expectedType);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
 
         /// <summary>
@@ -126,8 +143,18 @@ namespace StoryFlow.Execution
                 if (ctx.MaybeWarnUnknownNode(node))
                     return new List<StoryFlowVariant>();
 
-                // Handle getCharacterVar nodes that can return arrays
-                if (node.Type == StoryFlowNodeType.GetCharacterVar)
+                // Handle RunScript output arrays — resolve via the node's stored output values
+                if (node.Type == StoryFlowNodeType.RunScript)
+                {
+                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    return outputValue?.ArrayValue != null
+                        ? new List<StoryFlowVariant>(outputValue.ArrayValue)
+                        : new List<StoryFlowVariant>();
+                }
+
+                // Handle getCharacterVar/setCharacterVar nodes that can return arrays
+                if (node.Type == StoryFlowNodeType.GetCharacterVar ||
+                    node.Type == StoryFlowNodeType.SetCharacterVar)
                 {
                     var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
                     return charVar?.ArrayValue ?? new List<StoryFlowVariant>();

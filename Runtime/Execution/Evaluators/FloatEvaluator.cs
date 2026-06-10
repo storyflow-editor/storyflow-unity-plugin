@@ -150,7 +150,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetFloatArrayElement:
                 {
                     var arr = ArrayEvaluator.EvaluateFloatArray(ctx, node.Id, StoryFlowHandles.In_FloatArray);
-                    int idx = IntegerEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
+                    int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("index"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
                         return arr[idx].GetFloat();
                     return 0f;
