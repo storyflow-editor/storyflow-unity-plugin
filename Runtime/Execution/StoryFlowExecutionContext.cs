@@ -397,17 +397,29 @@ namespace StoryFlow.Execution
                     : null,
             };
 
-            // Deep copy current local variables. Map storage is deliberately re-pointed at
-            // the LIVE entry list afterwards: HTML call frames hold live variable references
+            // Deep copy current local variables. Map storage deliberately SHARES the LIVE
+            // entry list instead: HTML call frames hold live variable references
             // (runtime-core.js pushCallStack saves gameState.variables.slice()), so map
             // aliasing established before a runScript call must survive the call and restore
             // (the Unreal port shares map storage the same way via TSharedPtr). Scalars and
-            // arrays keep the pre-existing deep-copy semantics.
+            // arrays keep the pre-existing deep-copy semantics. The live list is detached
+            // before the copy ctor runs so it does not deep-copy entries the share would
+            // immediately discard.
             foreach (var kvp in localVariables)
             {
-                var copy = new StoryFlowVariable(kvp.Value);
+                StoryFlowVariable copy;
                 if (kvp.Value.Type == StoryFlowVariableType.Map)
-                    copy.Value.MapValue = kvp.Value.Value.MapValue;
+                {
+                    var liveMap = kvp.Value.Value.MapValue;
+                    kvp.Value.Value.MapValue = null;
+                    copy = new StoryFlowVariable(kvp.Value);
+                    kvp.Value.Value.MapValue = liveMap;
+                    copy.Value.MapValue = liveMap;
+                }
+                else
+                {
+                    copy = new StoryFlowVariable(kvp.Value);
+                }
                 frame.SavedLocalVariables[kvp.Key] = copy;
             }
 
@@ -443,22 +455,29 @@ namespace StoryFlow.Execution
             localVariables.Clear();
             foreach (var kvp in frame.SavedLocalVariables)
             {
-                var copy = new StoryFlowVariable(kvp.Value);
-                // Re-hydrate array from DefaultValueJson if ArrayValue was lost
-                if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
+                StoryFlowVariable copy;
+                if (kvp.Value.Type == StoryFlowVariableType.Map && kvp.Value.Value.MapValue != null)
                 {
-                    copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
+                    // Restore the SAVED live entry list, not a copy — map aliasing
+                    // (with globals or sibling locals) must survive the runScript
+                    // round-trip. See the matching share in PushCallFrame. As there,
+                    // detach the list around the copy ctor so it does not deep-copy
+                    // entries the share would immediately discard.
+                    var savedMap = kvp.Value.Value.MapValue;
+                    kvp.Value.Value.MapValue = null;
+                    copy = new StoryFlowVariable(kvp.Value);
+                    kvp.Value.Value.MapValue = savedMap;
+                    copy.Value.MapValue = savedMap;
                 }
-                if (copy.Type == StoryFlowVariableType.Map)
+                else
                 {
-                    if (kvp.Value.Value.MapValue != null)
+                    copy = new StoryFlowVariable(kvp.Value);
+                    // Re-hydrate array from DefaultValueJson if ArrayValue was lost
+                    if (copy.IsArray && copy.Value.ArrayValue == null && !string.IsNullOrEmpty(copy.DefaultValueJson))
                     {
-                        // Restore the SAVED live entry list, not a copy — map aliasing
-                        // (with globals or sibling locals) must survive the runScript
-                        // round-trip. See the matching share in PushCallFrame.
-                        copy.Value.MapValue = kvp.Value.Value.MapValue;
+                        copy.Value = StoryFlowVariant.DeserializeArrayFromJson(copy.Type, copy.DefaultValueJson);
                     }
-                    else if (!string.IsNullOrEmpty(copy.DefaultValueJson))
+                    if (copy.Type == StoryFlowVariableType.Map && !string.IsNullOrEmpty(copy.DefaultValueJson))
                     {
                         // MapValue is [NonSerialized]; re-hydrate like arrays when lost
                         copy.Value = StoryFlowVariant.DeserializeMapFromJson(copy.KeyType, copy.ValueType, copy.DefaultValueJson);
@@ -664,6 +683,7 @@ namespace StoryFlow.Execution
             localVariables.Clear();
             nodeRuntimeStates.Clear();
             warnedUnknownNodes.Clear();
+            warnedMapNodes.Clear();
 
             localVariableNameIndex = null;
             globalVariableNameIndex = null;

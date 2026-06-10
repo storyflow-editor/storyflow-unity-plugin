@@ -199,17 +199,26 @@ namespace StoryFlow.Execution
 
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
             var sourceNode = edge != null ? ctx.CurrentScript.GetNode(edge.Source) : null;
-            if (keyType == "enum")
+            if (sourceNode != null)
             {
-                key.SetEnum(sourceNode != null
-                    ? EnumEvaluator.EvaluateFromNode(ctx, sourceNode)
-                    : node.GetData("key"));
+                // Propagate the edge's source handle (save/restore, mirroring the typed
+                // Evaluate entry points) so multi-output sources — forEachMap
+                // "-key"/"-value", getMapValue "-isValid" — discriminate correctly.
+                var prevHandle = ctx.LastSourceHandle;
+                ctx.LastSourceHandle = edge.SourceHandle;
+                if (keyType == "enum")
+                    key.SetEnum(EnumEvaluator.EvaluateFromNode(ctx, sourceNode));
+                else
+                    key.SetString(StringEvaluator.EvaluateFromNode(ctx, sourceNode));
+                ctx.LastSourceHandle = prevHandle;
+            }
+            else if (keyType == "enum")
+            {
+                key.SetEnum(node.GetData("key"));
             }
             else
             {
-                key.SetString(sourceNode != null
-                    ? StringEvaluator.EvaluateFromNode(ctx, sourceNode)
-                    : node.GetData("key"));
+                key.SetString(node.GetData("key"));
             }
             return key;
         }
@@ -245,9 +254,18 @@ namespace StoryFlow.Execution
                 {
                     var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
                     var sourceNode = edge != null ? ctx.CurrentScript.GetNode(edge.Source) : null;
-                    value.SetEnum(sourceNode != null
-                        ? EnumEvaluator.EvaluateFromNode(ctx, sourceNode)
-                        : node.GetData("value"));
+                    if (sourceNode != null)
+                    {
+                        // Same source-handle propagation as EvaluateMapOpKeyInput
+                        var prevHandle = ctx.LastSourceHandle;
+                        ctx.LastSourceHandle = edge.SourceHandle;
+                        value.SetEnum(EnumEvaluator.EvaluateFromNode(ctx, sourceNode));
+                        ctx.LastSourceHandle = prevHandle;
+                    }
+                    else
+                    {
+                        value.SetEnum(node.GetData("value"));
+                    }
                     break;
                 }
                 case "image":
@@ -303,7 +321,10 @@ namespace StoryFlow.Execution
 
         /// <summary>
         /// Computes a getMapValue lookup: key (input "2" / inline fallback) FIRST, then the
-        /// map (input "1") — input-order parity with the HTML runtime's computeGetMapValue.
+        /// map (input "1"). The key-first order is the Unreal port's pointer-lifetime rule
+        /// (resolve non-map inputs before taking the live map reference); the HTML runtime
+        /// resolves map-first — observably equivalent, since neither input evaluation can
+        /// mutate the other.
         /// Returns true and sets <paramref name="value"/> on a hit; false on miss/unresolved
         /// (the IsValid output) leaving <paramref name="value"/> null.
         /// </summary>

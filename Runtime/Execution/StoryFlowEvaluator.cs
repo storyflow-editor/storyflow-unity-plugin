@@ -210,6 +210,12 @@ namespace StoryFlow.Execution
         // =====================================================================
         // WithDefault Overloads
         // =====================================================================
+        // Like the typed Evaluate entry points, these set ctx.LastSourceHandle to the
+        // resolved edge's source handle (save/restore) before delegating to the
+        // FromNode evaluators. Without it, multi-output source nodes (forEachMap
+        // "-key"/"-value", getMapValue "-isValid", runScript "-out-") would read a
+        // stale handle — e.g. the flow handle left behind by ProcessNextNode — and
+        // return type defaults at Set* handler time.
 
         /// <summary>
         /// Evaluate boolean with fallback to a default value when no input edge is connected.
@@ -220,7 +226,11 @@ namespace StoryFlow.Execution
             if (edge == null) return defaultValue;
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return defaultValue;
-            return BooleanEvaluator.EvaluateFromNode(ctx, sourceNode);
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            bool result = BooleanEvaluator.EvaluateFromNode(ctx, sourceNode);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
 
         /// <summary>
@@ -232,7 +242,11 @@ namespace StoryFlow.Execution
             if (edge == null) return defaultValue;
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return defaultValue;
-            return IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            int result = IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
 
         /// <summary>
@@ -244,7 +258,11 @@ namespace StoryFlow.Execution
             if (edge == null) return defaultValue;
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return defaultValue;
-            return FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            float result = FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
 
         /// <summary>
@@ -256,7 +274,11 @@ namespace StoryFlow.Execution
             if (edge == null) return ctx != null ? ctx.ResolveStringKey(defaultValue) : defaultValue;
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return ctx.ResolveStringKey(defaultValue);
-            return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            string result = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
 
         // =====================================================================

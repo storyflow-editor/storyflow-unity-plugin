@@ -376,7 +376,8 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.HasMapKey:
                 {
-                    // Key FIRST, then the map — input-order parity with the HTML runtime
+                    // Key FIRST, then the map — the Unreal port's pointer-lifetime input
+                    // order (HTML resolves map-first; observably equivalent)
                     var key = MapEvaluator.EvaluateMapOpKeyInput(ctx, node, "2");
                     var map = MapEvaluator.EvaluateMapInput(ctx, node, "1");
                     return map != null && MapEvaluator.FindMapEntryByKey(map, node.GetData("keyType"), key) >= 0;

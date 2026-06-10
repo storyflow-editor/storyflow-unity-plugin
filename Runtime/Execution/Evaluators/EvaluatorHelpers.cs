@@ -61,6 +61,11 @@ namespace StoryFlow.Execution
         // =====================================================================
         // Dual-input evaluation with fallback to node data
         // =====================================================================
+        // Each helper sets ctx.LastSourceHandle to the resolved edge's source handle
+        // (save/restore, mirroring the typed Evaluate entry points) before delegating
+        // to the FromNode evaluators. Multi-output source nodes (forEachMap
+        // "-key"/"-value", getMapValue "-isValid", runScript "-out-") discriminate
+        // their outputs by that handle and would otherwise read a stale flow handle.
 
         internal static int EvaluateIntegerInput1(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
@@ -69,7 +74,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    int result = IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetDataInt("value1");
         }
@@ -81,7 +92,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    int result = IntegerEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetDataInt("value2");
         }
@@ -93,7 +110,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    float result = FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetDataFloat("value1");
         }
@@ -105,7 +128,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    float result = FloatEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetDataFloat("value2");
         }
@@ -117,7 +146,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    string result = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return ctx.ResolveStringKey(node.GetData("value1"));
         }
@@ -129,7 +164,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    string result = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return ctx.ResolveStringKey(node.GetData("value2"));
         }
@@ -141,7 +182,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return EnumEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    string result = EnumEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetData("value1");
         }
@@ -153,7 +200,13 @@ namespace StoryFlow.Execution
             {
                 var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
                 if (sourceNode != null)
-                    return EnumEvaluator.EvaluateFromNode(ctx, sourceNode);
+                {
+                    var prevHandle = ctx.LastSourceHandle;
+                    ctx.LastSourceHandle = edge.SourceHandle;
+                    string result = EnumEvaluator.EvaluateFromNode(ctx, sourceNode);
+                    ctx.LastSourceHandle = prevHandle;
+                    return result;
+                }
             }
             return node.GetData("value2");
         }

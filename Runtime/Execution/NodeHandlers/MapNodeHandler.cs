@@ -98,8 +98,10 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Resolve ALL non-map inputs FIRST (input-order parity with the HTML runtime):
-            // key (input "3"), and for setMapValue the typed value (input "4")
+            // Resolve ALL non-map inputs FIRST: key (input "3"), and for setMapValue the
+            // typed value (input "4"). Key/value-first is the Unreal port's pointer-lifetime
+            // rule (resolve other inputs before taking the live map reference); the HTML
+            // runtime resolves map-first — observably equivalent.
             StoryFlowVariant key = null;
             if (node.Type != StoryFlowNodeType.ClearMap)
             {
