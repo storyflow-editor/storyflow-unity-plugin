@@ -62,11 +62,13 @@ namespace StoryFlow.Execution.NodeHandlers
             var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
-            // Get the index
-            int index = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, "integer-3", node.GetDataInt("index"));
+            // Get the index. The export dialect renames the inline fallbacks: the .sfe
+            // "index" is exported as "value1" and "value" as "value2" on set*ArrayElement
+            // (json-export-strategy.ts), and the importer flattens fields verbatim.
+            int index = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, "integer-3", node.GetDataInt("value1"));
 
             // Get the value to set
-            var value = EvaluateElementValue(context, node, elementType, "4");
+            var value = EvaluateElementValue(context, node, elementType, "4", "value2");
 
             // Set the element if index is valid
             if (index >= 0 && index < array.Count)
@@ -101,8 +103,8 @@ namespace StoryFlow.Execution.NodeHandlers
             var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
-            // Get the value to add
-            var value = EvaluateElementValue(context, node, elementType, "3");
+            // Get the value to add (the export writes addTo*Array's inline value as "value")
+            var value = EvaluateElementValue(context, node, elementType, "3", "value");
 
             array.Add(value);
 
@@ -138,8 +140,8 @@ namespace StoryFlow.Execution.NodeHandlers
             var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
-            // Get the index
-            int index = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, "integer-3", node.GetDataInt("index"));
+            // Get the index (the export renames removeFrom*Array's inline "index" to "value")
+            int index = StoryFlowEvaluator.EvaluateIntegerWithDefault(context, node.Id, "integer-3", node.GetDataInt("value"));
 
             // Remove the element if index is valid
             if (index >= 0 && index < array.Count)
@@ -345,41 +347,44 @@ namespace StoryFlow.Execution.NodeHandlers
 
         /// <summary>
         /// Evaluates an element value from the appropriate typed input handle.
+        /// inlineValueKey is the node-data field holding the inline (unwired) fallback —
+        /// the export dialect writes addTo*Array's value as "value" but set*ArrayElement's
+        /// as "value2" (json-export-strategy.ts), so each caller passes its own key.
         /// </summary>
         private static StoryFlowVariant EvaluateElementValue(
             StoryFlowExecutionContext context, StoryFlowNode node,
-            StoryFlowVariableType elementType, string handleIndex)
+            StoryFlowVariableType elementType, string handleIndex, string inlineValueKey)
         {
             switch (elementType)
             {
                 case StoryFlowVariableType.Boolean:
                 {
                     bool val = StoryFlowEvaluator.EvaluateBooleanWithDefault(
-                        context, node.Id, "boolean-" + handleIndex, node.GetDataBool("value"));
+                        context, node.Id, "boolean-" + handleIndex, node.GetDataBool(inlineValueKey));
                     return StoryFlowVariant.Bool(val);
                 }
                 case StoryFlowVariableType.Integer:
                 {
                     int val = StoryFlowEvaluator.EvaluateIntegerWithDefault(
-                        context, node.Id, "integer-" + handleIndex, node.GetDataInt("value"));
+                        context, node.Id, "integer-" + handleIndex, node.GetDataInt(inlineValueKey));
                     return StoryFlowVariant.Int(val);
                 }
                 case StoryFlowVariableType.Float:
                 {
                     float val = StoryFlowEvaluator.EvaluateFloatWithDefault(
-                        context, node.Id, "float-" + handleIndex, node.GetDataFloat("value"));
+                        context, node.Id, "float-" + handleIndex, node.GetDataFloat(inlineValueKey));
                     return StoryFlowVariant.Float(val);
                 }
                 case StoryFlowVariableType.String:
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
-                        context, node.Id, "string-" + handleIndex, node.GetData("value"));
+                        context, node.Id, "string-" + handleIndex, node.GetData(inlineValueKey));
                     return StoryFlowVariant.String(val);
                 }
                 case StoryFlowVariableType.Image:
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
-                        context, node.Id, "image-" + handleIndex, node.GetData("value"));
+                        context, node.Id, "image-" + handleIndex, node.GetData(inlineValueKey));
                     var variant = new StoryFlowVariant();
                     variant.Type = StoryFlowVariableType.Image;
                     variant.StringValue = val ?? "";
@@ -388,7 +393,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 case StoryFlowVariableType.Character:
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
-                        context, node.Id, "character-" + handleIndex, node.GetData("value"));
+                        context, node.Id, "character-" + handleIndex, node.GetData(inlineValueKey));
                     var variant = new StoryFlowVariant();
                     variant.Type = StoryFlowVariableType.Character;
                     variant.StringValue = val ?? "";
@@ -397,7 +402,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 case StoryFlowVariableType.Audio:
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
-                        context, node.Id, "audio-" + handleIndex, node.GetData("value"));
+                        context, node.Id, "audio-" + handleIndex, node.GetData(inlineValueKey));
                     var variant = new StoryFlowVariant();
                     variant.Type = StoryFlowVariableType.Audio;
                     variant.StringValue = val ?? "";
