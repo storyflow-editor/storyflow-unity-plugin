@@ -125,6 +125,13 @@ namespace StoryFlow.Execution
                     return b != 0 ? a / b : 0;
                 }
 
+                case StoryFlowNodeType.ModuloInt:
+                {
+                    int a = EvaluatorHelpers.EvaluateIntegerInput1(ctx, node);
+                    int b = EvaluatorHelpers.EvaluateIntegerInput2(ctx, node);
+                    return b != 0 ? a % b : 0;
+                }
+
                 case StoryFlowNodeType.RandomInt:
                 {
                     int a = EvaluatorHelpers.EvaluateIntegerInput1(ctx, node);

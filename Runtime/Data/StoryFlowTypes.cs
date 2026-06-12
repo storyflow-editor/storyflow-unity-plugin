@@ -207,6 +207,12 @@ namespace StoryFlow.Data
         RemoveMapKey,
         ClearMap,
         ForEachMap,
+
+        // Modulo (appended at the end — enum values are serialized as integers
+        // into imported .asset files, so new members must never be inserted
+        // mid-enum)
+        ModuloInt,
+        ModuloFloat,
     }
 
     public enum StoryFlowVariableType

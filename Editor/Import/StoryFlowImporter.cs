@@ -54,6 +54,7 @@ namespace StoryFlow.Editor
             { "minus", StoryFlowNodeType.MinusInt },
             { "multiply", StoryFlowNodeType.MultiplyInt },
             { "divide", StoryFlowNodeType.DivideInt },
+            { "modulo", StoryFlowNodeType.ModuloInt },
             { "random", StoryFlowNodeType.RandomInt },
 
             // Integer Comparison
@@ -70,6 +71,7 @@ namespace StoryFlow.Editor
             { "minusFloat", StoryFlowNodeType.MinusFloat },
             { "multiplyFloat", StoryFlowNodeType.MultiplyFloat },
             { "divideFloat", StoryFlowNodeType.DivideFloat },
+            { "moduloFloat", StoryFlowNodeType.ModuloFloat },
             { "randomFloat", StoryFlowNodeType.RandomFloat },
 
             // Float Comparison

@@ -76,6 +76,7 @@ namespace StoryFlow.Execution.NodeHandlers
             Handlers[StoryFlowNodeType.MinusInt] = NoOp;
             Handlers[StoryFlowNodeType.MultiplyInt] = NoOp;
             Handlers[StoryFlowNodeType.DivideInt] = NoOp;
+            Handlers[StoryFlowNodeType.ModuloInt] = NoOp;
             Handlers[StoryFlowNodeType.GreaterInt] = NoOp;
             Handlers[StoryFlowNodeType.GreaterOrEqualInt] = NoOp;
             Handlers[StoryFlowNodeType.LessInt] = NoOp;
@@ -92,6 +93,7 @@ namespace StoryFlow.Execution.NodeHandlers
             Handlers[StoryFlowNodeType.MinusFloat] = NoOp;
             Handlers[StoryFlowNodeType.MultiplyFloat] = NoOp;
             Handlers[StoryFlowNodeType.DivideFloat] = NoOp;
+            Handlers[StoryFlowNodeType.ModuloFloat] = NoOp;
             Handlers[StoryFlowNodeType.GreaterFloat] = NoOp;
             Handlers[StoryFlowNodeType.GreaterOrEqualFloat] = NoOp;
             Handlers[StoryFlowNodeType.LessFloat] = NoOp;

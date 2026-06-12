@@ -124,6 +124,13 @@ namespace StoryFlow.Execution
                     return !Mathf.Approximately(b, 0f) ? a / b : 0f;
                 }
 
+                case StoryFlowNodeType.ModuloFloat:
+                {
+                    float a = EvaluatorHelpers.EvaluateFloatInput1(ctx, node);
+                    float b = EvaluatorHelpers.EvaluateFloatInput2(ctx, node);
+                    return !Mathf.Approximately(b, 0f) ? a % b : 0f;
+                }
+
                 case StoryFlowNodeType.RandomFloat:
                 {
                     float a = EvaluatorHelpers.EvaluateFloatInput1(ctx, node);
