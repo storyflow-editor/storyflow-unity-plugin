@@ -999,6 +999,658 @@ namespace StoryFlow
             return result;
         }
 
+        // =====================================================================
+        // Typed map get/set accessors (developer-facing)
+        //
+        // Lets game code read and write StoryFlow map variables as native, typed C#
+        // dictionaries, following the typed array setters. The key space collapses to
+        // 2 native key types (string — also covers enum keys, which are strings — and
+        // int) x 4 native value types (bool, int, float, string — the last also covers
+        // enum/image/audio/character values, all stored as strings) = 8 typed
+        // signatures, plus GetMapKeysInOrder.
+        //
+        // ORDERING CAVEAT: a C# Dictionary<TKey,TValue> does not contractually preserve
+        // insertion order, yet StoryFlow map entry order IS contractual (it matches the
+        // editor and the mapKeys/mapValues/forEachMap projection). The getters below build
+        // a Dictionary from the ordered storage for ergonomic typed access, but that view
+        // MAY reorder entries. Use GetMapKeysInOrder for the authoritative ordered key list.
+        // =====================================================================
+
+        /// <summary>
+        /// Shared find + map-type guard for the typed map accessors. Resolves the variable by
+        /// display name (local first then global unless <paramref name="global"/>), warns and
+        /// returns null when it is missing or not a map. Per-accessor key/value-family validation
+        /// happens at the call site.
+        /// </summary>
+        private StoryFlowVariable FindMapVariableForAccess(string accessor, string variableName, bool global)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] {accessor}: variable \"{variableName}\" not found.");
+                return null;
+            }
+            if (variable.Type != StoryFlowVariableType.Map)
+            {
+                Debug.LogWarning($"[StoryFlow] {accessor}: variable \"{variableName}\" is not a map.");
+                return null;
+            }
+            return variable;
+        }
+
+        // True when the map's key type is one of the string-native families (string or enum;
+        // enum keys are stored as strings and read back verbatim).
+        private static bool IsStringKeyFamily(StoryFlowVariable v)
+            => v.KeyType == StoryFlowVariableType.String || v.KeyType == StoryFlowVariableType.Enum;
+
+        // True when the value type is one of the string-native families. NOTE: StoryFlowVariant
+        // stores enum text in a SEPARATE EnumValue field (not the StringValue field), so enum
+        // keys/values must be read via GetEnum() — see MapVariantText below.
+        private static bool IsStringValueFamily(StoryFlowVariableType vt)
+            => vt == StoryFlowVariableType.String || vt == StoryFlowVariableType.Enum ||
+               vt == StoryFlowVariableType.Image || vt == StoryFlowVariableType.Audio ||
+               vt == StoryFlowVariableType.Character;
+
+        // Reads a variant's text regardless of whether it is enum-typed (EnumValue) or one of
+        // the other string-family types (StringValue). Used for string-family map keys and
+        // values so enum entries — stored via the enum path — read back correctly.
+        private static string MapVariantText(StoryFlowVariant variant)
+        {
+            if (variant == null) return "";
+            return variant.Type == StoryFlowVariableType.Enum ? variant.GetEnum() : variant.GetString();
+        }
+
+        /// <summary>
+        /// Reads a string-keyed, boolean-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Keys are returned raw (never localized). On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve the contractual map insertion order — use
+        /// <see cref="GetMapKeysInOrder"/> for the ordered key list. When global is true, searches
+        /// only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<string, bool> GetStringToBoolMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<string, bool>();
+            var v = FindMapVariableForAccess(nameof(GetStringToBoolMap), variableName, global);
+            if (v == null) return result;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToBoolMap: map \"{variableName}\" does not have string keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Boolean)
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToBoolMap: map \"{variableName}\" does not have boolean values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[MapVariantText(entry.Key)] = entry.Value?.GetBool() ?? false;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a string-keyed, integer-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Keys are returned raw. On a missing/non-map/wrong-key/wrong-value variable, logs a
+        /// warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<string, int> GetStringToIntMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<string, int>();
+            var v = FindMapVariableForAccess(nameof(GetStringToIntMap), variableName, global);
+            if (v == null) return result;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToIntMap: map \"{variableName}\" does not have string keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToIntMap: map \"{variableName}\" does not have integer values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[MapVariantText(entry.Key)] = entry.Value?.GetInt() ?? 0;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a string-keyed, float-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Keys are returned raw. On a missing/non-map/wrong-key/wrong-value variable, logs a
+        /// warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<string, float> GetStringToFloatMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<string, float>();
+            var v = FindMapVariableForAccess(nameof(GetStringToFloatMap), variableName, global);
+            if (v == null) return result;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToFloatMap: map \"{variableName}\" does not have string keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Float)
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToFloatMap: map \"{variableName}\" does not have float values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[MapVariantText(entry.Key)] = entry.Value?.GetFloat() ?? 0f;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a string-keyed, string-family-valued map variable (string/enum/image/audio/character
+        /// values) as a <see cref="Dictionary{TKey,TValue}"/>. String and enum values are resolved
+        /// through the string table (mirroring <see cref="GetArrayVariable"/>); image/audio/character
+        /// values are returned raw (asset keys / character paths). Keys are returned raw. On a
+        /// missing/non-map/wrong-key/wrong-value variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<string, string> GetStringToStringMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<string, string>();
+            var v = FindMapVariableForAccess(nameof(GetStringToStringMap), variableName, global);
+            if (v == null) return result;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToStringMap: map \"{variableName}\" does not have string keys.");
+                return result;
+            }
+            if (!IsStringValueFamily(v.ValueType))
+            {
+                Debug.LogWarning($"[StoryFlow] GetStringToStringMap: map \"{variableName}\" does not have string-family values.");
+                return result;
+            }
+            bool resolve = v.ValueType == StoryFlowVariableType.String || v.ValueType == StoryFlowVariableType.Enum;
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                var raw = MapVariantText(entry.Value);
+                result[MapVariantText(entry.Key)] = resolve ? ResolveString(raw) : raw;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an integer-keyed, boolean-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// On a missing/non-map/wrong-key/wrong-value variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<int, bool> GetIntToBoolMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<int, bool>();
+            var v = FindMapVariableForAccess(nameof(GetIntToBoolMap), variableName, global);
+            if (v == null) return result;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToBoolMap: map \"{variableName}\" does not have integer keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Boolean)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToBoolMap: map \"{variableName}\" does not have boolean values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[entry.Key.GetInt()] = entry.Value?.GetBool() ?? false;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an integer-keyed, integer-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// On a missing/non-map/wrong-key/wrong-value variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<int, int> GetIntToIntMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<int, int>();
+            var v = FindMapVariableForAccess(nameof(GetIntToIntMap), variableName, global);
+            if (v == null) return result;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToIntMap: map \"{variableName}\" does not have integer keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToIntMap: map \"{variableName}\" does not have integer values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[entry.Key.GetInt()] = entry.Value?.GetInt() ?? 0;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an integer-keyed, float-valued map variable as a <see cref="Dictionary{TKey,TValue}"/>.
+        /// On a missing/non-map/wrong-key/wrong-value variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<int, float> GetIntToFloatMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<int, float>();
+            var v = FindMapVariableForAccess(nameof(GetIntToFloatMap), variableName, global);
+            if (v == null) return result;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToFloatMap: map \"{variableName}\" does not have integer keys.");
+                return result;
+            }
+            if (v.ValueType != StoryFlowVariableType.Float)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToFloatMap: map \"{variableName}\" does not have float values.");
+                return result;
+            }
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                result[entry.Key.GetInt()] = entry.Value?.GetFloat() ?? 0f;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an integer-keyed, string-family-valued map variable (string/enum/image/audio/character
+        /// values) as a <see cref="Dictionary{TKey,TValue}"/>. String and enum values are resolved
+        /// through the string table; image/audio/character values are returned raw. On a
+        /// missing/non-map/wrong-key/wrong-value variable, logs a warning and returns an empty dictionary.
+        /// </summary>
+        /// <remarks>
+        /// The returned dictionary MAY NOT preserve insertion order — use <see cref="GetMapKeysInOrder"/>.
+        /// When global is true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public Dictionary<int, string> GetIntToStringMap(string variableName, bool global = false)
+        {
+            var result = new Dictionary<int, string>();
+            var v = FindMapVariableForAccess(nameof(GetIntToStringMap), variableName, global);
+            if (v == null) return result;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToStringMap: map \"{variableName}\" does not have integer keys.");
+                return result;
+            }
+            if (!IsStringValueFamily(v.ValueType))
+            {
+                Debug.LogWarning($"[StoryFlow] GetIntToStringMap: map \"{variableName}\" does not have string-family values.");
+                return result;
+            }
+            bool resolve = v.ValueType == StoryFlowVariableType.String || v.ValueType == StoryFlowVariableType.Enum;
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                var raw = MapVariantText(entry.Value);
+                result[entry.Key.GetInt()] = resolve ? ResolveString(raw) : raw;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Returns a map variable's keys as a <see cref="List{T}"/> of strings in the contractual
+        /// insertion order (matching the editor and the mapKeys/forEachMap projection). String and
+        /// enum keys come back verbatim; integer keys are stringified via <see cref="int.ToString()"/>.
+        /// This is the ordered escape hatch for the typed Get*Map getters, whose Dictionary view does
+        /// not contractually preserve order.
+        /// </summary>
+        /// <remarks>
+        /// On a missing or non-map variable, logs a warning and returns an empty list. When global is
+        /// true, searches only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public List<string> GetMapKeysInOrder(string variableName, bool global = false)
+        {
+            var result = new List<string>();
+            var v = FindMapVariableForAccess(nameof(GetMapKeysInOrder), variableName, global);
+            if (v == null) return result;
+            bool integerKey = v.KeyType == StoryFlowVariableType.Integer;
+            foreach (var entry in v.Value.GetMap())
+            {
+                if (entry?.Key == null) continue;
+                // String/enum keys come back verbatim (enum via EnumValue); integer keys stringified.
+                result.Add(integerKey ? entry.Key.GetInt().ToString() : MapVariantText(entry.Key));
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Sets a string-keyed, boolean-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Entries are stored as an ordered list in the dictionary's enumeration order. A null
+        /// dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value variable,
+        /// logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node so option
+        /// visibility and text interpolation refresh — callers do not need to trigger anything manually.
+        /// When global is true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetStringToBoolMap(string variableName, Dictionary<string, bool> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetStringToBoolMap), variableName, global);
+            if (v == null) return;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToBoolMap: map \"{variableName}\" does not have string keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Boolean)
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToBoolMap: map \"{variableName}\" does not have boolean values.");
+                return;
+            }
+            bool enumKey = v.KeyType == StoryFlowVariableType.Enum;
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = MakeStringKey(pair.Key, enumKey), Value = StoryFlowVariant.Bool(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets a string-keyed, integer-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetStringToIntMap(string variableName, Dictionary<string, int> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetStringToIntMap), variableName, global);
+            if (v == null) return;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToIntMap: map \"{variableName}\" does not have string keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToIntMap: map \"{variableName}\" does not have integer values.");
+                return;
+            }
+            bool enumKey = v.KeyType == StoryFlowVariableType.Enum;
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = MakeStringKey(pair.Key, enumKey), Value = StoryFlowVariant.Int(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets a string-keyed, float-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetStringToFloatMap(string variableName, Dictionary<string, float> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetStringToFloatMap), variableName, global);
+            if (v == null) return;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToFloatMap: map \"{variableName}\" does not have string keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Float)
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToFloatMap: map \"{variableName}\" does not have float values.");
+                return;
+            }
+            bool enumKey = v.KeyType == StoryFlowVariableType.Enum;
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = MakeStringKey(pair.Key, enumKey), Value = StoryFlowVariant.Float(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets a string-keyed, string-family-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Values are stored verbatim via the value type's storage path (enum values via the enum path,
+        /// string/image/audio/character via the string path), matching the typed array setters and the
+        /// editor importer; resolution happens later at read time. A null dictionary is treated as an
+        /// empty map. On a missing/non-map/wrong-key/wrong-value variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// <para>
+        /// Localization: for string/enum values, pass strings-table keys to keep them translatable;
+        /// raw display text bypasses the table and will not be re-translated. Image/audio/character
+        /// values are asset keys / character paths.
+        /// </para>
+        /// </remarks>
+        public void SetStringToStringMap(string variableName, Dictionary<string, string> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetStringToStringMap), variableName, global);
+            if (v == null) return;
+            if (!IsStringKeyFamily(v))
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToStringMap: map \"{variableName}\" does not have string keys.");
+                return;
+            }
+            if (!IsStringValueFamily(v.ValueType))
+            {
+                Debug.LogWarning($"[StoryFlow] SetStringToStringMap: map \"{variableName}\" does not have string-family values.");
+                return;
+            }
+            bool enumKey = v.KeyType == StoryFlowVariableType.Enum;
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry
+                    {
+                        Key = MakeStringKey(pair.Key, enumKey),
+                        Value = MakeStringValue(pair.Value, v.ValueType)
+                    });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets an integer-keyed, boolean-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetIntToBoolMap(string variableName, Dictionary<int, bool> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetIntToBoolMap), variableName, global);
+            if (v == null) return;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToBoolMap: map \"{variableName}\" does not have integer keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Boolean)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToBoolMap: map \"{variableName}\" does not have boolean values.");
+                return;
+            }
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = StoryFlowVariant.Int(pair.Key), Value = StoryFlowVariant.Bool(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets an integer-keyed, integer-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetIntToIntMap(string variableName, Dictionary<int, int> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetIntToIntMap), variableName, global);
+            if (v == null) return;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToIntMap: map \"{variableName}\" does not have integer keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToIntMap: map \"{variableName}\" does not have integer values.");
+                return;
+            }
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = StoryFlowVariant.Int(pair.Key), Value = StoryFlowVariant.Int(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets an integer-keyed, float-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetIntToFloatMap(string variableName, Dictionary<int, float> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetIntToFloatMap), variableName, global);
+            if (v == null) return;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToFloatMap: map \"{variableName}\" does not have integer keys.");
+                return;
+            }
+            if (v.ValueType != StoryFlowVariableType.Float)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToFloatMap: map \"{variableName}\" does not have float values.");
+                return;
+            }
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry { Key = StoryFlowVariant.Int(pair.Key), Value = StoryFlowVariant.Float(pair.Value) });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        /// <summary>
+        /// Sets an integer-keyed, string-family-valued map variable from a <see cref="Dictionary{TKey,TValue}"/>.
+        /// Values are stored verbatim via the value type's storage path (enum via the enum path,
+        /// string/image/audio/character via the string path); resolution happens later at read time.
+        /// A null dictionary is treated as an empty map. On a missing/non-map/wrong-key/wrong-value
+        /// variable, logs a warning and no-ops.
+        /// </summary>
+        /// <remarks>
+        /// Broadcasts <c>OnVariableChanged</c> and re-renders the current dialogue node. When global is
+        /// true, targets only the global scope; otherwise searches local first then global.
+        /// </remarks>
+        public void SetIntToStringMap(string variableName, Dictionary<int, string> values, bool global = false)
+        {
+            var v = FindMapVariableForAccess(nameof(SetIntToStringMap), variableName, global);
+            if (v == null) return;
+            if (v.KeyType != StoryFlowVariableType.Integer)
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToStringMap: map \"{variableName}\" does not have integer keys.");
+                return;
+            }
+            if (!IsStringValueFamily(v.ValueType))
+            {
+                Debug.LogWarning($"[StoryFlow] SetIntToStringMap: map \"{variableName}\" does not have string-family values.");
+                return;
+            }
+            var entries = new List<StoryFlowMapEntry>();
+            if (values != null)
+            {
+                foreach (var pair in values)
+                    entries.Add(new StoryFlowMapEntry
+                    {
+                        Key = StoryFlowVariant.Int(pair.Key),
+                        Value = MakeStringValue(pair.Value, v.ValueType)
+                    });
+            }
+            ApplyMapSet(v, entries, global);
+        }
+
+        // Builds a key variant for the string key family: enum keys go through the enum path,
+        // plain string keys through the string path (matching the importer/array-setter split).
+        private static StoryFlowVariant MakeStringKey(string key, bool enumKey)
+            => enumKey ? StoryFlowVariant.Enum(key ?? "") : StoryFlowVariant.String(key ?? "");
+
+        // Builds a string-family value variant typed to the declared value type. Enum values use
+        // the enum path; string/image/audio/character all store the text in StringValue.
+        private static StoryFlowVariant MakeStringValue(string value, StoryFlowVariableType valueType)
+        {
+            if (valueType == StoryFlowVariableType.Enum)
+                return StoryFlowVariant.Enum(value ?? "");
+            return new StoryFlowVariant { Type = valueType, StringValue = value ?? "" };
+        }
+
+        // Shared tail for the typed map setters: assigns the ordered entry list, recomputes the
+        // global/local scope, broadcasts the change, and refreshes the current dialogue — exactly
+        // like the typed array setters' tail (variable.Value.ArrayValue = ...; broadcast; refresh).
+        private void ApplyMapSet(StoryFlowVariable variable, List<StoryFlowMapEntry> entries, bool global)
+        {
+            variable.Value.SetMap(entries);
+            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            BroadcastVariableChanged(variable, isGlobal);
+            RefreshCurrentDialogueAfterArraySet();
+        }
+
         /// <summary>
         /// Reads a script or global variable of type character-array and returns the character
         /// paths stored in it. Each path is suitable for <see cref="GetCharacter"/>,
