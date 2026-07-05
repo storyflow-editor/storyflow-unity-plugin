@@ -30,7 +30,7 @@ https://github.com/storyflow-editor/storyflow-unity-plugin.git
 
 ## Quick Start
 
-1. **Import your project** - go to **StoryFlow > Import Project**, select your exported `build/` folder
+1. **Import your project** - go to **Tools > StoryFlow > Import Project**, select your exported `build/` folder
 2. **Add a StoryFlowComponent** to any GameObject
 3. **Call `StartDialogue()`** from your game code:
 
@@ -44,7 +44,7 @@ A built-in dialogue UI appears automatically. No manager setup, no UI wiring nee
 
 Connect to the StoryFlow Editor for real-time updates during development:
 
-1. Open **StoryFlow > Live Sync** in Unity
+1. Open **Tools > StoryFlow > Live Sync** in Unity
 2. Click **Connect** (default port: 9000)
 3. Click **Sync** - or sync from the editor
 

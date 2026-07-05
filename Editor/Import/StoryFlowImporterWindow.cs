@@ -5,11 +5,11 @@ namespace StoryFlow.Editor
 {
     /// <summary>
     /// EditorWindow for importing StoryFlow projects from a build directory.
-    /// Accessible via the menu: StoryFlow > Import Project.
+    /// Accessible via the menu: Tools > StoryFlow > Import Project.
     /// </summary>
     public class StoryFlowImporterWindow : EditorWindow
     {
-        [MenuItem("StoryFlow/Import Project")]
+        [MenuItem("Tools/StoryFlow/Import Project")]
         private static void ShowWindow()
         {
             var window = GetWindow<StoryFlowImporterWindow>("StoryFlow Importer");

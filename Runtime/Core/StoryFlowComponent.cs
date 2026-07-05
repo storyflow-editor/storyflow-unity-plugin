@@ -163,7 +163,7 @@ namespace StoryFlow
                 var project = GetProject();
                 if (project == null)
                 {
-                    BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via StoryFlow > Import Project.");
+                    BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via Tools > StoryFlow > Import Project.");
                     return;
                 }
 
@@ -233,7 +233,7 @@ namespace StoryFlow
             var manager = StoryFlowManager.Instance;
             if (manager == null || !manager.HasProject())
             {
-                BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via StoryFlow > Import Project.");
+                BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via Tools > StoryFlow > Import Project.");
                 return;
             }
 

@@ -15,7 +15,7 @@ namespace StoryFlow.Editor
     /// <summary>
     /// WebSocket client that connects to StoryFlow Editor for live sync.
     /// Receives JSON updates when scripts change in the editor.
-    /// Accessible via menu: StoryFlow > Live Sync.
+    /// Accessible via menu: Tools > StoryFlow > Live Sync.
     ///
     /// Protocol:
     ///   After connecting, sends a "connect" message identifying this client as Unity.
@@ -25,7 +25,7 @@ namespace StoryFlow.Editor
     /// </summary>
     public class StoryFlowLiveSyncServer : EditorWindow
     {
-        [MenuItem("StoryFlow/Live Sync")]
+        [MenuItem("Tools/StoryFlow/Live Sync")]
         private static void ShowWindow()
         {
             var window = GetWindow<StoryFlowLiveSyncServer>("StoryFlow Live Sync");
