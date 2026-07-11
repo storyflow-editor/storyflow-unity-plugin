@@ -239,6 +239,32 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
+            // 7b. Parse tags (optional, additive field). Rebuilt on every render so the
+            // read API (state.Tags) reflects the current line; the per-tag event fires only
+            // on fresh entry below so a re-render of the same line never re-fires.
+            state.Tags.Clear();
+            var tagsJson = node.GetData("tags");
+            if (!string.IsNullOrEmpty(tagsJson))
+            {
+                try
+                {
+                    foreach (var tag in JArray.Parse(tagsJson))
+                    {
+                        // Only scalar tokens become tags; object/array elements are skipped
+                        // (Value<string>() on a JObject/JArray throws InvalidCastException,
+                        // which would escape the JsonException catch below).
+                        if (tag.Type == JTokenType.Object || tag.Type == JTokenType.Array)
+                            continue;
+                        // Raw string passed through untouched.
+                        state.Tags.Add(tag.Value<string>() ?? "");
+                    }
+                }
+                catch (JsonException e)
+                {
+                    Debug.LogWarning($"[StoryFlow] Failed to parse tags for node {node.Id}: {e.Message}");
+                }
+            }
+
             // 8. CanAdvance: true when no options AND a header edge exists to follow
             if (state.Options.Count == 0)
             {
@@ -282,8 +308,28 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
-            // 11. Notify UI
+            // 11+12. Notify UI, then fire dialogue tags.
+            //
+            // Re-entrancy contract: a handler on either broadcast may synchronously
+            // advance/select/stop/restart the dialogue. The entered node's tag list is
+            // snapshot HERE, before any event fires, so neither an OnDialogueUpdated handler
+            // nor an OnDialogueTagReached handler that clears state.Tags (via a re-render) can
+            // touch the list being iterated. dialogue-updated is broadcast FIRST (state fully
+            // applied) and the whole snapshot then fires even if a handler transitions
+            // mid-loop (this may interleave with the next node's events, which is accepted).
+            // Iterating a local copy — like HandleForEachMap's entry snapshot — means a
+            // mid-loop StopDialogue() can't invalidate the iterator. Tags fire only on fresh
+            // entry; re-renders (isFreshEntry == false) never re-fire, revisiting the node
+            // later (a new edge entry) fires again, and untagged nodes fire nothing.
+            var tagsSnapshot = isFreshEntry ? state.Tags.ToArray() : System.Array.Empty<string>();
+
             component.BroadcastDialogueUpdate();
+
+            foreach (var tag in tagsSnapshot)
+            {
+                component.Trace($"TAG \"{tag}\"");
+                component.BroadcastDialogueTag(tag);
+            }
         }
     }
 }

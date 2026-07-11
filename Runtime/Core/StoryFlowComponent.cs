@@ -76,6 +76,14 @@ namespace StoryFlow
         /// <summary>Fired when the dialogue state is updated (new node reached, text changed, etc.).</summary>
         public event Action<StoryFlowDialogueState> OnDialogueUpdated;
 
+        /// <summary>
+        /// Fired once per tag when a tagged dialogue node is freshly entered, in authored (array) order.
+        /// Parameter: the raw tag string. Fires only on a new dialogue node — re-rendering the same
+        /// current line (variable-change refresh, input change, Set* fallthrough) never re-fires;
+        /// revisiting the node later fires again. Untagged dialogue fires nothing.
+        /// </summary>
+        public event Action<string> OnDialogueTagReached;
+
         /// <summary>Fired when the dialogue session ends.</summary>
         public event Action OnDialogueEnded;
 
@@ -111,6 +119,10 @@ namespace StoryFlow
         [Header("Events")]
         public UnityEvent OnDialogueStartedEvent;
         public UnityEvent<StoryFlowDialogueState> OnDialogueUpdatedEvent;
+
+        [Tooltip("Fired once per tag when a tagged dialogue node is freshly entered, in authored order. Passes the raw tag string.")]
+        public UnityEvent<string> OnDialogueTagReachedEvent;
+
         public UnityEvent OnDialogueEndedEvent;
 
         // =====================================================================
@@ -2503,6 +2515,16 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Broadcasts a single dialogue tag. Called once per tag, in authored order, when a
+        /// tagged dialogue node is freshly entered. The tag string is passed through untouched.
+        /// </summary>
+        internal void BroadcastDialogueTag(string tag)
+        {
+            OnDialogueTagReached?.Invoke(tag);
+            OnDialogueTagReachedEvent?.Invoke(tag);
+        }
+
+        /// <summary>
         /// Broadcasts a variable change notification.
         /// </summary>
         internal void BroadcastVariableChanged(StoryFlowVariable variable, bool isGlobal)
@@ -2692,6 +2714,7 @@ namespace StoryFlow
             // Clear all C# event subscribers to prevent memory leaks
             OnDialogueStarted = null;
             OnDialogueUpdated = null;
+            OnDialogueTagReached = null;
             OnDialogueEnded = null;
             OnVariableChanged = null;
             OnCharacterVariableChanged = null;

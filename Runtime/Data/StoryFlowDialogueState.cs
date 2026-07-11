@@ -15,6 +15,15 @@ namespace StoryFlow.Data
         public StoryFlowCharacterData Character;
         public List<StoryFlowTextBlock> TextBlocks;
         public List<StoryFlowOption> Options;
+
+        /// <summary>
+        /// Presentation-cue tags authored on the dialogue node, in array order.
+        /// Empty when the node has no tags. Populated on every render so UIs can read the
+        /// current line's tags; the per-tag <c>OnDialogueTagReached</c> event fires only on
+        /// fresh entry (see DialogueNodeHandler).
+        /// </summary>
+        public List<string> Tags;
+
         public bool IsValid;
         public bool CanAdvance;
         public bool AudioLoop;
@@ -26,6 +35,7 @@ namespace StoryFlow.Data
         {
             TextBlocks = new List<StoryFlowTextBlock>();
             Options = new List<StoryFlowOption>();
+            Tags = new List<string>();
             Character = new StoryFlowCharacterData();
         }
     }
