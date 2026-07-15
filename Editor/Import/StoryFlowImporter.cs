@@ -456,10 +456,58 @@ namespace StoryFlow.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
+            AssignDefaultProject(projectAsset);
+
             Debug.Log($"[StoryFlow] Imported project '{title}': {scriptReferences.Count} scripts, " +
                       $"{characterReferences.Count} characters, {globalVariableEntries.Count} global variables.");
 
             return projectAsset;
+        }
+
+        /// <summary>
+        /// Points StoryFlowSettings.DefaultProject at the imported project so runtime
+        /// discovery works in player builds. Assets in plain folders are stripped from
+        /// builds; the settings asset lives in a Resources folder and anchors the
+        /// project (and everything it references) into the build.
+        /// </summary>
+        private static void AssignDefaultProject(StoryFlowProjectAsset projectAsset)
+        {
+            var settings = StoryFlowEditorHelpers.FindOrCreateSettings();
+            if (settings == null)
+            {
+                Debug.LogWarning("[StoryFlow] Could not find or create StoryFlowSettings. " +
+                                 "Player builds will not find the project automatically; " +
+                                 "create the settings asset via Edit > Project Settings > StoryFlow.");
+                return;
+            }
+
+            string settingsPath = AssetDatabase.GetAssetPath(settings).Replace("\\", "/");
+            if (!settingsPath.Contains("/Resources/"))
+            {
+                Debug.LogWarning($"[StoryFlow] StoryFlowSettings at \"{settingsPath}\" is not inside a " +
+                                 "Resources folder, so player builds cannot load it and will not find " +
+                                 "the project. Move it to a Resources folder " +
+                                 "(e.g. Assets/Resources/StoryFlowSettings.asset).");
+            }
+
+            if (settings.DefaultProject == projectAsset)
+                return;
+
+            if (settings.DefaultProject != null)
+            {
+                // Respect an explicit choice pointing at another still-existing project
+                Debug.LogWarning("[StoryFlow] StoryFlowSettings.DefaultProject already points to " +
+                                 $"\"{settings.DefaultProject.Title}\"; leaving it unchanged. Update it in " +
+                                 "Edit > Project Settings > StoryFlow if the newly imported project " +
+                                 "should be the default.");
+                return;
+            }
+
+            settings.DefaultProject = projectAsset;
+            EditorUtility.SetDirty(settings);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[StoryFlow] StoryFlowSettings.DefaultProject set to \"{projectAsset.Title}\" " +
+                      "so player builds can locate the project.");
         }
 
         // ================================================================

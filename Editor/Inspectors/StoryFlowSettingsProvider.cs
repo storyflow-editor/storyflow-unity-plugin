@@ -58,7 +58,8 @@ namespace StoryFlow.Editor
             var defaultProjectProp = serializedSettings.FindProperty("DefaultProject");
             EditorGUILayout.PropertyField(defaultProjectProp,
                 new GUIContent("Project Asset",
-                    "Default project asset to auto-load. Leave empty for manual loading."));
+                    "Project asset loaded by StoryFlowManager at runtime. Set automatically on " +
+                    "import. Required for player builds unless a scene references the project."));
 
             EditorGUI.indentLevel--;
             EditorGUILayout.Space(8);

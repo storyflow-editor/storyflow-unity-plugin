@@ -175,7 +175,7 @@ namespace StoryFlow
                 var project = GetProject();
                 if (project == null)
                 {
-                    BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via Tools > StoryFlow > Import Project.");
+                    BroadcastError(NoProjectFoundMessage());
                     return;
                 }
 
@@ -205,7 +205,7 @@ namespace StoryFlow
             var project = GetProject();
             if (project == null)
             {
-                BroadcastError("Cannot start dialogue: no project available.");
+                BroadcastError(NoProjectFoundMessage());
                 return;
             }
 
@@ -245,7 +245,7 @@ namespace StoryFlow
             var manager = StoryFlowManager.Instance;
             if (manager == null || !manager.HasProject())
             {
-                BroadcastError("Cannot start dialogue: no StoryFlow project found. Import a project via Tools > StoryFlow > Import Project.");
+                BroadcastError(NoProjectFoundMessage());
                 return;
             }
 
@@ -597,7 +597,8 @@ namespace StoryFlow
         /// </summary>
         public StoryFlowProjectAsset GetProject()
         {
-            return StoryFlowManager.Instance?.Project;
+            // Manager accessor retries discovery while no project is assigned
+            return StoryFlowManager.Instance != null ? StoryFlowManager.Instance.GetProject() : null;
         }
 
         // =====================================================================
@@ -2547,6 +2548,24 @@ namespace StoryFlow
         internal void BroadcastCharacterVariableChanged(string characterPath, string variableName, StoryFlowVariant value)
         {
             OnCharacterVariableChanged?.Invoke(characterPath, variableName, value);
+        }
+
+        /// <summary>
+        /// Error text for a missing project, with guidance matching where it can
+        /// actually be fixed: the import menu in the editor, project settings or an
+        /// asset reference for player builds (editor menus don't exist there).
+        /// </summary>
+        private static string NoProjectFoundMessage()
+        {
+#if UNITY_EDITOR
+            return "Cannot start dialogue: no StoryFlow project found. " +
+                   "Import a project via Tools > StoryFlow > Import Project.";
+#else
+            return "Cannot start dialogue: no StoryFlow project found in this build. " +
+                   "Assign Default Project in Edit > Project Settings > StoryFlow and rebuild " +
+                   "(plugin 1.2.2+ sets it automatically on import), reference the project asset " +
+                   "from a scene, or call StoryFlowManager.SetProject() before starting dialogue.";
+#endif
         }
 
         /// <summary>

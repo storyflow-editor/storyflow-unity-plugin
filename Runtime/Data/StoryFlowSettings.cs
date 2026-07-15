@@ -5,7 +5,7 @@ namespace StoryFlow.Data
     public class StoryFlowSettings : ScriptableObject
     {
         [Header("Default Project")]
-        [Tooltip("Default project asset to auto-load. Leave empty for manual loading.")]
+        [Tooltip("Project asset loaded by StoryFlowManager at runtime. Set automatically on import. Required for player builds unless a scene references the project asset or game code calls SetProject().")]
         public StoryFlowProjectAsset DefaultProject;
 
         [Header("Import")]

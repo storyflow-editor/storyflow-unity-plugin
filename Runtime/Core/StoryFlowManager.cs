@@ -60,6 +60,11 @@ namespace StoryFlow
         {
             if (Instance != null && Instance != this)
             {
+                // A scene-placed manager losing the race to the auto-created instance
+                // hands over its explicitly assigned project before being destroyed.
+                if (Project != null && !Instance.HasProject())
+                    Instance.SetProject(Project);
+
                 Destroy(gameObject);
                 return;
             }
@@ -73,6 +78,8 @@ namespace StoryFlow
 
             if (Project != null)
                 InitializeProject();
+            else
+                LogDiscoveryFailure();
         }
 
         private void OnDestroy()
@@ -82,13 +89,21 @@ namespace StoryFlow
         }
 
         /// <summary>
-        /// Finds the StoryFlowProjectAsset in the project. Searches Resources first,
-        /// then falls back to scanning all loaded assets. In the editor, uses AssetDatabase
-        /// as a final fallback to find assets that aren't currently loaded in memory.
+        /// Finds the StoryFlowProjectAsset in the project. Checks the explicit
+        /// StoryFlowSettings.DefaultProject assignment first (works in player builds;
+        /// the importer sets it automatically), then Resources, then all loaded assets.
+        /// In the editor, uses AssetDatabase as a final fallback to find assets that
+        /// aren't currently loaded in memory.
         /// </summary>
         private static StoryFlowProjectAsset FindProjectAsset()
         {
-            // Try Resources folder first (fast)
+            // Explicit assignment via settings (the settings asset lives in Resources,
+            // so it ships in builds and anchors the project reference)
+            var settings = StoryFlowSettings.Instance;
+            if (settings != null && settings.DefaultProject != null)
+                return settings.DefaultProject;
+
+            // Try Resources folder (fast)
             var fromResources = Resources.Load<StoryFlowProjectAsset>("Project");
             if (fromResources != null) return fromResources;
 
@@ -108,6 +123,27 @@ namespace StoryFlow
 #endif
 
             return null;
+        }
+
+        /// <summary>
+        /// Logs a warning when startup discovery finds no project, with guidance
+        /// matching where the problem can actually be fixed. In the editor the
+        /// AssetDatabase fallback means this only fires when nothing is imported;
+        /// in a player it usually means no build-visible anchor exists.
+        /// </summary>
+        private static void LogDiscoveryFailure()
+        {
+#if UNITY_EDITOR
+            Debug.LogWarning("[StoryFlow] No StoryFlow project asset found at startup. " +
+                             "Import a project via Tools > StoryFlow > Import Project. " +
+                             "Discovery retries when a dialogue starts.");
+#else
+            Debug.LogWarning("[StoryFlow] No StoryFlow project found in this build. " +
+                             "Assign Default Project in Edit > Project Settings > StoryFlow and rebuild " +
+                             "(plugin 1.2.2+ sets it automatically on import), reference the project " +
+                             "asset from a scene, or call StoryFlowManager.SetProject(). " +
+                             "Discovery retries when a dialogue starts.");
+#endif
         }
 
         // =====================================================================
@@ -174,16 +210,35 @@ namespace StoryFlow
         // Public Accessors
         // =====================================================================
 
-        /// <summary>Returns the current project asset, or null if none is set.</summary>
+        /// <summary>
+        /// Returns the current project asset, or null if none could be found.
+        /// While no project is assigned, retries auto-discovery so projects that
+        /// become loadable after startup (scene references, addressables) are found.
+        /// </summary>
         public StoryFlowProjectAsset GetProject()
         {
+            RetryDiscoveryIfNeeded();
             return Project;
         }
 
-        /// <summary>Returns true if a project asset has been assigned.</summary>
+        /// <summary>Returns true if a project asset is assigned or discoverable.</summary>
         public bool HasProject()
         {
+            RetryDiscoveryIfNeeded();
             return Project != null;
+        }
+
+        /// <summary>
+        /// Re-runs auto-discovery while no project is assigned. Cheap when a project
+        /// is present (single null check); only scans while the project is missing.
+        /// </summary>
+        private void RetryDiscoveryIfNeeded()
+        {
+            if (Project != null) return;
+
+            Project = FindProjectAsset();
+            if (Project != null)
+                InitializeProject();
         }
 
         /// <summary>
