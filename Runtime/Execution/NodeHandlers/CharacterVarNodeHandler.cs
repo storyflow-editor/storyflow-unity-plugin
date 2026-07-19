@@ -60,6 +60,9 @@ namespace StoryFlow.Execution.NodeHandlers
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_Image);
                 characterData.ImageAssetKey = val;
                 component.BroadcastCharacterVariableChanged(characterPath, variableName, StoryFlowVariant.String(val));
+                // Carry the resolved portrait Sprite too, so non-speaker UIs can update the
+                // character image without waiting for a Dialogue node to re-render.
+                component.BroadcastCharacterImageChanged(characterPath, component.GetCharacterPortrait(characterPath));
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }

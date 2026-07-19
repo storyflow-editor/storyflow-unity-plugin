@@ -97,6 +97,28 @@ namespace StoryFlow
         /// </summary>
         public event Action<string, string, StoryFlowVariant> OnCharacterVariableChanged;
 
+        /// <summary>
+        /// Fired when a SetCharacterVar node changes a character's built-in "Image" field.
+        /// Parameters: characterPath, the resolved portrait Sprite (the new key's sprite, or the
+        /// character's baked default; null only when the character has no resolvable image at all).
+        /// Fires alongside <see cref="OnCharacterVariableChanged"/>, but carries the resolved Sprite
+        /// directly so non-speaker UIs (background characters, portraits that change without
+        /// dialogue) can update without a Dialogue node firing or a manual
+        /// <see cref="GetCharacterPortrait"/> call.
+        /// </summary>
+        public event Action<string, Sprite> OnCharacterImageChanged;
+
+        /// <summary>
+        /// Fired when a synchronous run of nodes settles — the processing loop reaches a
+        /// dialogue awaiting input, an End node, or a dead end. Because Set* nodes execute
+        /// synchronously in a single batch, this marks the point where a whole sequence of
+        /// variable/character changes has finished, letting listeners (save systems, debug
+        /// overlays, character reactions) react once instead of per-change mid-sequence. Fires
+        /// once per drain of the loop, which also includes public array/map setters that
+        /// re-render the current dialogue.
+        /// </summary>
+        public event Action OnExecutionSettled;
+
         /// <summary>Fired when execution enters a new script via RunScript. Parameter: script path.</summary>
         public event Action<string> OnScriptStarted;
 
@@ -911,7 +933,11 @@ namespace StoryFlow
         /// from SetCharacterVar("Image", ...). Pass a non-empty asset key to resolve an alternate
         /// pose, e.g. one stored in a custom image-typed character variable.
         /// Walks the standard three asset pools in priority order: character → script → project.
-        /// Returns null if nothing resolves.
+        /// For the CURRENT portrait (empty assetKey, or an explicit key equal to the character's
+        /// current ImageAssetKey), falls back to the character asset's baked <c>ResolvedImage</c>
+        /// when no pool holds the key, so it stays reliable even when the portrait isn't in a pool.
+        /// Returns null when the character is unknown, when the current portrait has no baked
+        /// default, or when an explicit alternate key fails to resolve.
         /// </summary>
         public Sprite GetCharacterPortrait(string characterPath, string assetKey = "")
         {
@@ -919,14 +945,21 @@ namespace StoryFlow
             if (characterData == null) return null;
 
             var key = !string.IsNullOrEmpty(assetKey) ? assetKey : characterData.ImageAssetKey;
-            if (string.IsNullOrEmpty(key)) return null;
 
-            // 1. Check the character asset's resolved-asset pool first.
             var project = GetProject();
+            StoryFlowCharacterAsset characterAsset = null;
             if (project != null)
             {
                 var normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(characterPath);
-                var characterAsset = project.GetCharacterAsset(normalizedPath);
+                characterAsset = project.GetCharacterAsset(normalizedPath);
+            }
+
+            if (!string.IsNullOrEmpty(key))
+            {
+                // 1. Check the character asset's own resolved-asset pool first. Currently the
+                //    importer registers character-scoped assets into the PROJECT pool (step 2),
+                //    not this per-character pool, so this tier is a reserved extension point and
+                //    normally empty — the project cascade below does the real work.
                 if (characterAsset != null &&
                     characterAsset.ResolvedAssets != null &&
                     characterAsset.ResolvedAssets.TryGetValue(key, out var charAsset) &&
@@ -934,10 +967,20 @@ namespace StoryFlow
                 {
                     return charSprite;
                 }
+
+                // 2. Fall back to the standard script → project cascade.
+                var resolved = ResolveAsset<Sprite>(key);
+                if (resolved != null) return resolved;
             }
 
-            // 2. Fall back to the standard script → project cascade.
-            return ResolveAsset<Sprite>(key);
+            // 3. Last resort for the character's CURRENT portrait: the baked default sprite
+            //    the importer stores directly on the asset (ResolvedImage). This keeps the API
+            //    reliable for characters whose portrait isn't also registered in a resolved-asset
+            //    pool. Skipped for an explicit alternate key that genuinely failed to resolve.
+            if (string.IsNullOrEmpty(assetKey) || key == characterData.ImageAssetKey)
+                return characterAsset != null ? characterAsset.ResolvedImage : null;
+
+            return null;
         }
 
         /// <summary>
@@ -2443,6 +2486,11 @@ namespace StoryFlow
                     return;
                 }
             }
+
+            // The loop has drained: execution paused at a dialogue awaiting input, ended, or
+            // hit a dead end. Signal once so listeners can react to the completed batch of
+            // synchronous Set*/character changes instead of per-change mid-sequence.
+            BroadcastExecutionSettled();
         }
 
         /// <summary>
@@ -2548,6 +2596,25 @@ namespace StoryFlow
         internal void BroadcastCharacterVariableChanged(string characterPath, string variableName, StoryFlowVariant value)
         {
             OnCharacterVariableChanged?.Invoke(characterPath, variableName, value);
+        }
+
+        /// <summary>
+        /// Broadcasts a character portrait change with the resolved Sprite. Called after a
+        /// SetCharacterVar node mutates the built-in "Image" field and the new asset key has
+        /// been resolved via <see cref="GetCharacterPortrait"/>.
+        /// </summary>
+        internal void BroadcastCharacterImageChanged(string characterPath, Sprite sprite)
+        {
+            OnCharacterImageChanged?.Invoke(characterPath, sprite);
+        }
+
+        /// <summary>
+        /// Broadcasts that a synchronous run of nodes has settled (paused at a dialogue,
+        /// ended, or hit a dead end). Fired once per drain of the processing loop.
+        /// </summary>
+        internal void BroadcastExecutionSettled()
+        {
+            OnExecutionSettled?.Invoke();
         }
 
         /// <summary>
@@ -2737,6 +2804,8 @@ namespace StoryFlow
             OnDialogueEnded = null;
             OnVariableChanged = null;
             OnCharacterVariableChanged = null;
+            OnCharacterImageChanged = null;
+            OnExecutionSettled = null;
             OnError = null;
             OnAudioPlayRequested = null;
             OnBackgroundImageChanged = null;

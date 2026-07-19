@@ -248,6 +248,17 @@ namespace StoryFlow.Data
             _resolvedAssets = null;
         }
 
+        /// <summary>
+        /// Empties the resolved-asset pool and invalidates the runtime cache. Used by the
+        /// importer to rebuild the pool from scratch each import. Clearing the serialized list
+        /// alone would leave the [NonSerialized] cache stale until the next OnEnable.
+        /// </summary>
+        public void ClearResolvedAssets()
+        {
+            ResolvedAssetEntries.Clear();
+            _resolvedAssets = null;
+        }
+
         private static StoryFlowVariant DeserializeVariant(StoryFlowVariableType type, string json)
         {
             return StoryFlowVariant.DeserializeFromJson(type, json);

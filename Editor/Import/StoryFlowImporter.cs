@@ -308,6 +308,11 @@ namespace StoryFlow.Editor
             // --- Read global variables ---
             var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
             var globalStringEntries = new List<StoryFlowProjectAsset.GlobalStringEntry>();
+            // Media referenced by project-scoped (global) variables — e.g. a global Image
+            // variable wired into a Set Character Variable node. These live in
+            // global-variables.json's own "assets" section, scoped to neither a script nor a
+            // character, so they are resolved into the project's resolved-asset pool below.
+            var globalAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
 
             string globalVarsPath = Path.Combine(buildDirectory, "global-variables.json");
             if (File.Exists(globalVarsPath))
@@ -330,10 +335,24 @@ namespace StoryFlow.Editor
                 {
                     globalStringEntries.AddRange(FlattenStrings(gStrings));
                 }
+
+                JObject gAssets = globalVarsJson.Value<JObject>("assets");
+                if (gAssets != null)
+                {
+                    globalAssetEntries = ParseAssets(gAssets);
+                }
             }
 
             // --- Read characters.json ---
             var characterReferences = new List<StoryFlowProjectAsset.CharacterReference>();
+            // Character-scoped media beyond the single portrait: custom image/audio-typed
+            // character variables and character map image/audio values. Like global-variable
+            // assets, these live in characters.json's "assets" section but are otherwise
+            // unresolved, so they are imported into the project pool below.
+            var characterAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
+            // Portrait key → already-resolved sprite (from ImportCharacter). Registered into the
+            // project pool directly so the portrait's texture isn't re-imported a second time.
+            var characterPortraitAssets = new Dictionary<string, UnityEngine.Object>();
             string charactersJsonPath = Path.Combine(buildDirectory, "characters.json");
             if (File.Exists(charactersJsonPath))
             {
@@ -358,18 +377,17 @@ namespace StoryFlow.Editor
                     }
                 }
 
-                // Build character asset lookup
-                var charAssetLookup = new Dictionary<string, string>(); // assetKey → relative path
+                // Parse character-scoped assets once. characterAssetEntries feeds project-pool
+                // resolution (every asset, not just the portrait); charAssetLookup (assetKey →
+                // path) is what ImportCharacter uses to resolve the portrait. a.Id equals the
+                // asset's object key in every export, so it matches the character's image ref.
+                var charAssetLookup = new Dictionary<string, string>();
                 if (charAssets != null)
                 {
-                    foreach (var assetProp in charAssets.Properties())
-                    {
-                        var assetObj = assetProp.Value as JObject;
-                        if (assetObj == null) continue;
-                        string assetPath = assetObj.Value<string>("path") ?? "";
-                        if (!string.IsNullOrEmpty(assetPath))
-                            charAssetLookup[assetProp.Name] = assetPath;
-                    }
+                    characterAssetEntries = ParseAssets(charAssets);
+                    foreach (var a in characterAssetEntries)
+                        if (!string.IsNullOrEmpty(a.Path))
+                            charAssetLookup[a.Id] = a.Path;
                 }
 
                 if (charsObj != null)
@@ -383,6 +401,12 @@ namespace StoryFlow.Editor
                         var charAsset = ImportCharacter(
                             normalizedPath, charObj, charStringLookup, charAssetLookup,
                             buildDirectory, charactersDir, mediaImagesDir);
+
+                        // ImportCharacter already imported the portrait into ResolvedImage; keep
+                        // that sprite to register in the project pool (and skip below) so the
+                        // portrait texture isn't imported twice per import.
+                        if (!string.IsNullOrEmpty(charAsset.ImageAssetKey) && charAsset.ResolvedImage != null)
+                            characterPortraitAssets[charAsset.ImageAssetKey] = charAsset.ResolvedImage;
 
                         characterReferences.Add(new StoryFlowProjectAsset.CharacterReference
                         {
@@ -447,6 +471,23 @@ namespace StoryFlow.Editor
             projectAsset.CharacterReferences = characterReferences;
             projectAsset.GlobalVariableEntries = globalVariableEntries;
             projectAsset.GlobalStringEntries = globalStringEntries;
+
+            // Import and resolve project-scoped media into the project's resolved-asset pool so
+            // runtime ResolveAsset<T> can find keys that appear only in global-variables.json or
+            // characters.json — e.g. a global Image variable driving a character portrait, or a
+            // custom image-typed character variable holding an alternate pose. Rebuild the pool
+            // each import so removed/renamed assets don't leave stale entries; ClearResolvedAssets
+            // (not List.Clear) also invalidates the runtime cache.
+            projectAsset.ClearResolvedAssets();
+            ImportMediaAssets(globalAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset);
+            // Portraits are already imported by ImportCharacter, so drop them from the copy pass
+            // (avoids a redundant second texture import) and register their resolved sprites directly.
+            // a.Id equals the portrait's ImageAssetKey because the export keys each asset by its id;
+            // if they ever diverged this would simply fall back to re-importing the portrait (no break).
+            characterAssetEntries.RemoveAll(a => characterPortraitAssets.ContainsKey(a.Id));
+            ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset);
+            foreach (var portrait in characterPortraitAssets)
+                projectAsset.SetResolvedAsset(portrait.Key, portrait.Value);
 
             // Create asset AFTER all data is set so the first disk write contains full state
             if (isNewProject)
