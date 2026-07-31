@@ -17,7 +17,7 @@ jobs:
       - name: Zip plugin
         run: |
           zip -r StoryFlow-Plugin-v${{ steps.version.outputs.version }}-Unity.zip \
-            . -x ".git/*" ".github/*" ".gitignore" "changelogs/*" "_build_verify~/*" "CHANGELOG.md" "Samples~/*"
+            . -x ".git/*" ".github/*" ".gitignore" "changelogs~/*" "_build_verify~/*" "CHANGELOG.md" "Samples~/*"
 
       - name: Upload to R2
         run: |
@@ -36,7 +36,7 @@ jobs:
 
       - name: Open changelog PR on storyflow-web
         run: |
-          CHANGELOG_FILE="changelogs/v${{ steps.version.outputs.version }}.md"
+          CHANGELOG_FILE="changelogs~/v${{ steps.version.outputs.version }}.md"
           if [ ! -f "$CHANGELOG_FILE" ]; then
             echo "No changelog file found at $CHANGELOG_FILE, skipping"
             exit 0
