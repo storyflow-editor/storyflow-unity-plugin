@@ -2060,10 +2060,12 @@ namespace StoryFlow.Editor
                 return;
             }
 
-            // Settled before anything is touched, so a refusal leaves the asset exactly as
-            // it was: clean, with the hash that still describes what is on disk. Nothing is
-            // left dirty for a later flush to write behind the refusal, and the next sync
-            // retries naturally, because that untouched hash disagrees with the new source.
+            // Settled before the object is certified or marked dirty, so a refusal leaves the
+            // asset clean and uncertified and no flush will write it. The in-memory object
+            // does hold the new data by this point — everything above populated it — but it
+            // is not dirty, so nothing carries it to disk behind the refusal. Its recorded
+            // hash is left describing what is actually on disk, which is what makes the next
+            // sync retry: that hash disagrees with the new source.
             if (!TryMakeAssetWritable(assetPath, report))
                 return;
 
