@@ -643,9 +643,14 @@ namespace StoryFlow.Editor
                 return;
             }
 
+            // Same order as CommitAsset: settle writability first, so a settings asset that
+            // cannot be written is not left dirty holding a change nobody agreed to.
+            string settingsAssetPath = ToAssetPath(AssetDatabase.GetAssetPath(settings));
+            if (!TryMakeAssetWritable(settingsAssetPath, report))
+                return;
+
             settings.DefaultProject = projectAsset;
             EditorUtility.SetDirty(settings);
-            string settingsAssetPath = ToAssetPath(AssetDatabase.GetAssetPath(settings));
             if (TrySaveAsset(settings, settingsAssetPath, report))
             {
                 Debug.Log($"[StoryFlow] StoryFlowSettings.DefaultProject set to \"{projectAsset.Title}\" " +
@@ -1567,6 +1572,47 @@ namespace StoryFlow.Editor
         }
 
         /// <summary>
+        /// Settles whether an asset may be written, before anything about it is modified.
+        ///
+        /// This has to run before the object is marked dirty, not after. Refusing the save
+        /// alone is not enough: an object left dirty is written by the next flush that comes
+        /// along — editor shutdown, a stray SaveAssets, the user pressing save — and Unity's
+        /// write strips the read-only attribute on the way past. Measured against a real
+        /// editor, the refusal held for the duration of the import and the file was rewritten
+        /// twenty milliseconds later as the editor exited. So nothing that will be refused is
+        /// ever dirtied, and the refusal is the only outcome.
+        ///
+        /// With a provider configured, MakeEditable is Unity's own checkout. With none, a
+        /// read-only file is refused rather than force-cleared, for the same reasons the
+        /// media path refuses one: it is nearly always owned by a version control system
+        /// Unity is not driving — including a provider that is configured but offline — and
+        /// overwriting it loses the change at the next sync or revert.
+        /// </summary>
+        private static bool TryMakeAssetWritable(string assetPath, StoryFlowImportReport report)
+        {
+            if (HasActiveVersionControl())
+            {
+                if (AssetDatabase.MakeEditable(assetPath))
+                    return true;
+
+                report.RecordAssetFailure(assetPath,
+                    "version control refused to check the asset out. Check it out manually " +
+                    "and sync again");
+                return false;
+            }
+
+            if (!IsReadOnlyOnDisk(assetPath))
+                return true;
+
+            report.RecordAssetFailure(assetPath,
+                "the asset is read-only. StoryFlow will not clear the attribute for you: " +
+                "a read-only file is usually owned by a version control system such as " +
+                "Perforce or Plastic, and overwriting it loses your change on the next " +
+                "sync. Check the file out, or clear its read-only attribute, then sync again");
+            return false;
+        }
+
+        /// <summary>
         /// Saves one asset and reports whether the bytes actually reached disk.
         ///
         /// AssetDatabase.SaveAssets() saves everything dirty in one call and swallows
@@ -1584,38 +1630,6 @@ namespace StoryFlow.Editor
             // decision or merely the outcome. Two owners of one counter double-count.
             if (!EditorUtility.IsDirty(asset))
                 return true;
-
-            // Unity checks out AssetDatabase-mediated writes itself, but only once it decides
-            // to write. Asking first turns a silent "could not write" into a named failure
-            // with a cause, and lets the save succeed on a file the provider will release.
-            if (HasActiveVersionControl())
-            {
-                if (!AssetDatabase.MakeEditable(assetPath))
-                {
-                    report.RecordAssetFailure(assetPath,
-                        "version control refused to check the asset out. Check it out manually " +
-                        "and sync again");
-                    return false;
-                }
-            }
-            else if (IsReadOnlyOnDisk(assetPath))
-            {
-                // No provider to ask, and Unity will not refuse this write on its own: it
-                // clears the read-only attribute and saves, reporting success. That is the
-                // dangerous case, not a safe one — a read-only asset is nearly always owned
-                // by a version control system Unity is not driving (a provider that is
-                // configured but offline still lands here), so writing it modifies a file
-                // that system believes is untouched, and the change is lost at the next sync
-                // or revert with nothing to show it existed. Refused for exactly the same
-                // reason a read-only media file is refused, so both halves of an import
-                // behave the same way in every version control state.
-                report.RecordAssetFailure(assetPath,
-                    "the asset is read-only. StoryFlow will not clear the attribute for you: " +
-                    "a read-only file is usually owned by a version control system such as " +
-                    "Perforce or Plastic, and overwriting it loses your change on the next " +
-                    "sync. Check the file out, or clear its read-only attribute, then sync again");
-                return false;
-            }
 
             try
             {
@@ -2045,6 +2059,13 @@ namespace StoryFlow.Editor
                 report.RecordAssetUpToDate();
                 return;
             }
+
+            // Settled before anything is touched, so a refusal leaves the asset exactly as
+            // it was: clean, with the hash that still describes what is on disk. Nothing is
+            // left dirty for a later flush to write behind the refusal, and the next sync
+            // retries naturally, because that untouched hash disagrees with the new source.
+            if (!TryMakeAssetWritable(assetPath, report))
+                return;
 
             applyHash(newHash);
             EditorUtility.SetDirty(asset);
