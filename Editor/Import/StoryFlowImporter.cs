@@ -1588,11 +1588,32 @@ namespace StoryFlow.Editor
             // Unity checks out AssetDatabase-mediated writes itself, but only once it decides
             // to write. Asking first turns a silent "could not write" into a named failure
             // with a cause, and lets the save succeed on a file the provider will release.
-            if (HasActiveVersionControl() && !AssetDatabase.MakeEditable(assetPath))
+            if (HasActiveVersionControl())
             {
+                if (!AssetDatabase.MakeEditable(assetPath))
+                {
+                    report.RecordAssetFailure(assetPath,
+                        "version control refused to check the asset out. Check it out manually " +
+                        "and sync again");
+                    return false;
+                }
+            }
+            else if (IsReadOnlyOnDisk(assetPath))
+            {
+                // No provider to ask, and Unity will not refuse this write on its own: it
+                // clears the read-only attribute and saves, reporting success. That is the
+                // dangerous case, not a safe one — a read-only asset is nearly always owned
+                // by a version control system Unity is not driving (a provider that is
+                // configured but offline still lands here), so writing it modifies a file
+                // that system believes is untouched, and the change is lost at the next sync
+                // or revert with nothing to show it existed. Refused for exactly the same
+                // reason a read-only media file is refused, so both halves of an import
+                // behave the same way in every version control state.
                 report.RecordAssetFailure(assetPath,
-                    "version control refused to check the asset out. Check it out manually " +
-                    "and sync again");
+                    "the asset is read-only. StoryFlow will not clear the attribute for you: " +
+                    "a read-only file is usually owned by a version control system such as " +
+                    "Perforce or Plastic, and overwriting it loses your change on the next " +
+                    "sync. Check the file out, or clear its read-only attribute, then sync again");
                 return false;
             }
 
