@@ -225,14 +225,24 @@ namespace StoryFlow.Editor
             {
                 EditorUtility.DisplayProgressBar("StoryFlow Auto Re-Import", "Re-importing project...", 0.1f);
 
-                var projectAsset = StoryFlowImporter.ImportProject(buildDir, outputPath);
+                var projectAsset = StoryFlowImporter.ImportProject(buildDir, outputPath, out var report);
 
                 LastBuildDirectory = buildDir;
 
-                Debug.Log($"[StoryFlow] Auto re-import successful: {projectAsset.Title} " +
-                          $"({projectAsset.ScriptReferences.Count} scripts, " +
-                          $"{projectAsset.CharacterReferences.Count} characters, " +
-                          $"{projectAsset.GlobalVariableEntries.Count} global variables)");
+                string counts = $"{projectAsset.Title} " +
+                                $"({projectAsset.ScriptReferences.Count} scripts, " +
+                                $"{projectAsset.CharacterReferences.Count} characters, " +
+                                $"{projectAsset.GlobalVariableEntries.Count} global variables)";
+
+                if (report.HasFailures)
+                {
+                    Debug.LogWarning($"[StoryFlow] Auto re-import finished with {report.FailedCount} " +
+                                     $"failure(s) — {report.Summarize()}: {counts}");
+                }
+                else
+                {
+                    Debug.Log($"[StoryFlow] Auto re-import successful: {counts} — {report.Summarize()}");
+                }
             }
             catch (System.Exception ex)
             {

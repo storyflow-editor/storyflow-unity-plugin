@@ -598,12 +598,25 @@ namespace StoryFlow.Editor
                 AddLog($"Importing from: {buildDirectory}");
                 AddLog($"Output path: {targetOutputPath}");
 
-                var projectAsset = StoryFlowImporter.ImportProject(buildDirectory, targetOutputPath);
+                var projectAsset = StoryFlowImporter.ImportProject(
+                    buildDirectory, targetOutputPath, out var report);
 
-                AddLog($"Import complete: {projectAsset.Title} " +
-                       $"({projectAsset.ScriptReferences.Count} scripts, " +
-                       $"{projectAsset.CharacterReferences.Count} characters, " +
-                       $"{projectAsset.GlobalVariableEntries.Count} global variables)");
+                string counts = $"{projectAsset.Title} " +
+                                $"({projectAsset.ScriptReferences.Count} scripts, " +
+                                $"{projectAsset.CharacterReferences.Count} characters, " +
+                                $"{projectAsset.GlobalVariableEntries.Count} global variables)";
+
+                if (report.HasFailures)
+                {
+                    AddLog($"Import finished with {report.FailedCount} failure(s) — " +
+                           $"{report.Summarize()}. {counts}");
+                    foreach (string failure in report.Failures)
+                        AddLog("  " + failure);
+                }
+                else
+                {
+                    AddLog($"Import complete: {counts} — {report.Summarize()}");
+                }
 
                 // Ping the project asset so the user can see it in the Project window
                 EditorGUIUtility.PingObject(projectAsset);

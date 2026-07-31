@@ -121,17 +121,23 @@ namespace StoryFlow.Editor
             {
                 EditorUtility.DisplayProgressBar("StoryFlow Import", "Importing project...", 0.1f);
 
-                var projectAsset = StoryFlowImporter.ImportProject(buildDirectory, outputPath);
+                var projectAsset = StoryFlowImporter.ImportProject(buildDirectory, outputPath, out var report);
 
                 EditorUtility.DisplayProgressBar("StoryFlow Import", "Finalizing...", 0.9f);
 
-                statusMessage = $"Import successful!\n\n" +
+                statusMessage = (report.HasFailures
+                                    ? $"Import finished with {report.FailedCount} failure(s).\n\n"
+                                    : "Import successful!\n\n") +
                                 $"Project: {projectAsset.Title}\n" +
                                 $"Scripts: {projectAsset.ScriptReferences.Count}\n" +
                                 $"Characters: {projectAsset.CharacterReferences.Count}\n" +
-                                $"Global Variables: {projectAsset.GlobalVariableEntries.Count}\n\n" +
-                                $"Assets created in: {outputPath}";
-                statusType = MessageType.Info;
+                                $"Global Variables: {projectAsset.GlobalVariableEntries.Count}\n" +
+                                $"Files: {report.Summarize()}\n\n" +
+                                $"Assets created in: {outputPath}" +
+                                (report.HasFailures
+                                    ? "\n\nStill stale on disk:\n" + string.Join("\n", report.Failures)
+                                    : "");
+                statusType = report.HasFailures ? MessageType.Warning : MessageType.Info;
 
                 // Ping the created asset in the Project window
                 EditorGUIUtility.PingObject(projectAsset);

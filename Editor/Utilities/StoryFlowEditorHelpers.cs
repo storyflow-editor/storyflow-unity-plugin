@@ -89,7 +89,10 @@ namespace StoryFlow.Editor
 
             settings = ScriptableObject.CreateInstance<StoryFlowSettings>();
             AssetDatabase.CreateAsset(settings, SettingsAssetPath);
-            AssetDatabase.SaveAssets();
+            // SaveAssetIfDirty, not SaveAssets: this runs in the middle of an import, and a
+            // blanket SaveAssets would flush every asset the importer deliberately left
+            // untouched, defeating the skip-if-unchanged pass.
+            AssetDatabase.SaveAssetIfDirty(settings);
 
             Debug.Log("[StoryFlow] Created StoryFlowSettings asset at: " + SettingsAssetPath);
             return settings;

@@ -259,17 +259,31 @@ namespace StoryFlow.Editor
             {
                 EditorUtility.DisplayProgressBar("StoryFlow Re-Import", "Re-importing project...", 0.1f);
 
-                var reimported = StoryFlowImporter.ImportProject(reimportBuildDirectory, outputPath);
+                var reimported = StoryFlowImporter.ImportProject(
+                    reimportBuildDirectory, outputPath, out var report);
 
                 EditorUtility.DisplayProgressBar("StoryFlow Re-Import", "Finalizing...", 0.9f);
 
                 EditorGUIUtility.PingObject(reimported);
                 Selection.activeObject = reimported;
 
-                Debug.Log($"[StoryFlow] Re-import successful: {reimported.Title} " +
-                          $"({reimported.ScriptReferences.Count} scripts, " +
-                          $"{reimported.CharacterReferences.Count} characters, " +
-                          $"{reimported.GlobalVariableEntries.Count} global variables)");
+                string counts = $"{reimported.Title} " +
+                                $"({reimported.ScriptReferences.Count} scripts, " +
+                                $"{reimported.CharacterReferences.Count} characters, " +
+                                $"{reimported.GlobalVariableEntries.Count} global variables)";
+
+                if (report.HasFailures)
+                {
+                    Debug.LogWarning($"[StoryFlow] Re-import finished with {report.FailedCount} " +
+                                     $"failure(s) — {report.Summarize()}: {counts}");
+                    EditorUtility.DisplayDialog("Re-Import Finished With Failures",
+                        $"{report.FailedCount} file(s) could not be written ({report.Summarize()}).\n\n" +
+                        string.Join("\n", report.Failures), "OK");
+                }
+                else
+                {
+                    Debug.Log($"[StoryFlow] Re-import successful: {counts} — {report.Summarize()}");
+                }
             }
             catch (System.Exception ex)
             {

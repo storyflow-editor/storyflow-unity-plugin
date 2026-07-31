@@ -266,6 +266,13 @@ namespace StoryFlow.Editor
         private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
             { ".wav", ".mp3", ".ogg", ".aif", ".aiff" };
 
+        // Per-import cache of media content hashes, keyed by path. One media file is
+        // commonly referenced by several scripts and by the project pool, and hashing a
+        // multi-megabyte audio clip once per reference would be wasteful. Cleared at the
+        // start of every import so a file edited between syncs is never served stale.
+        private static readonly Dictionary<string, string> MediaContentHashes =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         // ================================================================
         // Main Entry Point
         // ================================================================
@@ -278,6 +285,28 @@ namespace StoryFlow.Editor
         /// <returns>The created or updated StoryFlowProjectAsset.</returns>
         public static StoryFlowProjectAsset ImportProject(string buildDirectory, string outputPath)
         {
+            return ImportProject(buildDirectory, outputPath, out _);
+        }
+
+        /// <summary>
+        /// Imports a StoryFlow project and reports per-file outcomes.
+        ///
+        /// A file that cannot be written — read-only, checked in, locked by another
+        /// application — fails on its own and the import carries on with the next one, so a
+        /// single locked texture no longer costs the user the whole sync. Callers must check
+        /// <see cref="StoryFlowImportReport.HasFailures"/> before telling the user the import
+        /// succeeded.
+        /// </summary>
+        public static StoryFlowProjectAsset ImportProject(
+            string buildDirectory, string outputPath, out StoryFlowImportReport report)
+        {
+            report = new StoryFlowImportReport();
+            MediaContentHashes.Clear();
+
+            // Normalized once, here: past this point every path derived from outputPath is
+            // already in AssetDatabase form, so even plain string concatenation is safe.
+            outputPath = ToAssetPath(outputPath);
+
             if (!Directory.Exists(buildDirectory))
                 throw new DirectoryNotFoundException($"Build directory not found: {buildDirectory}");
 
@@ -400,7 +429,7 @@ namespace StoryFlow.Editor
 
                         var charAsset = ImportCharacter(
                             normalizedPath, charObj, charStringLookup, charAssetLookup,
-                            buildDirectory, charactersDir, mediaImagesDir);
+                            buildDirectory, charactersDir, mediaImagesDir, report);
 
                         // ImportCharacter already imported the portrait into ResolvedImage; keep
                         // that sprite to register in the project pool (and skip below) so the
@@ -433,7 +462,7 @@ namespace StoryFlow.Editor
                 // Import the script
                 var scriptAsset = ImportScript(
                     scriptKey, scriptJson, buildDirectory,
-                    scriptsDir, mediaImagesDir, mediaAudioDir);
+                    scriptsDir, mediaImagesDir, mediaAudioDir, report);
 
                 scriptReferences.Add(new StoryFlowProjectAsset.ScriptReference
                 {
@@ -479,13 +508,13 @@ namespace StoryFlow.Editor
             // each import so removed/renamed assets don't leave stale entries; ClearResolvedAssets
             // (not List.Clear) also invalidates the runtime cache.
             projectAsset.ClearResolvedAssets();
-            ImportMediaAssets(globalAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset);
+            ImportMediaAssets(globalAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
             // Portraits are already imported by ImportCharacter, so drop them from the copy pass
             // (avoids a redundant second texture import) and register their resolved sprites directly.
             // a.Id equals the portrait's ImageAssetKey because the export keys each asset by its id;
             // if they ever diverged this would simply fall back to re-importing the portrait (no break).
             characterAssetEntries.RemoveAll(a => characterPortraitAssets.ContainsKey(a.Id));
-            ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset);
+            ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
             foreach (var portrait in characterPortraitAssets)
                 projectAsset.SetResolvedAsset(portrait.Key, portrait.Value);
 
@@ -494,13 +523,24 @@ namespace StoryFlow.Editor
                 AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
 
             EditorUtility.SetDirty(projectAsset);
-            AssetDatabase.SaveAssets();
+            TrySaveAsset(projectAsset, projectAssetPath, report);
             AssetDatabase.Refresh();
 
-            AssignDefaultProject(projectAsset);
+            AssignDefaultProject(projectAsset, report);
 
-            Debug.Log($"[StoryFlow] Imported project '{title}': {scriptReferences.Count} scripts, " +
-                      $"{characterReferences.Count} characters, {globalVariableEntries.Count} global variables.");
+            if (report.HasFailures)
+            {
+                Debug.LogError($"[StoryFlow] Imported project '{title}' with {report.FailedCount} " +
+                               $"failure(s) ({report.Summarize()}). These files are still stale on " +
+                               "disk and will be retried on the next sync:\n  " +
+                               string.Join("\n  ", report.Failures));
+            }
+            else
+            {
+                Debug.Log($"[StoryFlow] Imported project '{title}': {scriptReferences.Count} scripts, " +
+                          $"{characterReferences.Count} characters, {globalVariableEntries.Count} " +
+                          $"global variables ({report.Summarize()}).");
+            }
 
             return projectAsset;
         }
@@ -511,7 +551,8 @@ namespace StoryFlow.Editor
         /// builds; the settings asset lives in a Resources folder and anchors the
         /// project (and everything it references) into the build.
         /// </summary>
-        private static void AssignDefaultProject(StoryFlowProjectAsset projectAsset)
+        private static void AssignDefaultProject(
+            StoryFlowProjectAsset projectAsset, StoryFlowImportReport report)
         {
             var settings = StoryFlowEditorHelpers.FindOrCreateSettings();
             if (settings == null)
@@ -546,9 +587,12 @@ namespace StoryFlow.Editor
 
             settings.DefaultProject = projectAsset;
             EditorUtility.SetDirty(settings);
-            AssetDatabase.SaveAssets();
-            Debug.Log($"[StoryFlow] StoryFlowSettings.DefaultProject set to \"{projectAsset.Title}\" " +
-                      "so player builds can locate the project.");
+            string settingsAssetPath = ToAssetPath(AssetDatabase.GetAssetPath(settings));
+            if (TrySaveAsset(settings, settingsAssetPath, report))
+            {
+                Debug.Log($"[StoryFlow] StoryFlowSettings.DefaultProject set to \"{projectAsset.Title}\" " +
+                          "so player builds can locate the project.");
+            }
         }
 
         // ================================================================
@@ -557,7 +601,7 @@ namespace StoryFlow.Editor
 
         private static StoryFlowScriptAsset ImportScript(
             string scriptPath, JObject scriptJson, string buildDirectory,
-            string scriptsDir, string imagesDir, string audioDir)
+            string scriptsDir, string imagesDir, string audioDir, StoryFlowImportReport report)
         {
             // Preserve folder structure: "scripts/hello/main_menu.json" → "Scripts/scripts/hello/main_menu.asset"
             string relativePath = scriptPath.Replace("\\", "/").Replace(".json", "");
@@ -600,7 +644,7 @@ namespace StoryFlow.Editor
                 scriptAsset.SetAssets(parsedAssets);
 
                 // Import referenced media files and resolve them
-                ImportMediaAssets(parsedAssets, buildDirectory, imagesDir, audioDir, scriptAsset.SetResolvedAsset);
+                ImportMediaAssets(parsedAssets, buildDirectory, imagesDir, audioDir, scriptAsset.SetResolvedAsset, report);
             }
 
             // Parse flows
@@ -613,6 +657,7 @@ namespace StoryFlow.Editor
                 AssetDatabase.CreateAsset(scriptAsset, assetPath);
 
             EditorUtility.SetDirty(scriptAsset);
+            TrySaveAsset(scriptAsset, assetPath, report);
             return scriptAsset;
         }
 
@@ -624,7 +669,8 @@ namespace StoryFlow.Editor
             string normalizedPath, JObject charObj,
             Dictionary<string, string> stringLookup,
             Dictionary<string, string> assetLookup,
-            string buildDirectory, string charactersDir, string imagesDir)
+            string buildDirectory, string charactersDir, string imagesDir,
+            StoryFlowImportReport report)
         {
             // Preserve folder structure: "scripts\newfile.sfc" → "Characters/scripts/newfile.asset"
             string relativePath = normalizedPath.Replace("\\", "/").Replace(".sfc", "");
@@ -647,7 +693,7 @@ namespace StoryFlow.Editor
             charAsset.ImageAssetKey = imageAssetKey;
             if (!string.IsNullOrEmpty(imageAssetKey) && assetLookup.TryGetValue(imageAssetKey, out var imagePath))
             {
-                var sprite = ImportImageAsset(buildDirectory, imagePath, imagesDir);
+                var sprite = ImportImageAsset(buildDirectory, imagePath, imagesDir, report);
                 charAsset.ResolvedImage = sprite;
             }
 
@@ -708,6 +754,7 @@ namespace StoryFlow.Editor
                 AssetDatabase.CreateAsset(charAsset, assetPath);
 
             EditorUtility.SetDirty(charAsset);
+            TrySaveAsset(charAsset, assetPath, report);
             return charAsset;
         }
 
@@ -1000,7 +1047,8 @@ namespace StoryFlow.Editor
             List<StoryFlowScriptAsset.SerializedAsset> assets,
             string buildDirectory,
             string imagesDir, string audioDir,
-            Action<string, UnityEngine.Object> setResolvedAsset)
+            Action<string, UnityEngine.Object> setResolvedAsset,
+            StoryFlowImportReport report)
         {
             foreach (var asset in assets)
             {
@@ -1010,13 +1058,13 @@ namespace StoryFlow.Editor
 
                 if (asset.Type == "image" || ImageExtensions.Contains(ext))
                 {
-                    var sprite = ImportImageAsset(buildDirectory, asset.Path, imagesDir);
+                    var sprite = ImportImageAsset(buildDirectory, asset.Path, imagesDir, report);
                     if (sprite != null)
                         setResolvedAsset(asset.Id, sprite);
                 }
                 else if (asset.Type == "audio" || AudioExtensions.Contains(ext))
                 {
-                    var clip = ImportAudioAsset(buildDirectory, asset.Path, audioDir);
+                    var clip = ImportAudioAsset(buildDirectory, asset.Path, audioDir, report);
                     if (clip != null)
                         setResolvedAsset(asset.Id, clip);
                 }
@@ -1027,7 +1075,8 @@ namespace StoryFlow.Editor
         /// Imports an image from the build directory into the Unity project as a Sprite.
         /// Returns the imported Sprite, or null on failure.
         /// </summary>
-        private static Sprite ImportImageAsset(string buildDirectory, string relativePath, string imagesDir)
+        private static Sprite ImportImageAsset(
+            string buildDirectory, string relativePath, string imagesDir, StoryFlowImportReport report)
         {
             string sourcePath = Path.Combine(buildDirectory, relativePath);
             if (!File.Exists(sourcePath))
@@ -1047,9 +1096,11 @@ namespace StoryFlow.Editor
             string destPath = CombineAssetPath(imagesDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
 
-            // Copy file to project
-            File.Copy(sourcePath, destPath, overwrite: true);
-            AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
+            // Copy file to project. A copy that fails is this file's problem alone — the
+            // sprite is left unresolved, the failure is reported by name, and the rest of
+            // the import carries on.
+            if (!TryCopyMedia(sourcePath, destPath, report))
+                return AssetDatabase.LoadAssetAtPath<Sprite>(destPath);
 
             // Configure as sprite: single mode, full rect mesh, bottom-center pivot
             var importer = AssetImporter.GetAtPath(destPath) as TextureImporter;
@@ -1092,7 +1143,8 @@ namespace StoryFlow.Editor
         /// Imports an audio file from the build directory into the Unity project as an AudioClip.
         /// Returns the imported AudioClip, or null on failure.
         /// </summary>
-        private static AudioClip ImportAudioAsset(string buildDirectory, string relativePath, string audioDir)
+        private static AudioClip ImportAudioAsset(
+            string buildDirectory, string relativePath, string audioDir, StoryFlowImportReport report)
         {
             string sourcePath = Path.Combine(buildDirectory, relativePath);
             if (!File.Exists(sourcePath))
@@ -1121,8 +1173,8 @@ namespace StoryFlow.Editor
             string destPath = CombineAssetPath(audioDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
 
-            File.Copy(sourcePath, destPath, overwrite: true);
-            AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
+            if (!TryCopyMedia(sourcePath, destPath, report))
+                return AssetDatabase.LoadAssetAtPath<AudioClip>(destPath);
 
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(destPath);
             return clip;
@@ -1384,6 +1436,94 @@ namespace StoryFlow.Editor
         }
 
         // ================================================================
+        // Per-file write failures
+        // ================================================================
+
+        /// <summary>
+        /// Turns an exception from a raw file write into a message a user can act on.
+        /// Unity's own error for these is "Access is denied", which names neither the cause
+        /// nor the fix.
+        /// </summary>
+        private static string DescribeWriteFailure(Exception ex)
+        {
+            if (ex is UnauthorizedAccessException)
+                return "the file is read-only or locked. Check it out in version control " +
+                       "(Perforce and Plastic mark unopened files read-only) or clear its " +
+                       "read-only attribute, then sync again";
+
+            if (ex is IOException)
+                return $"the file could not be written ({ex.Message}). It may be open in " +
+                       "another application, or the destination drive may be out of space";
+
+            return ex.Message;
+        }
+
+        /// <summary>
+        /// Saves one asset and reports whether the bytes actually reached disk.
+        ///
+        /// AssetDatabase.SaveAssets() saves everything dirty in one call and swallows
+        /// per-file failures, so a read-only .asset stayed stale on disk while the live-sync
+        /// log still said "Import complete". SaveAssetIfDirty saves exactly one object, which
+        /// makes the outcome attributable to a path; Unity leaves an object dirty when it
+        /// could not write it (and logs rather than throws), so the dirty flag after the call
+        /// is the signal this checks.
+        /// </summary>
+        private static bool TrySaveAsset(
+            UnityEngine.Object asset, string assetPath, StoryFlowImportReport report)
+        {
+            if (!EditorUtility.IsDirty(asset))
+            {
+                report.AssetsUpToDate++;
+                return true;
+            }
+
+            try
+            {
+                AssetDatabase.SaveAssetIfDirty(asset);
+            }
+            catch (Exception ex)
+            {
+                report.RecordAssetFailure(assetPath, DescribeWriteFailure(ex));
+                return false;
+            }
+
+            if (EditorUtility.IsDirty(asset))
+            {
+                report.RecordAssetFailure(assetPath,
+                    "Unity could not write the asset. It is almost certainly read-only or " +
+                    "checked in under version control — check it out (or clear its read-only " +
+                    "attribute) and sync again");
+                return false;
+            }
+
+            report.AssetsWritten++;
+            return true;
+        }
+
+        /// <summary>
+        /// Copies one media file into the project. Returns true when the destination ends the
+        /// call holding the source's bytes, false when it could not be written — in which
+        /// case the failure is recorded by name and the caller carries on with the next file.
+        /// </summary>
+        private static bool TryCopyMedia(
+            string sourcePath, string destPath, StoryFlowImportReport report)
+        {
+            try
+            {
+                File.Copy(sourcePath, destPath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                report.RecordMediaFailure(destPath, DescribeWriteFailure(ex));
+                return false;
+            }
+
+            report.MediaWritten++;
+            AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
+            return true;
+        }
+
+        // ================================================================
         // Asset path normalization
         // ================================================================
 
@@ -1402,16 +1542,33 @@ namespace StoryFlow.Editor
             return string.IsNullOrEmpty(path) ? path : path.Replace('\\', '/');
         }
 
-        /// <summary>Path.Combine for AssetDatabase paths: combines, then normalizes.</summary>
+        /// <summary>
+        /// Path.Combine for AssetDatabase paths: normalizes both halves and joins them with
+        /// a forward slash. Path.Combine is deliberately not used for the join — it throws
+        /// the directory away entirely when the second argument is rooted, and the relative
+        /// path here comes out of externally authored JSON, so a leading slash would silently
+        /// turn "Assets/StoryFlow" + "/media/x.png" into a write outside the output folder.
+        /// </summary>
         private static string CombineAssetPath(string directory, string relative)
         {
-            return ToAssetPath(Path.Combine(directory ?? string.Empty, relative ?? string.Empty));
+            string dir = ToAssetPath(directory) ?? string.Empty;
+            string rel = ToAssetPath(relative) ?? string.Empty;
+
+            rel = rel.TrimStart('/');
+            if (dir.Length == 0) return rel;
+            if (rel.Length == 0) return dir;
+
+            return dir.EndsWith("/", StringComparison.Ordinal) ? dir + rel : dir + "/" + rel;
         }
 
-        /// <summary>The parent folder of an AssetDatabase path, in AssetDatabase form.</summary>
+        /// <summary>
+        /// The parent folder of an AssetDatabase path, in AssetDatabase form. Normalized
+        /// before the split, not after: a backslash is a legal filename character on macOS
+        /// and Linux, so splitting first would compute the parent of a different path.
+        /// </summary>
         private static string AssetParentFolder(string assetPath)
         {
-            return ToAssetPath(Path.GetDirectoryName(assetPath));
+            return ToAssetPath(Path.GetDirectoryName(ToAssetPath(assetPath)));
         }
 
         /// <summary>
