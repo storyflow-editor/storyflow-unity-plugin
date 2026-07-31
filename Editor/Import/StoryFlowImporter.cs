@@ -285,6 +285,13 @@ namespace StoryFlow.Editor
         private static readonly HashSet<string> SettledMediaDestinations =
             new HashSet<string>(StringComparer.Ordinal);
 
+        // Set from ImportProject's force parameter for the duration of one run. Kept here
+        // rather than threaded through ImportScript, ImportCharacter, ImportMediaAssets and
+        // both media importers, none of which would do anything with it but pass it on: it
+        // is read only by CommitAsset and TryCopyMedia. Same lifetime and the same
+        // single-run, non-reentrant assumption as the two caches above.
+        private static bool ForceRewrite;
+
         // ================================================================
         // Main Entry Point
         // ================================================================
@@ -309,12 +316,22 @@ namespace StoryFlow.Editor
         /// <see cref="StoryFlowImportReport.HasFailures"/> before telling the user the import
         /// succeeded.
         /// </summary>
+        /// <param name="force">
+        /// Rewrites every asset and media file even when nothing in the source changed.
+        /// For recovering a project whose imported assets were hand-edited, corrupted or
+        /// partially deleted: the skip check compares against what the last import recorded,
+        /// so it cannot see damage done to the Unity side afterwards. The hashes are
+        /// recomputed and re-recorded on the forced save, so the next ordinary sync goes
+        /// back to skipping. Leave false for routine syncing — this rewrites everything.
+        /// </param>
         public static StoryFlowProjectAsset ImportProject(
-            string buildDirectory, string outputPath, out StoryFlowImportReport report)
+            string buildDirectory, string outputPath, out StoryFlowImportReport report,
+            bool force = false)
         {
             report = new StoryFlowImportReport();
             MediaContentHashes.Clear();
             SettledMediaDestinations.Clear();
+            ForceRewrite = force;
 
             // Normalized once, here: past this point every path derived from outputPath is
             // already in AssetDatabase form, so even plain string concatenation is safe.
@@ -1555,6 +1572,17 @@ namespace StoryFlow.Editor
             if (!EditorUtility.IsDirty(asset))
                 return true;
 
+            // Unity checks out AssetDatabase-mediated writes itself, but only once it decides
+            // to write. Asking first turns a silent "could not write" into a named failure
+            // with a cause, and lets the save succeed on a file the provider will release.
+            if (HasActiveVersionControl() && !AssetDatabase.MakeEditable(assetPath))
+            {
+                report.RecordAssetFailure(assetPath,
+                    "version control refused to check the asset out. Check it out manually " +
+                    "and sync again");
+                return false;
+            }
+
             try
             {
                 AssetDatabase.SaveAssetIfDirty(asset);
@@ -1601,6 +1629,98 @@ namespace StoryFlow.Editor
             }
         }
 
+        // ================================================================
+        // Version control
+        // ================================================================
+
+        /// <summary>
+        /// True when Unity has a version control provider (Perforce, Plastic, or a custom
+        /// plugin) configured and connected for this project.
+        /// </summary>
+        private static bool HasActiveVersionControl()
+        {
+            return UnityEditor.VersionControl.Provider.enabled &&
+                   UnityEditor.VersionControl.Provider.isActive;
+        }
+
+        /// <summary>
+        /// Makes an existing media destination writable before a raw File.Copy.
+        ///
+        /// Unity auto-checks-out anything written through the AssetDatabase, but the media
+        /// files this importer copies never go through it, so the checkout has to be asked
+        /// for explicitly. With a provider configured, MakeEditable is Unity's own checkout
+        /// path and honours whatever plugin the project uses.
+        ///
+        /// With no provider configured and a read-only destination, this deliberately does
+        /// NOT clear the attribute. A read-only file in a Unity project is nearly always
+        /// owned by a version control system Unity is not driving — Perforce and Plastic mark
+        /// unopened files read-only — and force-clearing it writes over a file the VCS
+        /// believes is untouched, so the user loses the change on their next sync or revert
+        /// with nothing to show they ever had it. Refusing this one file with an actionable
+        /// message keeps the user in control, lets the rest of the import finish, and retries
+        /// automatically on the next sync.
+        /// </summary>
+        private static bool TryMakeMediaWritable(string destPath, StoryFlowImportReport report)
+        {
+            if (HasActiveVersionControl())
+            {
+                if (AssetDatabase.MakeEditable(destPath))
+                    return true;
+
+                report.RecordMediaFailure(destPath,
+                    "version control refused to check the file out. Check it out manually " +
+                    "(or resolve the lock held on it) and sync again");
+                return false;
+            }
+
+            try
+            {
+                if ((File.GetAttributes(destPath) & FileAttributes.ReadOnly) == 0)
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                report.RecordMediaFailure(destPath, DescribeWriteFailure(ex));
+                return false;
+            }
+
+            report.RecordMediaFailure(destPath,
+                "the file is read-only. StoryFlow will not clear the attribute for you: a " +
+                "read-only file is usually owned by a version control system such as Perforce " +
+                "or Plastic, and overwriting it loses your change on the next sync. Check the " +
+                "file out, or clear its read-only attribute, then sync again");
+            return false;
+        }
+
+        /// <summary>
+        /// Best-effort "mark for add" for media files this import created. Without it a new
+        /// image or clip sits unversioned next to versioned siblings and never reaches the
+        /// rest of the team. A failure here is a warning, never an import failure — the file
+        /// is on disk and the project works either way.
+        /// </summary>
+        private static void AddToVersionControl(string assetPath)
+        {
+            if (!HasActiveVersionControl()) return;
+
+            try
+            {
+                var task = UnityEditor.VersionControl.Provider.Add(
+                    new UnityEditor.VersionControl.Asset(assetPath), false);
+                task.Wait();
+                if (!task.success)
+                {
+                    Debug.LogWarning($"[StoryFlow] Could not mark \"{assetPath}\" for add in version " +
+                                     "control. Add it manually so it reaches the rest of the team.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[StoryFlow] Could not mark \"{assetPath}\" for add in version " +
+                                 $"control: {ex.Message}. Add it manually so it reaches the rest " +
+                                 "of the team.");
+            }
+        }
+
         /// <summary>
         /// Copies one media file into the project. Returns true when the destination ends the
         /// call holding the source's bytes, false when it could not be written — in which
@@ -1612,14 +1732,16 @@ namespace StoryFlow.Editor
             // Already settled earlier in this same run. One media file is routinely pulled in
             // by several scripts and again by the project pool, and the destination has held
             // the right bytes since the first of them; copying it again would rewrite a file
-            // this import just wrote and reimport it a second time.
+            // this import just wrote and reimport it a second time. Checked before the content
+            // comparison because it answers the same question without touching the disk, and
+            // it holds under force too: this is per-run bookkeeping, not staleness.
             if (SettledMediaDestinations.Contains(destPath))
                 return true;
 
-            // Skipping is the common case on every sync after the first: unchanged bytes
-            // mean no rewrite, no ForceUpdate reimport, no texture recompression and no
-            // version control diff on a file nobody touched.
-            if (MediaContentMatches(sourcePath, destPath))
+            // Skipping is the common case on every sync after the first: unchanged bytes mean
+            // no rewrite, no ForceUpdate reimport, no texture recompression, no version
+            // control checkout and no diff on a file nobody touched.
+            if (!ForceRewrite && MediaContentMatches(sourcePath, destPath))
             {
                 report.RecordMediaUpToDate(destPath);
                 SettledMediaDestinations.Add(destPath);
@@ -1628,6 +1750,10 @@ namespace StoryFlow.Editor
                 // hand-edited import setting is still corrected on a file that was skipped.
                 return true;
             }
+
+            bool isNewFile = !File.Exists(destPath);
+            if (!isNewFile && !TryMakeMediaWritable(destPath, report))
+                return false;
 
             try
             {
@@ -1648,6 +1774,10 @@ namespace StoryFlow.Editor
 
             report.RecordMediaWritten(destPath);
             SettledMediaDestinations.Add(destPath);
+
+            if (isNewFile)
+                AddToVersionControl(destPath);
+
             return true;
         }
 
@@ -1872,7 +2002,10 @@ namespace StoryFlow.Editor
             UnityEngine.Object asset, string assetPath, string currentHash, string newHash,
             bool isNew, Action<string> applyHash, StoryFlowImportReport report)
         {
-            if (!isNew && string.Equals(currentHash, newHash, StringComparison.Ordinal) &&
+            // A forced run rewrites regardless: the hash certifies what the last import
+            // recorded, so it cannot see an asset that was hand-edited or corrupted since.
+            if (!ForceRewrite && !isNew &&
+                string.Equals(currentHash, newHash, StringComparison.Ordinal) &&
                 !string.IsNullOrEmpty(currentHash))
             {
                 report.RecordAssetUpToDate();

@@ -259,8 +259,13 @@ namespace StoryFlow.Editor
             {
                 EditorUtility.DisplayProgressBar("StoryFlow Re-Import", "Re-importing project...", 0.1f);
 
+                // Forced: this button exists to make the project match its source again, and
+                // it is reached precisely when something on the Unity side is wrong. The
+                // incremental skip compares against what the last import recorded, so it
+                // cannot see an asset edited or damaged since. Live sync, the import window
+                // and the auto-reimport postprocessor all stay incremental.
                 var reimported = StoryFlowImporter.ImportProject(
-                    reimportBuildDirectory, outputPath, out var report);
+                    reimportBuildDirectory, outputPath, out var report, force: true);
 
                 EditorUtility.DisplayProgressBar("StoryFlow Re-Import", "Finalizing...", 0.9f);
 
