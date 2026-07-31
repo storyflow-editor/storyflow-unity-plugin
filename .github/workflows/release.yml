@@ -17,7 +17,7 @@ jobs:
       - name: Zip plugin
         run: |
           zip -r StoryFlow-Plugin-v${{ steps.version.outputs.version }}-Unity.zip \
-            . -x ".git/*" ".github/*" ".gitignore" "changelogs/*" "_build_verify/*" "CHANGELOG.md" "Samples~/*"
+            . -x ".git/*" ".github/*" ".gitignore" "changelogs/*" "_build_verify~/*" "CHANGELOG.md" "Samples~/*"
 
       - name: Upload to R2
         run: |
