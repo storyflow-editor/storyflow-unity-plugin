@@ -3,7 +3,7 @@
 # =============================================================================
 
 # Build verification (internal dev tool, not part of the package)
-_build_verify/
+_build_verify~/
 
 # IDE and editor files
 .vs/
