@@ -273,6 +273,12 @@ namespace StoryFlow.Editor
         private static readonly Dictionary<string, string> MediaContentHashes =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // Destinations already known to hold their source's bytes this run, whether this
+        // import wrote them or found them already matching. Cleared with the hash cache at
+        // the start of every import.
+        private static readonly HashSet<string> SettledMediaDestinations =
+            new HashSet<string>(StringComparer.Ordinal);
+
         // ================================================================
         // Main Entry Point
         // ================================================================
@@ -302,6 +308,7 @@ namespace StoryFlow.Editor
         {
             report = new StoryFlowImportReport();
             MediaContentHashes.Clear();
+            SettledMediaDestinations.Clear();
 
             // Normalized once, here: past this point every path derived from outputPath is
             // already in AssetDatabase form, so even plain string concatenation is safe.
@@ -334,6 +341,11 @@ namespace StoryFlow.Editor
             string mediaImagesDir = outputPath;
             string mediaAudioDir = outputPath;
 
+            // Condensed forms feed the project asset's certification: a change to either file
+            // has to invalidate the project hash even when project.json itself is untouched.
+            string globalVariablesCondensed = string.Empty;
+            string charactersCondensed = string.Empty;
+
             // --- Read global variables ---
             var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
             var globalStringEntries = new List<StoryFlowProjectAsset.GlobalStringEntry>();
@@ -347,6 +359,7 @@ namespace StoryFlow.Editor
             if (File.Exists(globalVarsPath))
             {
                 JObject globalVarsJson = JObject.Parse(File.ReadAllText(globalVarsPath));
+                globalVariablesCondensed = globalVarsJson.ToString(Newtonsoft.Json.Formatting.None);
                 JObject gVars = globalVarsJson.Value<JObject>("variables");
                 if (gVars != null)
                 {
@@ -386,6 +399,7 @@ namespace StoryFlow.Editor
             if (File.Exists(charactersJsonPath))
             {
                 JObject charactersJson = JObject.Parse(File.ReadAllText(charactersJsonPath));
+                charactersCondensed = charactersJson.ToString(Newtonsoft.Json.Formatting.None);
                 JObject charsObj = charactersJson.Value<JObject>("characters");
                 JObject charStrings = charactersJson.Value<JObject>("strings");
                 JObject charAssets = charactersJson.Value<JObject>("assets");
@@ -522,8 +536,16 @@ namespace StoryFlow.Editor
             if (isNewProject)
                 AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
 
-            EditorUtility.SetDirty(projectAsset);
-            TrySaveAsset(projectAsset, projectAssetPath, report);
+            CommitAsset(
+                projectAsset, projectAssetPath,
+                projectAsset.ImportedSourceHash,
+                CertifyProject(
+                    projectJson.ToString(Newtonsoft.Json.Formatting.None),
+                    globalVariablesCondensed, charactersCondensed, projectAsset),
+                isNewProject,
+                hash => projectAsset.ImportedSourceHash = hash,
+                report);
+
             AssetDatabase.Refresh();
 
             AssignDefaultProject(projectAsset, report);
@@ -656,8 +678,14 @@ namespace StoryFlow.Editor
             if (isNewScript)
                 AssetDatabase.CreateAsset(scriptAsset, assetPath);
 
-            EditorUtility.SetDirty(scriptAsset);
-            TrySaveAsset(scriptAsset, assetPath, report);
+            CommitAsset(
+                scriptAsset, assetPath,
+                scriptAsset.ImportedSourceHash,
+                CertifyScript(scriptJson.ToString(Newtonsoft.Json.Formatting.None), scriptAsset),
+                isNewScript,
+                hash => scriptAsset.ImportedSourceHash = hash,
+                report);
+
             return scriptAsset;
         }
 
@@ -753,8 +781,14 @@ namespace StoryFlow.Editor
             if (isNewChar)
                 AssetDatabase.CreateAsset(charAsset, assetPath);
 
-            EditorUtility.SetDirty(charAsset);
-            TrySaveAsset(charAsset, assetPath, report);
+            CommitAsset(
+                charAsset, assetPath,
+                charAsset.ImportedSourceHash,
+                CertifyCharacter(charObj.ToString(Newtonsoft.Json.Formatting.None), charAsset),
+                isNewChar,
+                hash => charAsset.ImportedSourceHash = hash,
+                report);
+
             return charAsset;
         }
 
@@ -1103,14 +1137,10 @@ namespace StoryFlow.Editor
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
-            if (EscapesOutputFolder(normalizedRelative))
-            {
-                report.RecordMediaFailure(normalizedRelative,
-                    "the exported asset path escapes the output folder and was refused. " +
-                    "Re-export the project, or move the file inside the build directory, " +
-                    "then sync again");
-                return AssetDatabase.LoadAssetAtPath<Sprite>(CombineAssetPath(imagesDir, normalizedRelative));
-            }
+            // Nothing to fall back to: the refused path names no location inside the project,
+            // so looking an asset up through it could only ever answer null.
+            if (RefuseEscapingMediaPath(normalizedRelative, report))
+                return null;
 
             string destPath = CombineAssetPath(imagesDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
@@ -1196,14 +1226,9 @@ namespace StoryFlow.Editor
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
-            if (EscapesOutputFolder(normalizedRelative))
-            {
-                report.RecordMediaFailure(normalizedRelative,
-                    "the exported asset path escapes the output folder and was refused. " +
-                    "Re-export the project, or move the file inside the build directory, " +
-                    "then sync again");
-                return AssetDatabase.LoadAssetAtPath<AudioClip>(CombineAssetPath(audioDir, normalizedRelative));
-            }
+            // See ImportImageAsset: a refused path names nothing inside the project.
+            if (RefuseEscapingMediaPath(normalizedRelative, report))
+                return null;
 
             string destPath = CombineAssetPath(audioDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
@@ -1578,9 +1603,32 @@ namespace StoryFlow.Editor
         private static bool TryCopyMedia(
             string sourcePath, string destPath, StoryFlowImportReport report)
         {
+            // Already settled earlier in this same run. One media file is routinely pulled in
+            // by several scripts and again by the project pool, and the destination has held
+            // the right bytes since the first of them; copying it again would rewrite a file
+            // this import just wrote and reimport it a second time.
+            if (SettledMediaDestinations.Contains(destPath))
+                return true;
+
+            // Skipping is the common case on every sync after the first: unchanged bytes
+            // mean no rewrite, no ForceUpdate reimport, no texture recompression and no
+            // version control diff on a file nobody touched.
+            if (MediaContentMatches(sourcePath, destPath))
+            {
+                report.RecordMediaUpToDate(destPath);
+                SettledMediaDestinations.Add(destPath);
+                // Returns true through the normal path, not the failure path's early return:
+                // the caller's texture-importer settings pass has to keep running so a
+                // hand-edited import setting is still corrected on a file that was skipped.
+                return true;
+            }
+
             try
             {
                 File.Copy(sourcePath, destPath, overwrite: true);
+                // The destination now holds the source's bytes; record that rather than
+                // re-reading a file we just wrote.
+                MediaContentHashes[destPath] = CachedFileHash(sourcePath);
                 // Inside the try on purpose: this was the last raw call left in the media
                 // path, and an importer that throws here would unwind the whole run for one
                 // file, which is the failure mode the report exists to prevent.
@@ -1593,11 +1641,13 @@ namespace StoryFlow.Editor
             }
 
             report.RecordMediaWritten(destPath);
+            SettledMediaDestinations.Add(destPath);
             return true;
         }
 
         /// <summary>
-        /// True when an exported relative path walks out of the folder it is combined with.
+        /// Refuses an exported relative path that walks out of the folder it would be
+        /// combined with, reporting it by name. Returns true when the caller must stop.
         ///
         /// Script and character JSON is written by another tool and can be hand-edited, so
         /// the paths inside it are untrusted input. A ".." segment would put a raw File.Copy
@@ -1606,16 +1656,212 @@ namespace StoryFlow.Editor
         /// here rather than in CombineAssetPath so the combiner stays a pure string helper
         /// and the refusal is reported against the file that caused it.
         /// </summary>
-        private static bool EscapesOutputFolder(string normalizedRelativePath)
+        private static bool RefuseEscapingMediaPath(
+            string normalizedRelativePath, StoryFlowImportReport report)
         {
             if (string.IsNullOrEmpty(normalizedRelativePath)) return false;
 
+            bool escapes = false;
             foreach (string segment in normalizedRelativePath.Split('/'))
             {
-                if (string.Equals(segment, "..", StringComparison.Ordinal)) return true;
+                if (string.Equals(segment, "..", StringComparison.Ordinal))
+                {
+                    escapes = true;
+                    break;
+                }
             }
 
-            return false;
+            if (!escapes) return false;
+
+            report.RecordMediaFailure(normalizedRelativePath,
+                "the exported asset path escapes the output folder and was refused. " +
+                "Re-export the project, or move the file inside the build directory, " +
+                "then sync again",
+                StoryFlowImportReport.FailureKind.InvalidPath);
+            return true;
+        }
+
+        // ================================================================
+        // Change detection
+        // ================================================================
+
+        private static string ComputeTextHash(string text)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(text ?? string.Empty);
+                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", string.Empty);
+            }
+        }
+
+        private static string ComputeFileHash(string path)
+        {
+            using (var stream = File.OpenRead(path))
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", string.Empty);
+            }
+        }
+
+        private static string CachedFileHash(string path)
+        {
+            if (MediaContentHashes.TryGetValue(path, out var cached))
+                return cached;
+
+            string hash = ComputeFileHash(path);
+            MediaContentHashes[path] = hash;
+            return hash;
+        }
+
+        /// <summary>
+        /// True when the destination already holds exactly the source's bytes. Length is the
+        /// cheap reject; the content hash is what makes skipping safe, because a same-length
+        /// edit — a recoloured pixel, a retimed sample — must still be copied.
+        /// </summary>
+        private static bool MediaContentMatches(string sourcePath, string destPath)
+        {
+            if (!File.Exists(destPath)) return false;
+
+            try
+            {
+                if (new FileInfo(sourcePath).Length != new FileInfo(destPath).Length)
+                    return false;
+
+                return string.Equals(
+                    CachedFileHash(sourcePath), CachedFileHash(destPath), StringComparison.Ordinal);
+            }
+            catch (IOException)
+            {
+                // Unreadable destination: fall through to the copy, which reports properly.
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The certified payload for a script asset: the condensed source JSON plus the media
+        /// the asset actually ended up referencing. Hashing the JSON alone would certify the
+        /// input rather than the output — an import whose media copy failed would record a
+        /// hash saying "this asset is up to date with that JSON" while its resolved-asset
+        /// pool was still missing the sprite, and every later sync would skip the repair.
+        /// </summary>
+        private static string CertifyScript(string condensedJson, StoryFlowScriptAsset asset)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(condensedJson);
+            AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
+            return ComputeTextHash(sb.ToString());
+        }
+
+        private static void AppendResolvedAssets(
+            System.Text.StringBuilder sb, List<StoryFlowScriptAsset.ResolvedAssetEntry> entries)
+        {
+            sb.Append("\n#resolved");
+            foreach (var entry in entries)
+            {
+                sb.Append('\n').Append(entry.Key).Append('=');
+                sb.Append(entry.Asset == null
+                    ? "<missing>"
+                    : ToAssetPath(AssetDatabase.GetAssetPath(entry.Asset)));
+            }
+        }
+
+        // StoryFlowProjectAsset declares its own ResolvedAssetEntry type, so the project pool
+        // needs its own overload rather than sharing the script one.
+        private static void AppendResolvedAssets(
+            System.Text.StringBuilder sb, List<StoryFlowProjectAsset.ResolvedAssetEntry> entries)
+        {
+            sb.Append("\n#resolved");
+            foreach (var entry in entries)
+            {
+                sb.Append('\n').Append(entry.Key).Append('=');
+                sb.Append(entry.Asset == null
+                    ? "<missing>"
+                    : ToAssetPath(AssetDatabase.GetAssetPath(entry.Asset)));
+            }
+        }
+
+        /// <summary>
+        /// The certified payload for a character asset. The display name resolves through
+        /// characters.json's string table and the portrait through its asset table, so a
+        /// change in either has to invalidate the hash even though the character's own JSON
+        /// object is byte-identical.
+        /// </summary>
+        private static string CertifyCharacter(string condensedJson, StoryFlowCharacterAsset asset)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(condensedJson);
+            sb.Append("\n#name=").Append(asset.CharacterName ?? string.Empty);
+            sb.Append("\n#image=").Append(asset.ResolvedImage == null
+                ? "<missing>"
+                : ToAssetPath(AssetDatabase.GetAssetPath(asset.ResolvedImage)));
+            return ComputeTextHash(sb.ToString());
+        }
+
+        /// <summary>
+        /// The certified payload for the project asset: all three top-level JSON files plus
+        /// the membership the asset actually ended up holding. A script that failed to import
+        /// leaves a different membership, so the project asset is rewritten and the next sync
+        /// still sees an honest picture.
+        /// </summary>
+        private static string CertifyProject(
+            string projectJson, string globalVariablesJson, string charactersJson,
+            StoryFlowProjectAsset asset)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(projectJson).Append('\n')
+              .Append(globalVariablesJson).Append('\n')
+              .Append(charactersJson);
+
+            sb.Append("\n#startup=").Append(asset.StartupScript == null
+                ? "<none>"
+                : ToAssetPath(AssetDatabase.GetAssetPath(asset.StartupScript)));
+
+            sb.Append("\n#scripts");
+            foreach (var sr in asset.ScriptReferences)
+            {
+                sb.Append('\n').Append(sr.Path).Append('=');
+                sb.Append(sr.Asset == null ? "<missing>" : ToAssetPath(AssetDatabase.GetAssetPath(sr.Asset)));
+            }
+
+            sb.Append("\n#characters");
+            foreach (var cr in asset.CharacterReferences)
+            {
+                sb.Append('\n').Append(cr.Path).Append('=');
+                sb.Append(cr.Asset == null ? "<missing>" : ToAssetPath(AssetDatabase.GetAssetPath(cr.Asset)));
+            }
+
+            AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
+            return ComputeTextHash(sb.ToString());
+        }
+
+        /// <summary>
+        /// Writes an asset only when its certified payload changed since the last successful
+        /// import, so an unchanged sync touches nothing on disk. On success the new hash sits
+        /// on disk alongside the data it certifies; on failure the hash is cleared, because
+        /// Unity keeps the failed object loaded and dirty with the new hash still in memory —
+        /// leaving it there would make every later sync compare equal and skip the retry
+        /// forever while disk stayed stale.
+        /// </summary>
+        private static void CommitAsset(
+            UnityEngine.Object asset, string assetPath, string currentHash, string newHash,
+            bool isNew, Action<string> applyHash, StoryFlowImportReport report)
+        {
+            if (!isNew && string.Equals(currentHash, newHash, StringComparison.Ordinal) &&
+                !string.IsNullOrEmpty(currentHash))
+            {
+                report.RecordAssetUpToDate();
+                return;
+            }
+
+            applyHash(newHash);
+            EditorUtility.SetDirty(asset);
+
+            if (!TrySaveAsset(asset, assetPath, report))
+                applyHash(string.Empty);
         }
 
         // ================================================================

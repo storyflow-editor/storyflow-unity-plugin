@@ -9,6 +9,16 @@ namespace StoryFlow.Data
         public string ScriptPath;
         public string StartNodeId = "0";
 
+        /// <summary>
+        /// SHA-256 of the condensed source JSON this asset was last built from, together
+        /// with the media it actually ended up resolving. The importer skips rewriting this
+        /// asset while the value still matches, and writes it only after the save reached
+        /// disk — a failed save clears it, so the next sync retries instead of skipping
+        /// forever. Bookkeeping, not authoring data: hidden from the inspector, but
+        /// serialized, because it is worthless if it does not survive a domain reload.
+        /// </summary>
+        [HideInInspector] public string ImportedSourceHash;
+
         [SerializeField] private List<SerializedNode> serializedNodes = new();
         [SerializeField] private List<StoryFlowConnection> connections = new();
         [SerializeField] private List<SerializedVariable> serializedVariables = new();

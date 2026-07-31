@@ -12,6 +12,15 @@ namespace StoryFlow.Data
         public Sprite ResolvedImage;
         public List<StoryFlowVariable> Variables = new();
 
+        /// <summary>
+        /// SHA-256 of the condensed source JSON for this character, together with the
+        /// display name and portrait it actually resolved to. The name comes from
+        /// characters.json's string table and the portrait from its asset table, so both
+        /// are folded into the hash: neither shows up in the character's own JSON object,
+        /// and a change to either has to invalidate. Written only after a successful save.
+        /// </summary>
+        [HideInInspector] public string ImportedSourceHash;
+
         // Resolved asset references (asset key → Unity object)
         [SerializeField] public List<ResolvedAssetEntry> ResolvedAssetEntries = new();
         [NonSerialized] private Dictionary<string, UnityEngine.Object> _resolvedAssets;

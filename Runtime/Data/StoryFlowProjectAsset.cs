@@ -12,6 +12,15 @@ namespace StoryFlow.Data
         public string Title;
         public string Description;
 
+        /// <summary>
+        /// SHA-256 of project.json, global-variables.json and characters.json together with
+        /// the membership this asset actually ended up holding — startup script, script
+        /// references, character references and the resolved-asset pool. Certifying the
+        /// inputs alone would let an import whose media failed record "up to date" and skip
+        /// the repair on every later sync. Written only after a successful save.
+        /// </summary>
+        [HideInInspector] public string ImportedSourceHash;
+
         [Header("Startup")]
         public StoryFlowScriptAsset StartupScript;
 

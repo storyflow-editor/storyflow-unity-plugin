@@ -21,8 +21,20 @@ namespace StoryFlow.Editor
     {
         public enum FailureKind
         {
+            /// <summary>A media file that could not be copied into the project.</summary>
             Media,
-            Asset
+
+            /// <summary>An asset that could not be serialized to disk.</summary>
+            Asset,
+
+            /// <summary>
+            /// A path the importer refused to act on at all. The Path of such a failure is
+            /// the exported relative path from the source JSON, not a location in the Unity
+            /// project, so anything that treats failure paths as project paths — retrying
+            /// them, checking them out — has to be able to tell the difference without
+            /// inspecting the string.
+            /// </summary>
+            InvalidPath
         }
 
         /// <summary>
@@ -73,8 +85,10 @@ namespace StoryFlow.Editor
         /// <summary>Assets that could not be written.</summary>
         public int AssetsFailed { get; private set; }
 
+        private readonly List<Failure> _failures = new List<Failure>();
+
         /// <summary>One actionable entry per failed file, in the order they failed.</summary>
-        public readonly List<Failure> Failures = new List<Failure>();
+        public IReadOnlyList<Failure> Failures => _failures;
 
         public int WrittenCount => MediaWritten + AssetsWritten;
         public int UpToDateCount => MediaUpToDate + AssetsUpToDate;
@@ -91,12 +105,13 @@ namespace StoryFlow.Editor
             if (ClaimMediaPath(destinationPath)) MediaUpToDate++;
         }
 
-        public void RecordMediaFailure(string destinationPath, string reason)
+        public void RecordMediaFailure(
+            string destinationPath, string reason, FailureKind kind = FailureKind.Media)
         {
             if (!ClaimMediaPath(destinationPath)) return;
 
             MediaFailed++;
-            Failures.Add(new Failure(destinationPath, reason, FailureKind.Media));
+            _failures.Add(new Failure(destinationPath, reason, kind));
         }
 
         public void RecordAssetWritten()
@@ -112,14 +127,19 @@ namespace StoryFlow.Editor
         public void RecordAssetFailure(string assetPath, string reason)
         {
             AssetsFailed++;
-            Failures.Add(new Failure(assetPath, reason, FailureKind.Asset));
+            _failures.Add(new Failure(assetPath, reason, FailureKind.Asset));
         }
 
         /// <summary>
         /// True the first time a media destination is seen this run. The first outcome for a
         /// path wins: a later reference to the same file has, by definition, already been
         /// settled, and re-counting it would inflate every number in the summary.
-        /// Assets need no equivalent — each one is saved exactly once per import.
+        ///
+        /// Assets get no such guard, deliberately. Two source files whose asset paths
+        /// collide — the script keys are lowercased, and a case-sensitive filesystem will
+        /// happily hold both — do write over each other, and that is worth seeing in the
+        /// counts rather than hiding behind a dedupe that would make the second write look
+        /// like it never happened.
         /// </summary>
         private bool ClaimMediaPath(string destinationPath)
         {
