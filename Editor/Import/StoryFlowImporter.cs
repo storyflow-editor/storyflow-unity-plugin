@@ -443,7 +443,7 @@ namespace StoryFlow.Editor
             }
 
             // --- Create / update project asset ---
-            string projectAssetPath = Path.Combine(outputPath, "Project.asset");
+            string projectAssetPath = CombineAssetPath(outputPath, "Project.asset");
             var projectAsset = AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(projectAssetPath);
             bool isNewProject = projectAsset == null;
             if (isNewProject)
@@ -522,7 +522,7 @@ namespace StoryFlow.Editor
                 return;
             }
 
-            string settingsPath = AssetDatabase.GetAssetPath(settings).Replace("\\", "/");
+            string settingsPath = ToAssetPath(AssetDatabase.GetAssetPath(settings));
             if (!settingsPath.Contains("/Resources/"))
             {
                 Debug.LogWarning($"[StoryFlow] StoryFlowSettings at \"{settingsPath}\" is not inside a " +
@@ -561,8 +561,8 @@ namespace StoryFlow.Editor
         {
             // Preserve folder structure: "scripts/hello/main_menu.json" → "Scripts/scripts/hello/main_menu.asset"
             string relativePath = scriptPath.Replace("\\", "/").Replace(".json", "");
-            string assetPath = Path.Combine(scriptsDir, relativePath + ".asset");
-            EnsureDirectory(Path.GetDirectoryName(assetPath));
+            string assetPath = CombineAssetPath(scriptsDir, relativePath + ".asset");
+            EnsureDirectory(AssetParentFolder(assetPath));
 
             var scriptAsset = AssetDatabase.LoadAssetAtPath<StoryFlowScriptAsset>(assetPath);
             bool isNewScript = scriptAsset == null;
@@ -628,8 +628,8 @@ namespace StoryFlow.Editor
         {
             // Preserve folder structure: "scripts\newfile.sfc" → "Characters/scripts/newfile.asset"
             string relativePath = normalizedPath.Replace("\\", "/").Replace(".sfc", "");
-            string assetPath = Path.Combine(charactersDir, relativePath + ".asset");
-            EnsureDirectory(Path.GetDirectoryName(assetPath));
+            string assetPath = CombineAssetPath(charactersDir, relativePath + ".asset");
+            EnsureDirectory(AssetParentFolder(assetPath));
 
             var charAsset = AssetDatabase.LoadAssetAtPath<StoryFlowCharacterAsset>(assetPath);
             bool isNewChar = charAsset == null;
@@ -1034,7 +1034,7 @@ namespace StoryFlow.Editor
             {
                 // Fallback: asset may already exist from a previous full sync (data-only sync)
                 string normalizedRel = relativePath.Replace("\\", "/");
-                string existingPath = Path.Combine(imagesDir, normalizedRel);
+                string existingPath = CombineAssetPath(imagesDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<Sprite>(existingPath);
                 if (existing != null) return existing;
 
@@ -1044,8 +1044,8 @@ namespace StoryFlow.Editor
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
-            string destPath = Path.Combine(imagesDir, normalizedRelative);
-            EnsureDirectory(Path.GetDirectoryName(destPath));
+            string destPath = CombineAssetPath(imagesDir, normalizedRelative);
+            EnsureDirectory(AssetParentFolder(destPath));
 
             // Copy file to project
             File.Copy(sourcePath, destPath, overwrite: true);
@@ -1099,7 +1099,7 @@ namespace StoryFlow.Editor
             {
                 // Fallback: asset may already exist from a previous full sync (data-only sync)
                 string normalizedRel = relativePath.Replace("\\", "/");
-                string existingPath = Path.Combine(audioDir, normalizedRel);
+                string existingPath = CombineAssetPath(audioDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<AudioClip>(existingPath);
                 if (existing != null) return existing;
 
@@ -1118,8 +1118,8 @@ namespace StoryFlow.Editor
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
-            string destPath = Path.Combine(audioDir, normalizedRelative);
-            EnsureDirectory(Path.GetDirectoryName(destPath));
+            string destPath = CombineAssetPath(audioDir, normalizedRelative);
+            EnsureDirectory(AssetParentFolder(destPath));
 
             File.Copy(sourcePath, destPath, overwrite: true);
             AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
@@ -1383,26 +1383,56 @@ namespace StoryFlow.Editor
             return variant;
         }
 
+        // ================================================================
+        // Asset path normalization
+        // ================================================================
+
         /// <summary>
-        /// Ensures a directory exists within the Unity Assets folder. Creates it if needed.
+        /// Unity's AssetDatabase understands forward-slash, Assets-relative paths only.
+        /// Path.Combine inserts the platform separator between its arguments and leaves the
+        /// separators already inside them alone, so on Windows it yields mixed paths like
+        /// "Assets/StoryFlow\media/hero.png"; Path.GetDirectoryName then flips everything to
+        /// backslash. LoadAssetAtPath returns null for both forms even when the asset is
+        /// there, so the importer treats an existing asset as new and CreateAsset writes over
+        /// the occupied path — churning its GUID and breaking every reference to it. Every
+        /// path handed to an AssetDatabase API goes through here.
+        /// </summary>
+        private static string ToAssetPath(string path)
+        {
+            return string.IsNullOrEmpty(path) ? path : path.Replace('\\', '/');
+        }
+
+        /// <summary>Path.Combine for AssetDatabase paths: combines, then normalizes.</summary>
+        private static string CombineAssetPath(string directory, string relative)
+        {
+            return ToAssetPath(Path.Combine(directory ?? string.Empty, relative ?? string.Empty));
+        }
+
+        /// <summary>The parent folder of an AssetDatabase path, in AssetDatabase form.</summary>
+        private static string AssetParentFolder(string assetPath)
+        {
+            return ToAssetPath(Path.GetDirectoryName(assetPath));
+        }
+
+        /// <summary>
+        /// Ensures a folder exists within the Unity Assets folder, creating each missing
+        /// segment. Paths are normalized on the way in and on every recursion, because
+        /// Path.GetDirectoryName hands back platform separators that IsValidFolder and
+        /// CreateFolder do not accept.
         /// </summary>
         private static void EnsureDirectory(string path)
         {
-            if (!AssetDatabase.IsValidFolder(path))
-            {
-                // Walk up and create each missing segment
-                string parent = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
-                {
-                    EnsureDirectory(parent);
-                }
+            path = ToAssetPath(path);
+            if (string.IsNullOrEmpty(path)) return;
+            if (AssetDatabase.IsValidFolder(path)) return;
 
-                string folderName = Path.GetFileName(path);
-                if (!string.IsNullOrEmpty(parent) && !string.IsNullOrEmpty(folderName))
-                {
-                    AssetDatabase.CreateFolder(parent, folderName);
-                }
-            }
+            string parent = AssetParentFolder(path);
+            if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
+                EnsureDirectory(parent);
+
+            string folderName = Path.GetFileName(path);
+            if (!string.IsNullOrEmpty(parent) && !string.IsNullOrEmpty(folderName))
+                AssetDatabase.CreateFolder(parent, folderName);
         }
     }
 }
