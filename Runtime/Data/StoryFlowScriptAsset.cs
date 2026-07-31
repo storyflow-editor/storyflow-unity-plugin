@@ -340,6 +340,17 @@ namespace StoryFlow.Data
         public void SetAssets(List<SerializedAsset> assets) => serializedAssets = assets;
         public void SetFlows(List<StoryFlowFlowDef> flowDefs) => flows = flowDefs;
 
+        /// <summary>
+        /// Empties the resolved-asset pool and invalidates the runtime cache. Used by the
+        /// importer to rebuild the pool from scratch each import. Clearing the serialized list
+        /// alone would leave the [NonSerialized] cache stale until the next OnEnable.
+        /// </summary>
+        public void ClearResolvedAssets()
+        {
+            ResolvedAssetEntries.Clear();
+            _resolvedAssets = null;
+        }
+
         public void SetResolvedAsset(string key, UnityEngine.Object asset)
         {
             for (int i = 0; i < ResolvedAssetEntries.Count; i++)

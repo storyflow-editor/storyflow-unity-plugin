@@ -718,7 +718,18 @@ namespace StoryFlow.Editor
             if (stringsObj != null)
                 scriptAsset.SetStrings(ParseStrings(stringsObj));
 
-            // Parse assets (and import media files)
+            // Parse assets (and import media files). The resolved pool is rebuilt from the
+            // source every import rather than added to, so an asset the author removed or
+            // renamed stops being referenced. The pool was previously only ever appended to,
+            // which left the old entry pointing at whatever it used to resolve to — for good,
+            // since nothing else ever removed it — and the certification folded that stale
+            // reference in as though it described the current script. Cleared outside the
+            // guard below, because removing a script's assets section entirely is exactly the
+            // case that needs it. An asset whose copy fails is re-added by the media
+            // importers' fallback, which loads whatever is already at the destination, so a
+            // refused write costs a rewrite rather than a reference.
+            scriptAsset.ClearResolvedAssets();
+
             JObject assetsObj = scriptJson.Value<JObject>("assets");
             if (assetsObj != null)
             {
