@@ -304,7 +304,7 @@ namespace StoryFlow.Editor
         /// <returns>The created or updated StoryFlowProjectAsset.</returns>
         public static StoryFlowProjectAsset ImportProject(string buildDirectory, string outputPath)
         {
-            return ImportProject(buildDirectory, outputPath, out _);
+            return ImportProject(buildDirectory, outputPath, out _, force: false);
         }
 
         /// <summary>
@@ -331,263 +331,276 @@ namespace StoryFlow.Editor
             report = new StoryFlowImportReport();
             MediaContentHashes.Clear();
             SettledMediaDestinations.Clear();
+            // Saved and restored rather than simply assigned: force is a mode for one
+            // run, not a cache. An import that throws before it finishes, or a nested
+            // import triggered by the auto-reimport postprocessor partway through this
+            // one, would otherwise leave the flag holding the wrong answer for whatever
+            // runs next — silently making a forced run incremental, or the reverse.
+            bool previousForce = ForceRewrite;
             ForceRewrite = force;
 
-            // Normalized once, here: past this point every path derived from outputPath is
-            // already in AssetDatabase form, so even plain string concatenation is safe.
-            outputPath = ToAssetPath(outputPath);
-
-            if (!Directory.Exists(buildDirectory))
-                throw new DirectoryNotFoundException($"Build directory not found: {buildDirectory}");
-
-            // --- Read project.json ---
-            string projectJsonPath = Path.Combine(buildDirectory, "project.json");
-            if (!File.Exists(projectJsonPath))
-                throw new FileNotFoundException("project.json not found in build directory.", projectJsonPath);
-
-            string projectJsonText = File.ReadAllText(projectJsonPath);
-            JObject projectJson = JObject.Parse(projectJsonText);
-
-            string version = projectJson.Value<string>("version") ?? "";
-            string apiVersion = projectJson.Value<string>("apiVersion") ?? "";
-            string startupScript = projectJson.Value<string>("startupScript") ?? "";
-
-            JObject metadata = projectJson.Value<JObject>("metadata");
-            string title = metadata?.Value<string>("title") ?? "Untitled";
-            string description = metadata?.Value<string>("description") ?? "";
-
-            // --- Ensure output directory ---
-            EnsureDirectory(outputPath);
-            // All assets go directly under outputPath, preserving build directory structure
-            string scriptsDir = outputPath;
-            string charactersDir = outputPath;
-            string mediaImagesDir = outputPath;
-            string mediaAudioDir = outputPath;
-
-            // Condensed forms feed the project asset's certification: a change to either file
-            // has to invalidate the project hash even when project.json itself is untouched.
-            string globalVariablesCondensed = string.Empty;
-            string charactersCondensed = string.Empty;
-
-            // --- Read global variables ---
-            var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
-            var globalStringEntries = new List<StoryFlowProjectAsset.GlobalStringEntry>();
-            // Media referenced by project-scoped (global) variables — e.g. a global Image
-            // variable wired into a Set Character Variable node. These live in
-            // global-variables.json's own "assets" section, scoped to neither a script nor a
-            // character, so they are resolved into the project's resolved-asset pool below.
-            var globalAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
-
-            string globalVarsPath = Path.Combine(buildDirectory, "global-variables.json");
-            if (File.Exists(globalVarsPath))
+            try
             {
-                JObject globalVarsJson = JObject.Parse(File.ReadAllText(globalVarsPath));
-                globalVariablesCondensed = globalVarsJson.ToString(Newtonsoft.Json.Formatting.None);
-                JObject gVars = globalVarsJson.Value<JObject>("variables");
-                if (gVars != null)
-                {
-                    foreach (var prop in gVars.Properties())
-                    {
-                        var varObj = prop.Value as JObject;
-                        if (varObj == null) continue;
+                // Normalized once, here: past this point every path derived from outputPath is
+                // already in AssetDatabase form, so even plain string concatenation is safe.
+                outputPath = ToAssetPath(outputPath);
 
-                        globalVariableEntries.Add(ParseGlobalVariableEntry(prop.Name, varObj));
+                if (!Directory.Exists(buildDirectory))
+                    throw new DirectoryNotFoundException($"Build directory not found: {buildDirectory}");
+
+                // --- Read project.json ---
+                string projectJsonPath = Path.Combine(buildDirectory, "project.json");
+                if (!File.Exists(projectJsonPath))
+                    throw new FileNotFoundException("project.json not found in build directory.", projectJsonPath);
+
+                string projectJsonText = File.ReadAllText(projectJsonPath);
+                JObject projectJson = JObject.Parse(projectJsonText);
+
+                string version = projectJson.Value<string>("version") ?? "";
+                string apiVersion = projectJson.Value<string>("apiVersion") ?? "";
+                string startupScript = projectJson.Value<string>("startupScript") ?? "";
+
+                JObject metadata = projectJson.Value<JObject>("metadata");
+                string title = metadata?.Value<string>("title") ?? "Untitled";
+                string description = metadata?.Value<string>("description") ?? "";
+
+                // --- Ensure output directory ---
+                EnsureDirectory(outputPath);
+                // All assets go directly under outputPath, preserving build directory structure
+                string scriptsDir = outputPath;
+                string charactersDir = outputPath;
+                string mediaImagesDir = outputPath;
+                string mediaAudioDir = outputPath;
+
+                // Condensed forms feed the project asset's certification: a change to either file
+                // has to invalidate the project hash even when project.json itself is untouched.
+                string globalVariablesCondensed = string.Empty;
+                string charactersCondensed = string.Empty;
+
+                // --- Read global variables ---
+                var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
+                var globalStringEntries = new List<StoryFlowProjectAsset.GlobalStringEntry>();
+                // Media referenced by project-scoped (global) variables — e.g. a global Image
+                // variable wired into a Set Character Variable node. These live in
+                // global-variables.json's own "assets" section, scoped to neither a script nor a
+                // character, so they are resolved into the project's resolved-asset pool below.
+                var globalAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
+
+                string globalVarsPath = Path.Combine(buildDirectory, "global-variables.json");
+                if (File.Exists(globalVarsPath))
+                {
+                    JObject globalVarsJson = JObject.Parse(File.ReadAllText(globalVarsPath));
+                    globalVariablesCondensed = globalVarsJson.ToString(Newtonsoft.Json.Formatting.None);
+                    JObject gVars = globalVarsJson.Value<JObject>("variables");
+                    if (gVars != null)
+                    {
+                        foreach (var prop in gVars.Properties())
+                        {
+                            var varObj = prop.Value as JObject;
+                            if (varObj == null) continue;
+
+                            globalVariableEntries.Add(ParseGlobalVariableEntry(prop.Name, varObj));
+                        }
+                    }
+
+                    JObject gStrings = globalVarsJson.Value<JObject>("strings");
+                    if (gStrings != null)
+                    {
+                        globalStringEntries.AddRange(FlattenStrings(gStrings));
+                    }
+
+                    JObject gAssets = globalVarsJson.Value<JObject>("assets");
+                    if (gAssets != null)
+                    {
+                        globalAssetEntries = ParseAssets(gAssets);
                     }
                 }
 
-                JObject gStrings = globalVarsJson.Value<JObject>("strings");
-                if (gStrings != null)
+                // --- Read characters.json ---
+                var characterReferences = new List<StoryFlowProjectAsset.CharacterReference>();
+                // Character-scoped media beyond the single portrait: custom image/audio-typed
+                // character variables and character map image/audio values. Like global-variable
+                // assets, these live in characters.json's "assets" section but are otherwise
+                // unresolved, so they are imported into the project pool below.
+                var characterAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
+                // Portrait key → already-resolved sprite (from ImportCharacter). Registered into the
+                // project pool directly so the portrait's texture isn't re-imported a second time.
+                var characterPortraitAssets = new Dictionary<string, UnityEngine.Object>();
+                string charactersJsonPath = Path.Combine(buildDirectory, "characters.json");
+                if (File.Exists(charactersJsonPath))
                 {
-                    globalStringEntries.AddRange(FlattenStrings(gStrings));
-                }
+                    JObject charactersJson = JObject.Parse(File.ReadAllText(charactersJsonPath));
+                    charactersCondensed = charactersJson.ToString(Newtonsoft.Json.Formatting.None);
+                    JObject charsObj = charactersJson.Value<JObject>("characters");
+                    JObject charStrings = charactersJson.Value<JObject>("strings");
+                    JObject charAssets = charactersJson.Value<JObject>("assets");
 
-                JObject gAssets = globalVarsJson.Value<JObject>("assets");
-                if (gAssets != null)
-                {
-                    globalAssetEntries = ParseAssets(gAssets);
-                }
-            }
-
-            // --- Read characters.json ---
-            var characterReferences = new List<StoryFlowProjectAsset.CharacterReference>();
-            // Character-scoped media beyond the single portrait: custom image/audio-typed
-            // character variables and character map image/audio values. Like global-variable
-            // assets, these live in characters.json's "assets" section but are otherwise
-            // unresolved, so they are imported into the project pool below.
-            var characterAssetEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
-            // Portrait key → already-resolved sprite (from ImportCharacter). Registered into the
-            // project pool directly so the portrait's texture isn't re-imported a second time.
-            var characterPortraitAssets = new Dictionary<string, UnityEngine.Object>();
-            string charactersJsonPath = Path.Combine(buildDirectory, "characters.json");
-            if (File.Exists(charactersJsonPath))
-            {
-                JObject charactersJson = JObject.Parse(File.ReadAllText(charactersJsonPath));
-                charactersCondensed = charactersJson.ToString(Newtonsoft.Json.Formatting.None);
-                JObject charsObj = charactersJson.Value<JObject>("characters");
-                JObject charStrings = charactersJson.Value<JObject>("strings");
-                JObject charAssets = charactersJson.Value<JObject>("assets");
-
-                // Merge character strings into global strings and build local lookup
-                var charStringLookup = new Dictionary<string, string>();
-                if (charStrings != null)
-                {
-                    globalStringEntries.AddRange(FlattenStrings(charStrings));
-                    foreach (var langProp in charStrings.Properties())
+                    // Merge character strings into global strings and build local lookup
+                    var charStringLookup = new Dictionary<string, string>();
+                    if (charStrings != null)
                     {
-                        var langObj = langProp.Value as JObject;
-                        if (langObj == null) continue;
-                        foreach (var strProp in langObj.Properties())
+                        globalStringEntries.AddRange(FlattenStrings(charStrings));
+                        foreach (var langProp in charStrings.Properties())
                         {
-                            charStringLookup[strProp.Name] = strProp.Value.ToString();
+                            var langObj = langProp.Value as JObject;
+                            if (langObj == null) continue;
+                            foreach (var strProp in langObj.Properties())
+                            {
+                                charStringLookup[strProp.Name] = strProp.Value.ToString();
+                            }
+                        }
+                    }
+
+                    // Parse character-scoped assets once. characterAssetEntries feeds project-pool
+                    // resolution (every asset, not just the portrait); charAssetLookup (assetKey →
+                    // path) is what ImportCharacter uses to resolve the portrait. a.Id equals the
+                    // asset's object key in every export, so it matches the character's image ref.
+                    var charAssetLookup = new Dictionary<string, string>();
+                    if (charAssets != null)
+                    {
+                        characterAssetEntries = ParseAssets(charAssets);
+                        foreach (var a in characterAssetEntries)
+                            if (!string.IsNullOrEmpty(a.Path))
+                                charAssetLookup[a.Id] = a.Path;
+                    }
+
+                    if (charsObj != null)
+                    {
+                        foreach (var charProp in charsObj.Properties())
+                        {
+                            string normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(charProp.Name);
+                            var charObj = charProp.Value as JObject;
+                            if (charObj == null) continue;
+
+                            var charAsset = ImportCharacter(
+                                normalizedPath, charObj, charStringLookup, charAssetLookup,
+                                buildDirectory, charactersDir, mediaImagesDir, report);
+
+                            // ImportCharacter already imported the portrait into ResolvedImage; keep
+                            // that sprite to register in the project pool (and skip below) so the
+                            // portrait texture isn't imported twice per import.
+                            if (!string.IsNullOrEmpty(charAsset.ImageAssetKey) && charAsset.ResolvedImage != null)
+                                characterPortraitAssets[charAsset.ImageAssetKey] = charAsset.ResolvedImage;
+
+                            characterReferences.Add(new StoryFlowProjectAsset.CharacterReference
+                            {
+                                Path = normalizedPath,
+                                Asset = charAsset
+                            });
                         }
                     }
                 }
 
-                // Parse character-scoped assets once. characterAssetEntries feeds project-pool
-                // resolution (every asset, not just the portrait); charAssetLookup (assetKey →
-                // path) is what ImportCharacter uses to resolve the portrait. a.Id equals the
-                // asset's object key in every export, so it matches the character's image ref.
-                var charAssetLookup = new Dictionary<string, string>();
-                if (charAssets != null)
+                // --- Find and import script JSON files ---
+                var scriptReferences = new List<StoryFlowProjectAsset.ScriptReference>();
+                var scriptFiles = FindJsonScriptFiles(buildDirectory);
+
+                foreach (string relativeScriptPath in scriptFiles)
                 {
-                    characterAssetEntries = ParseAssets(charAssets);
-                    foreach (var a in characterAssetEntries)
-                        if (!string.IsNullOrEmpty(a.Path))
-                            charAssetLookup[a.Id] = a.Path;
+                    string fullScriptPath = Path.Combine(buildDirectory, relativeScriptPath);
+                    string scriptJsonText = File.ReadAllText(fullScriptPath);
+                    JObject scriptJson = JObject.Parse(scriptJsonText);
+
+                    // Script path as used by runtime (forward slashes, lowercase)
+                    string scriptKey = relativeScriptPath.Replace("\\", "/").ToLowerInvariant();
+
+                    // Import the script
+                    var scriptAsset = ImportScript(
+                        scriptKey, scriptJson, buildDirectory,
+                        scriptsDir, mediaImagesDir, mediaAudioDir, report);
+
+                    scriptReferences.Add(new StoryFlowProjectAsset.ScriptReference
+                    {
+                        Path = scriptKey,
+                        Asset = scriptAsset
+                    });
                 }
 
-                if (charsObj != null)
+                // --- Create / update project asset ---
+                string projectAssetPath = CombineAssetPath(outputPath, "Project.asset");
+                var projectAsset = AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(projectAssetPath);
+                bool isNewProject = projectAsset == null;
+                if (isNewProject)
+                    projectAsset = ScriptableObject.CreateInstance<StoryFlowProjectAsset>();
+
+                projectAsset.Version = version;
+                projectAsset.ApiVersion = apiVersion;
+                projectAsset.Title = title;
+                projectAsset.Description = description;
+                // Resolve startup script reference from imported scripts
+                projectAsset.StartupScript = null;
+                if (!string.IsNullOrEmpty(startupScript))
                 {
-                    foreach (var charProp in charsObj.Properties())
+                    string startupKey = startupScript.Replace("\\", "/").ToLowerInvariant();
+                    foreach (var sr in scriptReferences)
                     {
-                        string normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(charProp.Name);
-                        var charObj = charProp.Value as JObject;
-                        if (charObj == null) continue;
-
-                        var charAsset = ImportCharacter(
-                            normalizedPath, charObj, charStringLookup, charAssetLookup,
-                            buildDirectory, charactersDir, mediaImagesDir, report);
-
-                        // ImportCharacter already imported the portrait into ResolvedImage; keep
-                        // that sprite to register in the project pool (and skip below) so the
-                        // portrait texture isn't imported twice per import.
-                        if (!string.IsNullOrEmpty(charAsset.ImageAssetKey) && charAsset.ResolvedImage != null)
-                            characterPortraitAssets[charAsset.ImageAssetKey] = charAsset.ResolvedImage;
-
-                        characterReferences.Add(new StoryFlowProjectAsset.CharacterReference
+                        if (sr.Path == startupKey)
                         {
-                            Path = normalizedPath,
-                            Asset = charAsset
-                        });
+                            projectAsset.StartupScript = sr.Asset;
+                            break;
+                        }
                     }
                 }
-            }
+                projectAsset.ScriptReferences = scriptReferences;
+                projectAsset.CharacterReferences = characterReferences;
+                projectAsset.GlobalVariableEntries = globalVariableEntries;
+                projectAsset.GlobalStringEntries = globalStringEntries;
 
-            // --- Find and import script JSON files ---
-            var scriptReferences = new List<StoryFlowProjectAsset.ScriptReference>();
-            var scriptFiles = FindJsonScriptFiles(buildDirectory);
+                // Import and resolve project-scoped media into the project's resolved-asset pool so
+                // runtime ResolveAsset<T> can find keys that appear only in global-variables.json or
+                // characters.json — e.g. a global Image variable driving a character portrait, or a
+                // custom image-typed character variable holding an alternate pose. Rebuild the pool
+                // each import so removed/renamed assets don't leave stale entries; ClearResolvedAssets
+                // (not List.Clear) also invalidates the runtime cache.
+                projectAsset.ClearResolvedAssets();
+                ImportMediaAssets(globalAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
+                // Portraits are already imported by ImportCharacter, so drop them from the copy pass
+                // (avoids a redundant second texture import) and register their resolved sprites directly.
+                // a.Id equals the portrait's ImageAssetKey because the export keys each asset by its id;
+                // if they ever diverged this would simply fall back to re-importing the portrait (no break).
+                characterAssetEntries.RemoveAll(a => characterPortraitAssets.ContainsKey(a.Id));
+                ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
+                foreach (var portrait in characterPortraitAssets)
+                    projectAsset.SetResolvedAsset(portrait.Key, portrait.Value);
 
-            foreach (string relativeScriptPath in scriptFiles)
-            {
-                string fullScriptPath = Path.Combine(buildDirectory, relativeScriptPath);
-                string scriptJsonText = File.ReadAllText(fullScriptPath);
-                JObject scriptJson = JObject.Parse(scriptJsonText);
+                // Create asset AFTER all data is set so the first disk write contains full state
+                if (isNewProject)
+                    AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
 
-                // Script path as used by runtime (forward slashes, lowercase)
-                string scriptKey = relativeScriptPath.Replace("\\", "/").ToLowerInvariant();
+                CommitAsset(
+                    projectAsset, projectAssetPath,
+                    projectAsset.ImportedSourceHash,
+                    CertifyProject(
+                        projectJson.ToString(Newtonsoft.Json.Formatting.None),
+                        globalVariablesCondensed, charactersCondensed, projectAsset),
+                    isNewProject,
+                    hash => projectAsset.ImportedSourceHash = hash,
+                    report);
 
-                // Import the script
-                var scriptAsset = ImportScript(
-                    scriptKey, scriptJson, buildDirectory,
-                    scriptsDir, mediaImagesDir, mediaAudioDir, report);
+                AssetDatabase.Refresh();
 
-                scriptReferences.Add(new StoryFlowProjectAsset.ScriptReference
+                AssignDefaultProject(projectAsset, report);
+
+                if (report.HasFailures)
                 {
-                    Path = scriptKey,
-                    Asset = scriptAsset
-                });
-            }
-
-            // --- Create / update project asset ---
-            string projectAssetPath = CombineAssetPath(outputPath, "Project.asset");
-            var projectAsset = AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(projectAssetPath);
-            bool isNewProject = projectAsset == null;
-            if (isNewProject)
-                projectAsset = ScriptableObject.CreateInstance<StoryFlowProjectAsset>();
-
-            projectAsset.Version = version;
-            projectAsset.ApiVersion = apiVersion;
-            projectAsset.Title = title;
-            projectAsset.Description = description;
-            // Resolve startup script reference from imported scripts
-            projectAsset.StartupScript = null;
-            if (!string.IsNullOrEmpty(startupScript))
-            {
-                string startupKey = startupScript.Replace("\\", "/").ToLowerInvariant();
-                foreach (var sr in scriptReferences)
-                {
-                    if (sr.Path == startupKey)
-                    {
-                        projectAsset.StartupScript = sr.Asset;
-                        break;
-                    }
+                    Debug.LogError($"[StoryFlow] Imported project '{title}' with {report.FailedCount} " +
+                                   $"failure(s) ({report.Summarize()}). These files are still stale on " +
+                                   "disk and will be retried on the next sync:\n  " +
+                                   string.Join("\n  ", report.Failures));
                 }
+                else
+                {
+                    Debug.Log($"[StoryFlow] Imported project '{title}': {scriptReferences.Count} scripts, " +
+                              $"{characterReferences.Count} characters, {globalVariableEntries.Count} " +
+                              $"global variables ({report.Summarize()}).");
+                }
+
+                return projectAsset;
             }
-            projectAsset.ScriptReferences = scriptReferences;
-            projectAsset.CharacterReferences = characterReferences;
-            projectAsset.GlobalVariableEntries = globalVariableEntries;
-            projectAsset.GlobalStringEntries = globalStringEntries;
-
-            // Import and resolve project-scoped media into the project's resolved-asset pool so
-            // runtime ResolveAsset<T> can find keys that appear only in global-variables.json or
-            // characters.json — e.g. a global Image variable driving a character portrait, or a
-            // custom image-typed character variable holding an alternate pose. Rebuild the pool
-            // each import so removed/renamed assets don't leave stale entries; ClearResolvedAssets
-            // (not List.Clear) also invalidates the runtime cache.
-            projectAsset.ClearResolvedAssets();
-            ImportMediaAssets(globalAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
-            // Portraits are already imported by ImportCharacter, so drop them from the copy pass
-            // (avoids a redundant second texture import) and register their resolved sprites directly.
-            // a.Id equals the portrait's ImageAssetKey because the export keys each asset by its id;
-            // if they ever diverged this would simply fall back to re-importing the portrait (no break).
-            characterAssetEntries.RemoveAll(a => characterPortraitAssets.ContainsKey(a.Id));
-            ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
-            foreach (var portrait in characterPortraitAssets)
-                projectAsset.SetResolvedAsset(portrait.Key, portrait.Value);
-
-            // Create asset AFTER all data is set so the first disk write contains full state
-            if (isNewProject)
-                AssetDatabase.CreateAsset(projectAsset, projectAssetPath);
-
-            CommitAsset(
-                projectAsset, projectAssetPath,
-                projectAsset.ImportedSourceHash,
-                CertifyProject(
-                    projectJson.ToString(Newtonsoft.Json.Formatting.None),
-                    globalVariablesCondensed, charactersCondensed, projectAsset),
-                isNewProject,
-                hash => projectAsset.ImportedSourceHash = hash,
-                report);
-
-            AssetDatabase.Refresh();
-
-            AssignDefaultProject(projectAsset, report);
-
-            if (report.HasFailures)
+            finally
             {
-                Debug.LogError($"[StoryFlow] Imported project '{title}' with {report.FailedCount} " +
-                               $"failure(s) ({report.Summarize()}). These files are still stale on " +
-                               "disk and will be retried on the next sync:\n  " +
-                               string.Join("\n  ", report.Failures));
+                ForceRewrite = previousForce;
             }
-            else
-            {
-                Debug.Log($"[StoryFlow] Imported project '{title}': {scriptReferences.Count} scripts, " +
-                          $"{characterReferences.Count} characters, {globalVariableEntries.Count} " +
-                          $"global variables ({report.Summarize()}).");
-            }
-
-            return projectAsset;
         }
 
         /// <summary>
