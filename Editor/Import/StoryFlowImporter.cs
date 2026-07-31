@@ -270,8 +270,14 @@ namespace StoryFlow.Editor
         // commonly referenced by several scripts and by the project pool, and hashing a
         // multi-megabyte audio clip once per reference would be wasteful. Cleared at the
         // start of every import so a file edited between syncs is never served stale.
+        //
+        // Ordinal, matching every other path set here: on a case-sensitive filesystem two
+        // paths differing only in case are two different files, and answering with the wrong
+        // file's hash would skip a copy that was needed. The dictionary holds OS-native
+        // source paths and Assets-relative destination paths side by side, which cannot
+        // collide — one is absolute, the other begins with the Assets folder.
         private static readonly Dictionary<string, string> MediaContentHashes =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         // Destinations already known to hold their source's bytes this run, whether this
         // import wrote them or found them already matching. Cleared with the hash cache at
@@ -1543,11 +1549,11 @@ namespace StoryFlow.Editor
         private static bool TrySaveAsset(
             UnityEngine.Object asset, string assetPath, StoryFlowImportReport report)
         {
+            // Nothing to write, and deliberately nothing to count: the up-to-date tally is
+            // CommitAsset's, which is the only place that knows whether skipping was the
+            // decision or merely the outcome. Two owners of one counter double-count.
             if (!EditorUtility.IsDirty(asset))
-            {
-                report.RecordAssetUpToDate();
                 return true;
-            }
 
             try
             {
@@ -1756,6 +1762,25 @@ namespace StoryFlow.Editor
             return ComputeTextHash(sb.ToString());
         }
 
+        /// <summary>
+        /// One certified reference to another asset: its path, and then its GUID.
+        ///
+        /// The GUID is the part that matters. What gets serialized into the .asset file is a
+        /// GUID, not a path, and the two can disagree — a user who deletes the imported media
+        /// folder in the Project window and re-syncs gets the same files back at the same
+        /// paths as brand new assets with brand new GUIDs. Certifying the path alone makes
+        /// that byte-identical to "nothing changed", so the save is skipped and the asset on
+        /// disk keeps referring to assets that no longer exist. The path stays in the payload
+        /// because a hash nobody can explain is a hash nobody can debug.
+        /// </summary>
+        private static string CertifyReference(UnityEngine.Object asset, string absentToken)
+        {
+            if (asset == null) return absentToken;
+
+            string path = ToAssetPath(AssetDatabase.GetAssetPath(asset));
+            return path + "@" + AssetDatabase.AssetPathToGUID(path);
+        }
+
         private static void AppendResolvedAssets(
             System.Text.StringBuilder sb, List<StoryFlowScriptAsset.ResolvedAssetEntry> entries)
         {
@@ -1763,9 +1788,7 @@ namespace StoryFlow.Editor
             foreach (var entry in entries)
             {
                 sb.Append('\n').Append(entry.Key).Append('=');
-                sb.Append(entry.Asset == null
-                    ? "<missing>"
-                    : ToAssetPath(AssetDatabase.GetAssetPath(entry.Asset)));
+                sb.Append(CertifyReference(entry.Asset, "<missing>"));
             }
         }
 
@@ -1778,9 +1801,7 @@ namespace StoryFlow.Editor
             foreach (var entry in entries)
             {
                 sb.Append('\n').Append(entry.Key).Append('=');
-                sb.Append(entry.Asset == null
-                    ? "<missing>"
-                    : ToAssetPath(AssetDatabase.GetAssetPath(entry.Asset)));
+                sb.Append(CertifyReference(entry.Asset, "<missing>"));
             }
         }
 
@@ -1789,15 +1810,18 @@ namespace StoryFlow.Editor
         /// characters.json's string table and the portrait through its asset table, so a
         /// change in either has to invalidate the hash even though the character's own JSON
         /// object is byte-identical.
+        ///
+        /// A character carries a ResolvedAssetEntries pool of its own, and its absence here
+        /// is deliberate rather than an oversight: the importer never puts anything in it.
+        /// Character-scoped media beyond the portrait is resolved into the PROJECT pool, and
+        /// is certified there. Fold this in if that ever changes.
         /// </summary>
         private static string CertifyCharacter(string condensedJson, StoryFlowCharacterAsset asset)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(condensedJson);
             sb.Append("\n#name=").Append(asset.CharacterName ?? string.Empty);
-            sb.Append("\n#image=").Append(asset.ResolvedImage == null
-                ? "<missing>"
-                : ToAssetPath(AssetDatabase.GetAssetPath(asset.ResolvedImage)));
+            sb.Append("\n#image=").Append(CertifyReference(asset.ResolvedImage, "<missing>"));
             return ComputeTextHash(sb.ToString());
         }
 
@@ -1816,22 +1840,20 @@ namespace StoryFlow.Editor
               .Append(globalVariablesJson).Append('\n')
               .Append(charactersJson);
 
-            sb.Append("\n#startup=").Append(asset.StartupScript == null
-                ? "<none>"
-                : ToAssetPath(AssetDatabase.GetAssetPath(asset.StartupScript)));
+            sb.Append("\n#startup=").Append(CertifyReference(asset.StartupScript, "<none>"));
 
             sb.Append("\n#scripts");
             foreach (var sr in asset.ScriptReferences)
             {
                 sb.Append('\n').Append(sr.Path).Append('=');
-                sb.Append(sr.Asset == null ? "<missing>" : ToAssetPath(AssetDatabase.GetAssetPath(sr.Asset)));
+                sb.Append(CertifyReference(sr.Asset, "<missing>"));
             }
 
             sb.Append("\n#characters");
             foreach (var cr in asset.CharacterReferences)
             {
                 sb.Append('\n').Append(cr.Path).Append('=');
-                sb.Append(cr.Asset == null ? "<missing>" : ToAssetPath(AssetDatabase.GetAssetPath(cr.Asset)));
+                sb.Append(CertifyReference(cr.Asset, "<missing>"));
             }
 
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
