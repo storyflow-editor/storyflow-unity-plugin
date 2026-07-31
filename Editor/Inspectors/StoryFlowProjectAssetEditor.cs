@@ -274,8 +274,9 @@ namespace StoryFlow.Editor
 
                 if (report.HasFailures)
                 {
-                    Debug.LogWarning($"[StoryFlow] Re-import finished with {report.FailedCount} " +
-                                     $"failure(s) — {report.Summarize()}: {counts}");
+                    // The dialog only: this is surface UI for the person who pressed the
+                    // button, while the console line naming each file is the importer's to
+                    // write, and writing it twice helps nobody.
                     EditorUtility.DisplayDialog("Re-Import Finished With Failures",
                         $"{report.FailedCount} file(s) could not be written ({report.Summarize()}).\n\n" +
                         string.Join("\n", report.Failures), "OK");

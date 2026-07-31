@@ -610,7 +610,7 @@ namespace StoryFlow.Editor
                 {
                     AddLog($"Import finished with {report.FailedCount} failure(s) — " +
                            $"{report.Summarize()}. {counts}");
-                    foreach (string failure in report.Failures)
+                    foreach (var failure in report.Failures)
                         AddLog("  " + failure);
                 }
                 else

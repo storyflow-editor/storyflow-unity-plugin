@@ -234,12 +234,10 @@ namespace StoryFlow.Editor
                                 $"{projectAsset.CharacterReferences.Count} characters, " +
                                 $"{projectAsset.GlobalVariableEntries.Count} global variables)";
 
-                if (report.HasFailures)
-                {
-                    Debug.LogWarning($"[StoryFlow] Auto re-import finished with {report.FailedCount} " +
-                                     $"failure(s) — {report.Summarize()}: {counts}");
-                }
-                else
+                // Failures are not logged again here: the importer already wrote one console
+                // error naming every file it could not write, and a second line per caller
+                // turns one problem into a wall of duplicates.
+                if (!report.HasFailures)
                 {
                     Debug.Log($"[StoryFlow] Auto re-import successful: {counts} — {report.Summarize()}");
                 }

@@ -1085,14 +1085,33 @@ namespace StoryFlow.Editor
                 string normalizedRel = relativePath.Replace("\\", "/");
                 string existingPath = CombineAssetPath(imagesDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<Sprite>(existingPath);
-                if (existing != null) return existing;
+                if (existing != null)
+                {
+                    // The destination already holds this file, which is the whole point of a
+                    // data-only sync. Counted, so the run reports work skipped rather than
+                    // reporting nothing and reading like a run that did nothing.
+                    report.RecordMediaUpToDate(existingPath);
+                    return existing;
+                }
 
+                // Left uncounted deliberately: a missing source with nothing imported at the
+                // destination is the pre-existing missing-media behaviour, a warning and a
+                // null, not a write this run failed to perform.
                 Debug.LogWarning($"[StoryFlow] Image not found: {sourcePath}");
                 return null;
             }
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
+            if (EscapesOutputFolder(normalizedRelative))
+            {
+                report.RecordMediaFailure(normalizedRelative,
+                    "the exported asset path escapes the output folder and was refused. " +
+                    "Re-export the project, or move the file inside the build directory, " +
+                    "then sync again");
+                return AssetDatabase.LoadAssetAtPath<Sprite>(CombineAssetPath(imagesDir, normalizedRelative));
+            }
+
             string destPath = CombineAssetPath(imagesDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
 
@@ -1153,8 +1172,15 @@ namespace StoryFlow.Editor
                 string normalizedRel = relativePath.Replace("\\", "/");
                 string existingPath = CombineAssetPath(audioDir, normalizedRel);
                 var existing = AssetDatabase.LoadAssetAtPath<AudioClip>(existingPath);
-                if (existing != null) return existing;
+                if (existing != null)
+                {
+                    // See ImportImageAsset: a data-only sync resolving through the
+                    // destination is work skipped, and it is counted as such.
+                    report.RecordMediaUpToDate(existingPath);
+                    return existing;
+                }
 
+                // Left uncounted deliberately: pre-existing missing-media behaviour.
                 Debug.LogWarning($"[StoryFlow] Audio not found: {sourcePath}");
                 return null;
             }
@@ -1170,6 +1196,15 @@ namespace StoryFlow.Editor
 
             // Preserve folder structure from build directory
             string normalizedRelative = relativePath.Replace("\\", "/");
+            if (EscapesOutputFolder(normalizedRelative))
+            {
+                report.RecordMediaFailure(normalizedRelative,
+                    "the exported asset path escapes the output folder and was refused. " +
+                    "Re-export the project, or move the file inside the build directory, " +
+                    "then sync again");
+                return AssetDatabase.LoadAssetAtPath<AudioClip>(CombineAssetPath(audioDir, normalizedRelative));
+            }
+
             string destPath = CombineAssetPath(audioDir, normalizedRelative);
             EnsureDirectory(AssetParentFolder(destPath));
 
@@ -1446,10 +1481,22 @@ namespace StoryFlow.Editor
         /// </summary>
         private static string DescribeWriteFailure(Exception ex)
         {
+            // The framework's own text is carried through in every branch: the guidance below
+            // is the likely cause, not the certain one — UnauthorizedAccessException also
+            // covers a directory sitting where the file should be, and a support thread needs
+            // to be able to tell those apart.
             if (ex is UnauthorizedAccessException)
                 return "the file is read-only or locked. Check it out in version control " +
                        "(Perforce and Plastic mark unopened files read-only) or clear its " +
-                       "read-only attribute, then sync again";
+                       $"read-only attribute, then sync again ({ex.Message})";
+
+            // Before IOException, which it derives from. A build directory nested a few
+            // folders deep plus a long exported asset path clears Windows' 260-character
+            // limit without anything looking unusual.
+            if (ex is PathTooLongException)
+                return $"the full path is too long for the operating system ({ex.Message}). " +
+                       "Import to a shorter output folder, or move the project closer to the " +
+                       "drive root, then sync again";
 
             if (ex is IOException)
                 return $"the file could not be written ({ex.Message}). It may be open in " +
@@ -1473,7 +1520,7 @@ namespace StoryFlow.Editor
         {
             if (!EditorUtility.IsDirty(asset))
             {
-                report.AssetsUpToDate++;
+                report.RecordAssetUpToDate();
                 return true;
             }
 
@@ -1487,7 +1534,12 @@ namespace StoryFlow.Editor
                 return false;
             }
 
-            if (EditorUtility.IsDirty(asset))
+            // Two independent signals, because a false "saved" is the expensive direction:
+            // the skip-if-unchanged hash is written on the strength of this answer, so an
+            // editor version that clears the dirty flag on a write it did not perform would
+            // make every later sync skip the file and never repair it. A file that was
+            // genuinely just written cannot be read-only.
+            if (EditorUtility.IsDirty(asset) || IsReadOnlyOnDisk(assetPath))
             {
                 report.RecordAssetFailure(assetPath,
                     "Unity could not write the asset. It is almost certainly read-only or " +
@@ -1496,8 +1548,26 @@ namespace StoryFlow.Editor
                 return false;
             }
 
-            report.AssetsWritten++;
+            report.RecordAssetWritten();
             return true;
+        }
+
+        /// <summary>
+        /// True when the path names a file that exists and carries the read-only attribute.
+        /// An unreadable or missing path answers false: this is a corroborating check, and
+        /// it must never be the thing that invents a failure.
+        /// </summary>
+        private static bool IsReadOnlyOnDisk(string path)
+        {
+            try
+            {
+                return !string.IsNullOrEmpty(path) && File.Exists(path) &&
+                       (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -1511,6 +1581,10 @@ namespace StoryFlow.Editor
             try
             {
                 File.Copy(sourcePath, destPath, overwrite: true);
+                // Inside the try on purpose: this was the last raw call left in the media
+                // path, and an importer that throws here would unwind the whole run for one
+                // file, which is the failure mode the report exists to prevent.
+                AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
             }
             catch (Exception ex)
             {
@@ -1518,9 +1592,30 @@ namespace StoryFlow.Editor
                 return false;
             }
 
-            report.MediaWritten++;
-            AssetDatabase.ImportAsset(destPath, ImportAssetOptions.ForceUpdate);
+            report.RecordMediaWritten(destPath);
             return true;
+        }
+
+        /// <summary>
+        /// True when an exported relative path walks out of the folder it is combined with.
+        ///
+        /// Script and character JSON is written by another tool and can be hand-edited, so
+        /// the paths inside it are untrusted input. A ".." segment would put a raw File.Copy
+        /// outside the Unity project entirely, over files the user never asked the importer
+        /// to touch and with nothing in the project pointing at the damage. The check lives
+        /// here rather than in CombineAssetPath so the combiner stays a pure string helper
+        /// and the refusal is reported against the file that caused it.
+        /// </summary>
+        private static bool EscapesOutputFolder(string normalizedRelativePath)
+        {
+            if (string.IsNullOrEmpty(normalizedRelativePath)) return false;
+
+            foreach (string segment in normalizedRelativePath.Split('/'))
+            {
+                if (string.Equals(segment, "..", StringComparison.Ordinal)) return true;
+            }
+
+            return false;
         }
 
         // ================================================================
@@ -1562,9 +1657,16 @@ namespace StoryFlow.Editor
         }
 
         /// <summary>
-        /// The parent folder of an AssetDatabase path, in AssetDatabase form. Normalized
-        /// before the split, not after: a backslash is a legal filename character on macOS
-        /// and Linux, so splitting first would compute the parent of a different path.
+        /// The parent folder of an AssetDatabase path, in AssetDatabase form.
+        ///
+        /// The input is converted to asset form BEFORE Path.GetDirectoryName splits it,
+        /// because that method splits on the OS's separator, not on the AssetDatabase's. On
+        /// macOS and Linux the OS separator is "/" and a backslash is an ordinary filename
+        /// character, so "Assets/StoryFlow\media/hero.png" would split into a parent of
+        /// "Assets/StoryFlow\media" — a folder name containing a backslash, which is not the
+        /// folder anyone meant. Normalizing first makes the two notions of "separator" agree
+        /// before the split; the result is normalized again because Windows hands back
+        /// backslashes regardless of what went in.
         /// </summary>
         private static string AssetParentFolder(string assetPath)
         {

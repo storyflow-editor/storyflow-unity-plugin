@@ -137,7 +137,7 @@ namespace StoryFlow.Editor
                                 (report.HasFailures
                                     ? "\n\nStill stale on disk:\n" + string.Join("\n", report.Failures)
                                     : "");
-                statusType = report.HasFailures ? MessageType.Warning : MessageType.Info;
+                statusType = report.HasFailures ? MessageType.Error : MessageType.Info;
 
                 // Ping the created asset in the Project window
                 EditorGUIUtility.PingObject(projectAsset);
