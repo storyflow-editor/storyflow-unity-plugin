@@ -329,14 +329,25 @@ namespace StoryFlow.Editor
             bool force = false)
         {
             report = new StoryFlowImportReport();
+
+            // All three pieces of per-run state are saved on the way in and put back on the
+            // way out, because a run can start while another is still going: Unity runs asset
+            // postprocessors from inside ImportAsset, and this package ships one that
+            // re-imports, which any build directory living under Assets/ will reach.
+            //
+            // The nested run gets empty caches and its own force setting, which is what it
+            // needs to be correct about its own project. The outer run gets its state back
+            // untouched, so it still knows which destinations it has already settled — the
+            // guarantee that one media file is copied once per import, however many scripts
+            // reference it. Losing that costs a second copy and a second reimport of every
+            // shared file, and losing the force flag would quietly make the rest of a forced
+            // run incremental. Restoring also covers an import that throws part-way.
+            var previousMediaHashes = new Dictionary<string, string>(MediaContentHashes, StringComparer.Ordinal);
+            var previousSettled = new HashSet<string>(SettledMediaDestinations, StringComparer.Ordinal);
+            bool previousForce = ForceRewrite;
+
             MediaContentHashes.Clear();
             SettledMediaDestinations.Clear();
-            // Saved and restored rather than simply assigned: force is a mode for one
-            // run, not a cache. An import that throws before it finishes, or a nested
-            // import triggered by the auto-reimport postprocessor partway through this
-            // one, would otherwise leave the flag holding the wrong answer for whatever
-            // runs next — silently making a forced run incremental, or the reverse.
-            bool previousForce = ForceRewrite;
             ForceRewrite = force;
 
             try
@@ -600,6 +611,14 @@ namespace StoryFlow.Editor
             finally
             {
                 ForceRewrite = previousForce;
+
+                MediaContentHashes.Clear();
+                foreach (var pair in previousMediaHashes)
+                    MediaContentHashes[pair.Key] = pair.Value;
+
+                SettledMediaDestinations.Clear();
+                foreach (string destination in previousSettled)
+                    SettledMediaDestinations.Add(destination);
             }
         }
 
