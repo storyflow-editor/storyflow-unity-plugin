@@ -56,7 +56,8 @@ namespace StoryFlow.Execution
                 // reads come from the iteration snapshot, not the live map, but forEachMap
                 // is already cache-exempt via IsForEachNode.
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
-                                 EvaluatorHelpers.IsMapReadNode(node.Type);
+                                 EvaluatorHelpers.IsMapReadNode(node.Type) ||
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetBool();
@@ -562,9 +563,20 @@ namespace StoryFlow.Execution
             var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
             if (sourceNode == null) return true;
 
+            // The condition edge's source handle must reach the evaluator — multi-output
+            // nodes (runScript "-out-{id}", forEachMap "-value", getMapValue "-isValid")
+            // discriminate WHICH output is read by parsing it. Without this, the stale flow
+            // handle from ProcessNextPath sent runScript reads to the first-output fallback
+            // and map reads to the wrong arm. Save/restore mirrors Evaluate() above.
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+
             // Pre-cache boolean chain before evaluating (matches Godot/Unreal behavior)
             ProcessBooleanChain(ctx, sourceNode.Id);
-            return EvaluateFromNode(ctx, sourceNode);
+            bool result = EvaluateFromNode(ctx, sourceNode);
+
+            ctx.LastSourceHandle = prevHandle;
+            return result;
         }
     }
 }

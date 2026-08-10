@@ -50,7 +50,8 @@ namespace StoryFlow.Execution
                 // ForEach nodes and map reads — skip evaluation cache (cross-type conflicts /
                 // live map storage; see the matching block in BooleanEvaluator for the rationale)
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
-                                 EvaluatorHelpers.IsMapReadNode(node.Type);
+                                 EvaluatorHelpers.IsMapReadNode(node.Type) ||
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetEnum();
