@@ -149,5 +149,177 @@ namespace StoryFlow.Utilities
                     return JValue.CreateNull();
             }
         }
+
+        // ----------------------------------------------------------------- read
+
+        /// <summary>
+        /// Parses a unified-format blob into a snapshot. Returns null on any malformed,
+        /// truncated, empty or null input. Never throws: a blob arriving from a cloud
+        /// provider is far less trustworthy than a local file.
+        /// </summary>
+        public static StoryFlowStateSnapshot Deserialize(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) { return null; }
+
+            JObject root;
+            try
+            {
+                root = JToken.Parse(json) as JObject;
+                if (root == null) { return null; }
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+
+            var snapshot = new StoryFlowStateSnapshot();
+
+            if (root["globalVariables"] is JObject globals)
+            {
+                foreach (var property in globals.Properties())
+                {
+                    if (property.Value is JObject record &&
+                        TryVariableValueFromJson(record, out var value))
+                    {
+                        snapshot.GlobalValues[property.Name] = value;
+                    }
+                }
+            }
+
+            if (root["characters"] is JObject characters)
+            {
+                foreach (var charProperty in characters.Properties())
+                {
+                    if (!(charProperty.Value is JObject charObj)) { continue; }
+                    if (!(charObj["variables"] is JObject vars)) { continue; }
+
+                    // name and image are project data, not save state. Skip them: the
+                    // project asset stays authoritative for character identity.
+                    var values = new Dictionary<string, StoryFlowVariant>();
+                    foreach (var varProperty in vars.Properties())
+                    {
+                        if (varProperty.Value is JObject record &&
+                            TryVariableValueFromJson(record, out var value))
+                        {
+                            values[varProperty.Name] = value;
+                        }
+                    }
+                    snapshot.CharacterValues[charProperty.Name] = values;
+                }
+            }
+
+            if (root["usedOnceOnlyOptions"] is JArray onceOnly)
+            {
+                foreach (var entry in onceOnly)
+                {
+                    var key = entry?.ToString();
+                    if (!string.IsNullOrEmpty(key)) { snapshot.UsedOnceOnlyOptions.Add(key); }
+                }
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Rehydrates one variable record's value. Returns false when the record carries a
+        /// type this engine does not know, which includes the "None" the other engines can
+        /// emit. Unknown records are skipped rather than failing the whole blob.
+        /// </summary>
+        private static bool TryVariableValueFromJson(JObject record, out StoryFlowVariant value)
+        {
+            value = null;
+
+            var typeName = (string)record["type"];
+            if (!TryParseType(typeName, out var type)) { return false; }
+
+            var isArray = record["isArray"] != null && (bool)record["isArray"];
+            var token = record["value"];
+
+            if (type == StoryFlowVariableType.Map)
+            {
+                if (!TryParseType((string)record["keyType"], out var keyType))
+                {
+                    keyType = StoryFlowVariableType.String;
+                }
+                if (!TryParseType((string)record["valueType"], out var valueType))
+                {
+                    valueType = StoryFlowVariableType.String;
+                }
+
+                var entries = new List<StoryFlowMapEntry>();
+                if (token is JArray entryArray)
+                {
+                    foreach (var entryToken in entryArray)
+                    {
+                        if (!(entryToken is JObject entryObj) || entryObj["key"] == null) { continue; }
+                        entries.Add(new StoryFlowMapEntry
+                        {
+                            Key = VariantFromJson(entryObj["key"], keyType),
+                            Value = VariantFromJson(entryObj["value"], valueType)
+                        });
+                    }
+                }
+
+                value = new StoryFlowVariant();
+                value.SetMap(entries);
+                return true;
+            }
+
+            if (isArray)
+            {
+                var list = new List<StoryFlowVariant>();
+                if (token is JArray array)
+                {
+                    foreach (var element in array)
+                    {
+                        list.Add(VariantFromJson(element, type));
+                    }
+                }
+                value = new StoryFlowVariant { Type = type, ArrayValue = list };
+                return true;
+            }
+
+            value = VariantFromJson(token, type);
+            return true;
+        }
+
+        private static bool TryParseType(string name, out StoryFlowVariableType type)
+        {
+            // "None" is emitted by Unreal and Godot, which declare it, and has no Unity
+            // counterpart. Enum.TryParse rejects it, which is the behaviour we want.
+            // Reject numeric strings too: TryParse would happily accept "3" and reintroduce
+            // exactly the integer-code coupling this format exists to remove.
+            type = default;
+            if (string.IsNullOrEmpty(name)) { return false; }
+            if (char.IsDigit(name[0]) || name[0] == '-') { return false; }
+            return Enum.TryParse(name, ignoreCase: false, out type);
+        }
+
+        private static StoryFlowVariant VariantFromJson(JToken token, StoryFlowVariableType type)
+        {
+            var variant = new StoryFlowVariant();
+            if (token == null || token.Type == JTokenType.Null) { variant.Type = type; return variant; }
+
+            switch (type)
+            {
+                case StoryFlowVariableType.Boolean:
+                    variant.SetBool(token.Type == JTokenType.Boolean && (bool)token);
+                    break;
+                case StoryFlowVariableType.Integer:
+                    variant.SetInt(token.Type == JTokenType.Integer || token.Type == JTokenType.Float ? (int)token : 0);
+                    break;
+                case StoryFlowVariableType.Float:
+                    variant.SetFloat(token.Type == JTokenType.Integer || token.Type == JTokenType.Float ? (float)token : 0f);
+                    break;
+                case StoryFlowVariableType.Enum:
+                    variant.SetEnum(token.ToString());
+                    break;
+                default:
+                    variant.SetString(token.ToString());
+                    variant.Type = type;
+                    break;
+            }
+            return variant;
+        }
     }
 }
