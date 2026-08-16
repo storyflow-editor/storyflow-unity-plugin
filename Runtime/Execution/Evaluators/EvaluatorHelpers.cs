@@ -58,6 +58,18 @@ namespace StoryFlow.Execution
             }
         }
 
+        /// <summary>
+        /// Returns true for nodes exposing MULTIPLE named outputs through one runtime state
+        /// (runScript's script outputs). The single-slot CachedOutput cannot represent them:
+        /// a boolean read of one output would poison a later different-type read of another
+        /// output of the same node with a type-mismatched default. Resolution is a dictionary
+        /// lookup on OutputValues, so exemption is cheap — the same trade IsMapReadNode makes.
+        /// </summary>
+        internal static bool IsMultiOutputNode(StoryFlowNodeType type)
+        {
+            return type == StoryFlowNodeType.RunScript;
+        }
+
         // =====================================================================
         // Dual-input evaluation with fallback to node data
         // =====================================================================
