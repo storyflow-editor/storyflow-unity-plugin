@@ -263,6 +263,95 @@ namespace StoryFlow
         // =====================================================================
 
         /// <summary>
+        /// Serializes current story state (global variables, character variables, once-only
+        /// options) to a JSON string in the unified cross-engine format.
+        ///
+        /// Intended for hosts that persist state themselves, for example alongside their own
+        /// save data in a cloud provider. The returned string is the same payload SaveToSlot
+        /// writes to disk.
+        /// </summary>
+        public string ExportState()
+        {
+            return StoryFlowStateSerializer.Serialize(GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions);
+        }
+
+        /// <summary>
+        /// Applies story state previously produced by <see cref="ExportState"/>.
+        ///
+        /// Never throws and never partially applies: the blob is parsed in full before
+        /// anything is committed. The merge is lenient. Values overwrite matching entries,
+        /// unknown ids are ignored, and entries absent from the blob keep their current
+        /// value, so a blob saved before a story update still loads after it. The project
+        /// asset stays authoritative for schema; only values come from the blob.
+        ///
+        /// Refuses while a dialogue is active. Returns false on empty, null or malformed input.
+        /// </summary>
+        public bool ImportState(string stateJson)
+        {
+            if (string.IsNullOrWhiteSpace(stateJson))
+            {
+                Debug.LogWarning("[StoryFlow] ImportState called with null or empty state.");
+                return false;
+            }
+
+            if (_activeDialogueCount > 0)
+            {
+                Debug.LogError("[StoryFlow] Cannot import state while dialogue is active. " +
+                               "Stop all dialogues before importing.");
+                return false;
+            }
+
+            // Stage first. A truncated blob must never leave story state half applied.
+            var snapshot = StoryFlowStateSerializer.Deserialize(stateJson);
+            if (snapshot == null)
+            {
+                Debug.LogWarning("[StoryFlow] ImportState could not parse the supplied state.");
+                return false;
+            }
+
+            ApplySnapshot(snapshot);
+            return true;
+        }
+
+        /// <summary>
+        /// Commits a parsed snapshot onto live state. Only values are taken; Type, KeyType,
+        /// ValueType and enum value lists stay as the project asset declared them.
+        /// </summary>
+        private void ApplySnapshot(StoryFlowStateSnapshot snapshot)
+        {
+            foreach (var kvp in snapshot.GlobalValues)
+            {
+                if (GlobalVariables.TryGetValue(kvp.Key, out var existing))
+                {
+                    existing.Value = kvp.Value;
+                }
+            }
+
+            foreach (var charEntry in snapshot.CharacterValues)
+            {
+                if (!RuntimeCharacters.TryGetValue(charEntry.Key, out var characterData)) { continue; }
+
+                foreach (var varEntry in charEntry.Value)
+                {
+                    // The unified format keys character variables by name.
+                    foreach (var charVar in characterData.VariablesList)
+                    {
+                        if (charVar.Name != varEntry.Key) { continue; }
+                        charVar.Value = varEntry.Value;
+                        characterData.Variables[charVar.Name] = charVar.Value;
+                        break;
+                    }
+                }
+            }
+
+            UsedOnceOnlyOptions.Clear();
+            foreach (var key in snapshot.UsedOnceOnlyOptions)
+            {
+                UsedOnceOnlyOptions.Add(key);
+            }
+        }
+
+        /// <summary>
         /// Saves the current global state (variables, characters, once-only options)
         /// to the specified save slot. Returns true if the save succeeded, false otherwise.
         /// </summary>
