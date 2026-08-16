@@ -396,51 +396,14 @@ namespace StoryFlow
                 return false;
             }
 
-            var saveData = StoryFlowSaveHelpers.Load(slotName);
-            if (saveData == null)
+            var snapshot = StoryFlowSaveHelpers.Load(slotName);
+            if (snapshot == null)
             {
                 Debug.LogWarning($"[StoryFlow] Save slot \"{slotName}\" not found or could not be loaded.");
                 return false;
             }
 
-            // Apply saved global variable values (match by ID, update Value only)
-            foreach (var savedVar in saveData.GlobalVariables)
-            {
-                if (GlobalVariables.TryGetValue(savedVar.Id, out var existing))
-                {
-                    existing.Value = StoryFlowSaveHelpers.DeserializeSavedVariable(savedVar);
-                }
-            }
-
-            // Apply saved character variable values
-            foreach (var savedChar in saveData.RuntimeCharacters)
-            {
-                if (RuntimeCharacters.TryGetValue(savedChar.Path, out var characterData))
-                {
-                    foreach (var savedVar in savedChar.Variables)
-                    {
-                        // Find matching variable by ID in the character's variable list
-                        foreach (var charVar in characterData.VariablesList)
-                        {
-                            if (charVar.Id == savedVar.Id)
-                            {
-                                charVar.Value = StoryFlowSaveHelpers.DeserializeSavedVariable(savedVar);
-                                // Also update the quick-lookup dictionary
-                                characterData.Variables[charVar.Name] = charVar.Value;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Apply once-only options
-            UsedOnceOnlyOptions.Clear();
-            foreach (var optionKey in saveData.UsedOnceOnlyOptions)
-            {
-                UsedOnceOnlyOptions.Add(optionKey);
-            }
-
+            ApplySnapshot(snapshot);
             Debug.Log($"[StoryFlow] State loaded from slot \"{slotName}\".");
             return true;
         }
