@@ -315,7 +315,8 @@ namespace StoryFlow
 
         /// <summary>
         /// Commits a parsed snapshot onto live state. Only values are taken; Type, KeyType,
-        /// ValueType and enum value lists stay as the project asset declared them.
+        /// ValueType and enum value lists stay as the project asset declared them. Character
+        /// name and image are values too, since SetCharacterVar mutates both mid-story.
         /// </summary>
         private void ApplySnapshot(StoryFlowStateSnapshot snapshot)
         {
@@ -324,6 +325,24 @@ namespace StoryFlow
                 if (GlobalVariables.TryGetValue(kvp.Key, out var existing))
                 {
                     existing.Value = kvp.Value;
+                }
+            }
+
+            foreach (var nameEntry in snapshot.CharacterNames)
+            {
+                if (RuntimeCharacters.TryGetValue(nameEntry.Key, out var characterData))
+                {
+                    characterData.Name = nameEntry.Value;
+                }
+            }
+
+            foreach (var imageEntry in snapshot.CharacterImages)
+            {
+                if (RuntimeCharacters.TryGetValue(imageEntry.Key, out var characterData))
+                {
+                    // Only the asset key is restored. The Sprite re-resolves from it on the
+                    // next dialogue render, exactly as after a SetCharacterVar Image.
+                    characterData.ImageAssetKey = imageEntry.Value;
                 }
             }
 

@@ -191,10 +191,22 @@ namespace StoryFlow.Utilities
                 foreach (var charProperty in characters.Properties())
                 {
                     if (!(charProperty.Value is JObject charObj)) { continue; }
+
+                    // name and image are runtime VALUES: SetCharacterVar mutates both at
+                    // story time, so they are read back here and applied on import, matching
+                    // Unreal's save game and the HTML runtime. A field absent from the blob
+                    // stays out of the snapshot, which the merge reads as "keep current".
+                    if (charObj["name"] != null && charObj["name"].Type == JTokenType.String)
+                    {
+                        snapshot.CharacterNames[charProperty.Name] = (string)charObj["name"];
+                    }
+                    if (charObj["image"] != null && charObj["image"].Type == JTokenType.String)
+                    {
+                        snapshot.CharacterImages[charProperty.Name] = (string)charObj["image"];
+                    }
+
                     if (!(charObj["variables"] is JObject vars)) { continue; }
 
-                    // name and image are project data, not save state. Skip them: the
-                    // project asset stays authoritative for character identity.
                     var values = new Dictionary<string, StoryFlowVariant>();
                     foreach (var varProperty in vars.Properties())
                     {
