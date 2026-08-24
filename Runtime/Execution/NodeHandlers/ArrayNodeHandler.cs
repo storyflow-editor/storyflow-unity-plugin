@@ -180,14 +180,16 @@ namespace StoryFlow.Execution.NodeHandlers
             // resolved FIRST — ahead of this node's own "variable" field, not just ahead of
             // the edge fallback — because the accessor is what the author wired the op to,
             // and a name lookup that happened to hit would clear the wrong array. The output
-            // stamp and the flow tail below are shared with the routed case.
+            // stamp and the flow tail below are shared with the routed case, which is why the
+            // op node is passed as null: this path stamps for itself a few lines down, and the
+            // router's own re-stamp would only be overwritten by it.
             var clearInputEdge = context.CurrentScript.FindInputEdge(
                 node.Id, GetArrayInputSuffix(elementType, "2"));
             var clearInputSource = clearInputEdge != null
                 ? context.CurrentScript.GetNode(clearInputEdge.Source)
                 : null;
             if (!DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
-                    component, context, node, clearInputSource, new List<StoryFlowVariant>()))
+                    component, context, null, clearInputSource, new List<StoryFlowVariant>()))
             {
                 // Find the connected array source variable and clear it
                 var variableId = node.GetData("variable");

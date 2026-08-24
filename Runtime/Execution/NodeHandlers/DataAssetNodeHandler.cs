@@ -175,6 +175,11 @@ namespace StoryFlow.Execution.NodeHandlers
         /// fed the op an array, and writing one over a scalar the declaration promises is
         /// exactly what the store's callers must never do.
         /// </summary>
+        /// <param name="opNode">
+        /// The op node whose output stamp must survive the cache sweep, or null for a caller
+        /// that stamps in its own tail AFTER this returns (HandleClearArray) and so would only
+        /// be overwriting the stamp a moment later.
+        /// </param>
         internal static bool TryRouteArrayOpToDataAsset(
             StoryFlowComponent component, StoryFlowExecutionContext context,
             StoryFlowNode opNode, StoryFlowNode sourceNode, List<StoryFlowVariant> newArray)
@@ -182,6 +187,10 @@ namespace StoryFlow.Execution.NodeHandlers
             if (sourceNode == null || !EvaluatorHelpers.IsDataAssetAccessor(sourceNode.Type))
                 return false;
 
+            // Both refusals below answer TRUE — handled, as in "the caller must not also write
+            // a script variable" — while deliberately stamping NOTHING and invalidating
+            // nothing: the op did nothing, so there is no result to publish and no cached
+            // condition whose answer changed.
             if (!sourceNode.GetDataBool("isArray"))
             {
                 context.MaybeWarnDataAsset(sourceNode.Id, "arrayop",
@@ -211,8 +220,11 @@ namespace StoryFlow.Execution.NodeHandlers
             InvalidateCachedConditions(context);
             if (opNode != null)
             {
+                // Type comes from `value`, not from the parameterless ctor (which would make
+                // this Boolean): the stamp is read back as an array by downstream consumers,
+                // and it should state the same element type the write just did.
                 context.GetNodeRuntimeState(opNode.Id).CachedOutput =
-                    new StoryFlowVariant { ArrayValue = value.ArrayValue };
+                    new StoryFlowVariant { Type = value.Type, ArrayValue = value.ArrayValue };
             }
             return true;
         }
