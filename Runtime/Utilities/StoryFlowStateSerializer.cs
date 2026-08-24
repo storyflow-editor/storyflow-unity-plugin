@@ -411,7 +411,12 @@ namespace StoryFlow.Utilities
                     var values = new Dictionary<string, JToken>();
                     foreach (var valueProperty in assetObj.Properties())
                     {
-                        values[valueProperty.Name] = valueProperty.Value;
+                        // DETACHED from the parsed document, deliberately. A JToken keeps a
+                        // Parent chain up to the root JObject, so storing the token as parsed
+                        // would make every snapshot pin the whole save blob alive; Load and
+                        // Deserialize are both public, so a host that caches snapshots would
+                        // hold one full document per snapshot.
+                        values[valueProperty.Name] = valueProperty.Value.DeepClone();
                     }
                     table[assetProperty.Name] = values;
                 }

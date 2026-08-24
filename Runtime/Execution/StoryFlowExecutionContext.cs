@@ -499,11 +499,7 @@ namespace StoryFlow.Execution
             if (!TryBindDataAssetAccessor(accessor, out var resolvedId, out var variableId)) return false;
 
             var status = StoryFlowDataAssetStore.CheckBound(
-                DataAssetStore.Seed, resolvedId, variableId,
-                accessor.GetData("variableType"),
-                accessor.GetDataBool("isArray"),
-                accessor.GetData("keyType"),
-                accessor.GetData("valueType"));
+                DataAssetStore.Seed, resolvedId, variableId, PinShapeOf(accessor));
 
             if (!ReportDataAssetBinding(accessor, resolvedId, variableId, status)) return false;
 
@@ -525,17 +521,27 @@ namespace StoryFlow.Execution
 
             var status = StoryFlowDataAssetStore.ReadBound(
                 DataAssetStore.Seed, DataAssetStore.Overlay, resolvedId, variableId,
-                accessor.GetData("variableType"),
-                accessor.GetDataBool("isArray"),
-                accessor.GetData("keyType"),
-                accessor.GetData("valueType"),
-                out var resolved);
+                PinShapeOf(accessor), out var resolved);
 
             if (!ReportDataAssetBinding(accessor, resolvedId, variableId, status)) return false;
 
             assetId = resolvedId;
             value = resolved;
             return true;
+        }
+
+        /// <summary>
+        /// The spawn-time declared shape an accessor's pins were built from, read off the node
+        /// in ONE place so the read and write halves of the ladder cannot come to hold different
+        /// field names for the same four values.
+        /// </summary>
+        private static StoryFlowDataAssetPinShape PinShapeOf(StoryFlowNode accessor)
+        {
+            return new StoryFlowDataAssetPinShape(
+                accessor.GetData("variableType"),
+                accessor.GetDataBool("isArray"),
+                accessor.GetData("keyType"),
+                accessor.GetData("valueType"));
         }
 
         /// <summary>
@@ -617,11 +623,25 @@ namespace StoryFlow.Execution
                     }
                     return false;
 
-                default:
+                case StoryFlowDataAssetBinding.Changed:
                     if (ShouldWarnDataAsset(accessor.Id, "changed"))
                     {
                         Debug.LogWarning(
                             "[StoryFlow] Data Asset variable type changed since this node was made: " +
+                            $"{resolvedId}.{variableId} (node {accessor.Id})");
+                    }
+                    return false;
+
+                // Every named rung is spelled out above so this one stays UNREACHABLE. A member
+                // added to the enum without a case here would otherwise land on whichever arm
+                // happened to be the default and be reported as something it is not — a type
+                // change, when it might be anything. Refusing under its own name says the ladder
+                // grew and this switch did not.
+                default:
+                    if (ShouldWarnDataAsset(accessor.Id, "unrecognised"))
+                    {
+                        Debug.LogWarning(
+                            $"[StoryFlow] Data Asset binding refused ({status}): " +
                             $"{resolvedId}.{variableId} (node {accessor.Id})");
                     }
                     return false;

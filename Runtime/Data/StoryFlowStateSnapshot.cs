@@ -41,7 +41,9 @@ namespace StoryFlow.Data
         /// The .sfd Data Asset session overlay: assetId -> variableId -> BARE value, exactly
         /// as the blob carried it (contract §7). Values stay raw <see cref="JToken"/>s here
         /// because typing them needs the seed's declaration, which the snapshot has no access
-        /// to — the manager does that on the way in.
+        /// to — the manager does that on the way in. They are DETACHED copies: a token still
+        /// attached to the parsed blob would keep that whole document alive for as long as the
+        /// snapshot is held, which for a host that caches snapshots is one full save blob each.
         ///
         /// ABSENCE MEANS CLEAR HERE, not "unchanged" — the one section of this class that
         /// inverts the rule the others follow, and deliberately. The overlay is a complete

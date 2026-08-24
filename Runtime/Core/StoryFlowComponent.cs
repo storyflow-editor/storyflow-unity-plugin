@@ -936,6 +936,18 @@ namespace StoryFlow
         // is resolved exactly once per call, at this boundary, root-most-wins like every other
         // chain lookup (StoryFlowDataAssetStore.FindDeclarationByName).
         //
+        // TYPED, where the character surface next door is not. GetCharacterVariable hands back
+        // a raw StoryFlowVariant and SetCharacterVariable takes one, and that is a fine shape
+        // for a surface with no gate to enforce: a character variable coerces. A .sfd variable
+        // must not, because §6.1 refuses a read whose DECLARED type moved out from under it —
+        // and to refuse, this surface has to know which type the caller believes it is reading.
+        // A variant-in, variant-out pair carries no such belief (a String-tagged value is a
+        // legal thing to hand an enum declaration), so the gate would have nothing to check and
+        // the refusal §6.1 requires would be unreachable from game code. The typed pairs make
+        // the caller state it once, in the method name. GetDataAssetVariant is the untyped door
+        // for callers who genuinely want whatever is there — it reads only, so no belief about
+        // the declared type is needed and none is checked.
+        //
         // READ ANY, WRITE SCALAR. Arrays and maps come out through GetDataAssetVariant as a
         // detached copy and have no setter: a container write from game code would have to
         // rebuild the whole value with the right element typing to keep the save key stable,
@@ -980,14 +992,14 @@ namespace StoryFlow
         /// </summary>
         public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId, out var store);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
                 LogDataAssetRefusal(asset, variableName, declaration, StringFamilyNames);
                 found = false;
                 return "";
             }
-            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            found = TryResolveDataAssetValue(store, assetId, declaration, out var value);
             return found ? value.GetString() : "";
         }
 
@@ -1006,13 +1018,13 @@ namespace StoryFlow
         public StoryFlowVariant GetDataAssetVariant(
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId, out var store);
             if (declaration == null)
             {
                 found = false;
                 return null;
             }
-            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            found = TryResolveDataAssetValue(store, assetId, declaration, out var value);
             return found ? value : null;
         }
 
@@ -1047,13 +1059,13 @@ namespace StoryFlow
         /// </summary>
         public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
-            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId, out var store);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
                 LogDataAssetRefusal(asset, variableName, declaration, StringFamilyNames);
                 return false;
             }
-            return CommitDataAssetWrite(assetId, declaration.Id, StoryFlowVariant.String(value));
+            return CommitDataAssetWrite(store, assetId, declaration.Id, StoryFlowVariant.String(value));
         }
 
         /// <summary>Writes an enum .sfd variable by value name.</summary>
@@ -1086,10 +1098,18 @@ namespace StoryFlow
         /// REFERENCED asset's own level, never the declaring ancestor (contract §5).
         /// Null, with one Debug.Log line, for a null asset or a name nothing on the chain
         /// declares.
+        ///
+        /// Hands the resolved STORE back as well, because it had to resolve and validate one to
+        /// answer at all: the read and write helpers below run on the far side of a non-null
+        /// declaration, so re-resolving there would be a second lookup guarded by a second copy
+        /// of the same null dance, for an answer this call already has. A non-null declaration
+        /// always comes with a valid store.
         /// </summary>
         private StoryFlowVariable FindDataAssetDeclaration(
-            StoryFlowDataAssetAsset asset, string variableName, out string assetId)
+            StoryFlowDataAssetAsset asset, string variableName, out string assetId,
+            out StoryFlowDataAssetStoreRef store)
         {
+            store = null;
             assetId = asset != null ? asset.Id : "";
             if (asset == null || string.IsNullOrEmpty(assetId))
             {
@@ -1097,9 +1117,10 @@ namespace StoryFlow
                 return null;
             }
 
-            var store = GetDataAssetStore();
+            store = GetDataAssetStore();
             if (store == null || !store.IsValid)
             {
+                store = null;
                 Debug.Log($"[StoryFlow] Data Asset access refused: no Data Asset store yet " +
                           $"(\"{assetId}.{variableName}\").");
                 return null;
@@ -1143,14 +1164,14 @@ namespace StoryFlow
         private StoryFlowVariant ReadDataAssetScalar(
             StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type, out bool found)
         {
-            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId, out var store);
             if (declaration == null || declaration.IsArray || declaration.Type != type)
             {
                 LogDataAssetRefusal(asset, variableName, declaration, type.ToString());
                 found = false;
                 return null;
             }
-            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            found = TryResolveDataAssetValue(store, assetId, declaration, out var value);
             return value;
         }
 
@@ -1158,21 +1179,22 @@ namespace StoryFlow
             StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type,
             StoryFlowVariant value)
         {
-            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId, out var store);
             if (declaration == null || declaration.IsArray || declaration.Type != type)
             {
                 LogDataAssetRefusal(asset, variableName, declaration, type.ToString());
                 return false;
             }
-            return CommitDataAssetWrite(assetId, declaration.Id, value);
+            return CommitDataAssetWrite(store, assetId, declaration.Id, value);
         }
 
-        private bool TryResolveDataAssetValue(
-            string assetId, StoryFlowVariable declaration, out StoryFlowVariant value)
+        /// <summary>
+        /// The read behind every getter, on the store the declaration lookup already settled.
+        /// </summary>
+        private static bool TryResolveDataAssetValue(
+            StoryFlowDataAssetStoreRef store, string assetId, StoryFlowVariable declaration,
+            out StoryFlowVariant value)
         {
-            value = null;
-            var store = GetDataAssetStore();
-            if (store == null || !store.IsValid) return false;
             return StoryFlowDataAssetStore.TryResolve(
                 store.Seed, store.Overlay, assetId, declaration.Id, out value);
         }
@@ -1183,11 +1205,9 @@ namespace StoryFlow
         /// to any option condition already memoized above the accessor. The accessors themselves
         /// are cache-exempt; their notBool / comparison parents are not.
         /// </summary>
-        private bool CommitDataAssetWrite(string assetId, string variableId, StoryFlowVariant value)
+        private bool CommitDataAssetWrite(
+            StoryFlowDataAssetStoreRef store, string assetId, string variableId, StoryFlowVariant value)
         {
-            var store = GetDataAssetStore();
-            if (store == null || !store.IsValid) return false;
-
             if (!StoryFlowDataAssetStore.TrySet(store.Seed, store.Overlay, assetId, variableId, value))
             {
                 Debug.Log($"[StoryFlow] Data Asset write refused: \"{assetId}.{variableId}\".");

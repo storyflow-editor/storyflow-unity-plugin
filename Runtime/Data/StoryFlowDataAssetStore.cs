@@ -45,6 +45,35 @@ namespace StoryFlow.Data
     }
 
     /// <summary>
+    /// The declared SHAPE an accessor node's pins were built from at spawn time: the four
+    /// wire-type fields the exporter wrote onto the node, which travel together everywhere and
+    /// mean nothing apart. §6.1 compares them against the seed's live declaration, and a
+    /// mismatch degrades the node rather than coercing the value.
+    ///
+    /// WIRE STRINGS, not parsed types, because that is what the node data holds and parsing has
+    /// to be able to fail: a type string the shared table does not know can never match, so a
+    /// garbled snapshot degrades instead of resolving.
+    /// </summary>
+    public struct StoryFlowDataAssetPinShape
+    {
+        public string VariableType;
+        public bool IsArray;
+
+        /// <summary>Map declarations only — ignored for every other declared type.</summary>
+        public string KeyType;
+        public string ValueType;
+
+        public StoryFlowDataAssetPinShape(
+            string variableType, bool isArray, string keyType = "", string valueType = "")
+        {
+            VariableType = variableType;
+            IsArray = isArray;
+            KeyType = keyType;
+            ValueType = valueType;
+        }
+    }
+
+    /// <summary>
     /// The .sfd Data Asset STORE (engine contract §3) and its chain RESOLVER (§4).
     ///
     /// NORMATIVE SOURCE: the HTML runtime's src/renderer/runtime/runtime-data-assets.js — its
@@ -60,6 +89,14 @@ namespace StoryFlow.Data
     ///    Cleared on a game reset, persisted sparsely in saves (§7).
     /// Both are owned by StoryFlowManager and passed in, so tests can drive the resolver
     /// against a seed built straight from the fixture JSON.
+    ///
+    /// THREE DOORS IN, one walk behind all of them:
+    ///  - TryResolve  — value only, no pin shape to check: the public API (which gates on the
+    ///    declaration it looked the name up with) and any caller holding an id it trusts.
+    ///  - ReadBound   — value AND the §6.1 ladder answer: what a bound accessor NODE reads
+    ///    through, since a node's pins can be stale in a way an id cannot.
+    ///  - CheckBound  — the ladder answer alone, no overlay and no copy-out: the write path,
+    ///    which needs to know the binding is sound and nothing else.
     ///
     /// ONE HOLE IN "the seed is never mutated": FindDeclaration and FindDeclarationByName
     /// hand back a StoryFlowVariable BY REFERENCE into the seed, and C# has no const to stop
@@ -530,15 +567,13 @@ namespace StoryFlow.Data
         public static StoryFlowDataAssetBinding ReadBound(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
-            string assetId, string variableId,
-            string variableType, bool isArray, string keyType, string valueType,
+            string assetId, string variableId, StoryFlowDataAssetPinShape pins,
             out StoryFlowVariant value)
         {
             value = null;
 
             var status = CheckBoundInternal(
-                seed, overlay, assetId, variableId, variableType, isArray, keyType, valueType,
-                out var nearest, out var declaration);
+                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration);
             if (status != StoryFlowDataAssetBinding.Ok) return status;
 
             value = CopyOut(nearest, declaration);
@@ -551,19 +586,15 @@ namespace StoryFlow.Data
         /// </summary>
         public static StoryFlowDataAssetBinding CheckBound(
             Dictionary<string, StoryFlowDataAssetDef> seed,
-            string assetId, string variableId,
-            string variableType, bool isArray, string keyType, string valueType)
+            string assetId, string variableId, StoryFlowDataAssetPinShape pins)
         {
-            return CheckBoundInternal(
-                seed, null, assetId, variableId, variableType, isArray, keyType, valueType,
-                out _, out _);
+            return CheckBoundInternal(seed, null, assetId, variableId, pins, out _, out _);
         }
 
         private static StoryFlowDataAssetBinding CheckBoundInternal(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
-            string assetId, string variableId,
-            string variableType, bool isArray, string keyType, string valueType,
+            string assetId, string variableId, StoryFlowDataAssetPinShape pins,
             out StoryFlowVariant nearest, out StoryFlowVariable declaration)
         {
             nearest = null;
@@ -581,7 +612,7 @@ namespace StoryFlow.Data
             // §6.1: the declaration moved under a live node. Treated as MISSING by every
             // caller, never coerced — within the string family a value carries no evidence of
             // its declared type, which is exactly why the check is on the DECLARATION.
-            return DeclMatches(declaration, variableType, isArray, keyType, valueType)
+            return DeclMatches(declaration, pins)
                 ? StoryFlowDataAssetBinding.Ok
                 : StoryFlowDataAssetBinding.Changed;
         }
@@ -681,28 +712,26 @@ namespace StoryFlow.Data
         /// Stale is treated as MISSING — no silent coercion, ever, because within the string
         /// family a value carries no evidence of which type declared it.
         ///
-        /// Takes the snapshot as the WIRE STRINGS the exporter wrote, because that is what the
-        /// node data holds; they convert through the one shared table (StoryFlowWireTypes), and
-        /// a type string that table does not know can never match, so a garbled snapshot
-        /// degrades instead of resolving.
+        /// Takes the snapshot as <see cref="StoryFlowDataAssetPinShape"/> — the WIRE STRINGS the
+        /// exporter wrote, because that is what the node data holds; they convert through the
+        /// one shared table (StoryFlowWireTypes), and a type string that table does not know can
+        /// never match, so a garbled snapshot degrades instead of resolving.
         ///
-        /// keyType/valueType are compared for MAPS ONLY; isArray always, since an array pin and
+        /// KeyType/ValueType are compared for MAPS ONLY; IsArray always, since an array pin and
         /// a scalar pin of the same type are different pins.
         /// </summary>
-        public static bool DeclMatches(
-            StoryFlowVariable declaration, string variableType, bool isArray,
-            string keyType, string valueType)
+        public static bool DeclMatches(StoryFlowVariable declaration, StoryFlowDataAssetPinShape pins)
         {
             if (declaration == null) return false;
-            if (!StoryFlowWireTypes.TryParseWireType(variableType, out var type)) return false;
+            if (!StoryFlowWireTypes.TryParseWireType(pins.VariableType, out var type)) return false;
             if (declaration.Type != type) return false;
-            if (declaration.IsArray != isArray) return false;
+            if (declaration.IsArray != pins.IsArray) return false;
 
             if (type == StoryFlowVariableType.Map)
             {
-                if (!StoryFlowWireTypes.TryParseWireType(keyType, out var parsedKey)) return false;
+                if (!StoryFlowWireTypes.TryParseWireType(pins.KeyType, out var parsedKey)) return false;
                 if (declaration.KeyType != parsedKey) return false;
-                if (!StoryFlowWireTypes.TryParseWireType(valueType, out var parsedValue)) return false;
+                if (!StoryFlowWireTypes.TryParseWireType(pins.ValueType, out var parsedValue)) return false;
                 if (declaration.ValueType != parsedValue) return false;
             }
 
