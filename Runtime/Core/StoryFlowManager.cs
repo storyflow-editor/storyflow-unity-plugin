@@ -35,6 +35,11 @@ namespace StoryFlow
         [NonSerialized] internal Dictionary<string, StoryFlowDataAssetDef> DataAssetSeed = new();
         [NonSerialized] internal Dictionary<string, Dictionary<string, StoryFlowVariant>> DataAssetOverlay = new();
 
+        // The host API's refusal latch, ONE per game so the manager's surface and every
+        // component's share it — the same typo reported from both would otherwise be two lines,
+        // and the point of latching is that it is one. Re-armed in BuildDataAssetSeed.
+        [NonSerialized] internal readonly StoryFlowDataAssetAccess.RefusalLatch DataAssetRefusals = new();
+
         // Dialogue tracking
         private int _activeDialogueCount;
 
@@ -220,11 +225,18 @@ namespace StoryFlow
         /// Rebuilds the Data Asset seed from the project and drops every session write.
         /// The two always move together: a fresh seed is a fresh session, and an overlay
         /// entry against a seed that no longer carries its asset is unreadable anyway.
+        ///
+        /// This is also where the host-API refusal latch RE-ARMS, and it is the only place it
+        /// needs to: both re-arm points the latch has — a new project (SetProject, and the
+        /// discovery retry behind it) and ResetAllState — reach the seed through here. A latch
+        /// that survived a project swap would suppress a warning about a variable that now
+        /// genuinely does not exist, which is the one moment the author most needs to hear it.
         /// </summary>
         private void BuildDataAssetSeed()
         {
             StoryFlowDataAssetStore.BuildSeed(Project, DataAssetSeed);
             StoryFlowDataAssetStore.ResetOverlay(DataAssetOverlay);
+            DataAssetRefusals.Clear();
         }
 
         /// <summary>
@@ -239,6 +251,117 @@ namespace StoryFlow
                 Seed = DataAssetSeed,
                 Overlay = DataAssetOverlay
             };
+        }
+
+        // =====================================================================
+        // Data Assets (.sfd) — the typed host API
+        // =====================================================================
+        //
+        // The same surface StoryFlowComponent exposes, and deliberately: the store is
+        // MANAGER-GLOBAL, so a shop panel, an inventory screen or a save menu — none of which
+        // own a dialogue — would otherwise have to find a StoryFlowComponent just to use it as
+        // a proxy for state that was never the component's. Both surfaces route through
+        // StoryFlowDataAssetAccess, so neither can answer differently from the other; what each
+        // owns is only what genuinely differs (which store, and what to invalidate after a
+        // write). See that class for the binding rule, the type gate and the read-any /
+        // write-scalar asymmetry.
+        //
+        // THE SETTERS HERE INVALIDATE NO EVALUATION CACHES, and cannot: a manager has no
+        // execution context. If a dialogue is running on some component when one of these
+        // writes lands, that component keeps any condition it had already memoized ABOVE a .sfd
+        // accessor until its next rebuild, so an option can answer with the pre-write value for
+        // a moment. The component's own setters clear their context for exactly this reason and
+        // still only reach THEIR context — a second component mid-dialogue is stale either way,
+        // so this is the same documented asymmetry, not a worse one. The blast radius is small
+        // because the accessors themselves are cache-exempt: only a memoized parent goes stale,
+        // never the read. Writing from a manager while a dialogue runs is not the shape this
+        // surface is for; a script node is.
+
+        /// <summary>Reads a boolean .sfd variable. <paramref name="found"/> is false for every refusal.</summary>
+        public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetBool(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>Reads an integer .sfd variable.</summary>
+        public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetInt(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>Reads a float .sfd variable.</summary>
+        public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetFloat(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>
+        /// Reads a string-family .sfd variable: string, image, audio or character. Enum is NOT
+        /// reachable here — use <see cref="GetDataAssetEnum"/>.
+        /// </summary>
+        public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetString(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>Reads an enum .sfd variable as its value name.</summary>
+        public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetEnum(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>
+        /// Reads ANY .sfd variable, arrays and maps included, as a DETACHED copy. Read-only:
+        /// there is no matching setter (see StoryFlowDataAssetAccess).
+        /// </summary>
+        public StoryFlowVariant GetDataAssetVariant(
+            StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            return StoryFlowDataAssetAccess.GetVariant(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+        }
+
+        /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
+        public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
+        {
+            return StoryFlowDataAssetAccess.SetBool(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+        }
+
+        /// <summary>Writes an integer .sfd variable.</summary>
+        public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
+        {
+            return StoryFlowDataAssetAccess.SetInt(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+        }
+
+        /// <summary>Writes a float .sfd variable.</summary>
+        public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
+        {
+            return StoryFlowDataAssetAccess.SetFloat(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+        }
+
+        /// <summary>
+        /// Writes a string-family .sfd variable (string / image / audio / character). Enum
+        /// declarations are refused here — use <see cref="SetDataAssetEnum"/>.
+        /// </summary>
+        public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
+        {
+            return StoryFlowDataAssetAccess.SetString(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+        }
+
+        /// <summary>Writes an enum .sfd variable by value name.</summary>
+        public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
+        {
+            return StoryFlowDataAssetAccess.SetEnum(
+                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
         }
 
         // =====================================================================
