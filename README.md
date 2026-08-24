@@ -11,6 +11,7 @@ Runtime plugin for [StoryFlow Editor](https://storyflow-editor.com) - a visual n
 - ForEach loops across all array types
 - Audio advance-on-end with optional skip
 - Character variables with built-in Name/Image field support
+- Data Assets (.sfd) - shared data tables with inheritance, readable and writable from graphs and C#
 - Save/Load with slot-based persistence
 - WebSocket Live Sync with auto-reconnect
 
