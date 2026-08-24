@@ -333,11 +333,47 @@ namespace StoryFlow.Data
 
         #region Setters (Used by Importer)
 
-        public void SetNodes(List<SerializedNode> nodes) => serializedNodes = nodes;
-        public void SetConnections(List<StoryFlowConnection> conns) => connections = conns;
-        public void SetVariables(List<SerializedVariable> vars) => serializedVariables = vars;
-        public void SetStrings(List<SerializedString> strings) => serializedStrings = strings;
-        public void SetAssets(List<SerializedAsset> assets) => serializedAssets = assets;
+        /// <summary>
+        /// Replaces the serialized data and invalidates the [NonSerialized] cache built over
+        /// it, for the reason ClearResolvedAssets below spells out: those caches are built
+        /// lazily and otherwise reset only by OnEnable, which a re-import inside one editor
+        /// session never gets. Replacing the list alone leaves every lookup serving the
+        /// previous import's data for the rest of the session.
+        ///
+        /// SetFlows needs no counterpart — Flows hands out the serialized list itself.
+        /// </summary>
+        public void SetNodes(List<SerializedNode> nodes)
+        {
+            serializedNodes = nodes;
+            _nodes = null;
+        }
+
+        public void SetConnections(List<StoryFlowConnection> conns)
+        {
+            connections = conns;
+            // The three connection indices are rebuilt as a set, so the flag is the whole
+            // invalidation — the same one OnEnable performs.
+            _indicesBuilt = false;
+        }
+
+        public void SetVariables(List<SerializedVariable> vars)
+        {
+            serializedVariables = vars;
+            _variables = null;
+        }
+
+        public void SetStrings(List<SerializedString> strings)
+        {
+            serializedStrings = strings;
+            _strings = null;
+        }
+
+        public void SetAssets(List<SerializedAsset> assets)
+        {
+            serializedAssets = assets;
+            _assets = null;
+        }
+
         public void SetFlows(List<StoryFlowFlowDef> flowDefs) => flows = flowDefs;
 
         /// <summary>
