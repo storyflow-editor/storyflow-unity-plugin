@@ -283,6 +283,12 @@ namespace StoryFlow.Execution.NodeHandlers
             Handlers[StoryFlowNodeType.ClearMap] = MapNodeHandler.HandleMapModify;
             // Map entry iteration (snapshot-at-init semantics — see HandleForEachMap)
             Handlers[StoryFlowNodeType.ForEachMap] = MapNodeHandler.HandleForEachMap;
+
+            // Data Assets (.sfd). The reference pill and the read accessor are pure reads,
+            // evaluated on demand by the typed evaluators; only the Set node executes.
+            Handlers[StoryFlowNodeType.GetDataAsset] = NoOp;
+            Handlers[StoryFlowNodeType.GetDataAssetVariable] = NoOp;
+            Handlers[StoryFlowNodeType.SetDataAssetVariable] = DataAssetNodeHandler.HandleSetDataAssetVariable;
         }
 
         /// <summary>

@@ -216,6 +216,12 @@ namespace StoryFlow.Data
         // mid-enum)
         ModuloInt,
         ModuloFloat,
+
+        // Data Assets (.sfd) — the reference pill and its two accessors. Appended, per
+        // the note above: these members are serialized as integers into imported assets.
+        GetDataAsset,
+        GetDataAssetVariable,
+        SetDataAssetVariable,
     }
 
     public enum StoryFlowVariableType

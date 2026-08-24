@@ -83,6 +83,31 @@ namespace StoryFlow.Data
             return string.Concat("map-", keyType, "-", valueType, "-", optionId);
         }
 
+        // Data Asset (.sfd) handles.
+        //
+        // The accessor's asset pin: "target-{nodeId}-dataAsset-asset". The wire IS the
+        // binding (contract §2.2) — the accessor carries no assetId of its own, so this
+        // edge, followed a SINGLE hop to a getDataAsset pill, is the whole lookup.
+        public const string In_DataAssetRef = "dataAsset-asset";
+
+        // The Set node's VALUE input is the editor's pin "2" (SetDataAssetVariableNode.tsx
+        // is the source of truth; the "3" beside it is the pass-through output, never read
+        // as an input). The three shapes below mirror the reference's readDataAssetSetInput
+        // exactly: "{type}-2" scalar, "{type}-array-2" array, InMap(k, v, "2") map.
+        public const string DataAssetValueOptionId = "2";
+
+        /// <summary>Builds a Set Data Asset Variable scalar value input suffix: "{type}-2".</summary>
+        public static string InDataAssetValue(string variableType)
+        {
+            return string.Concat(variableType, "-", DataAssetValueOptionId);
+        }
+
+        /// <summary>Builds a Set Data Asset Variable array value input suffix: "{type}-array-2".</summary>
+        public static string InDataAssetArrayValue(string variableType)
+        {
+            return string.Concat(variableType, "-array-", DataAssetValueOptionId);
+        }
+
         public static string Source(string nodeId, string suffix = "")
         {
             return string.Concat("source-", nodeId, "-", suffix);

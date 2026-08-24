@@ -18,6 +18,7 @@ namespace StoryFlow.Execution
         GlobalVariable,
         CharacterVariable,
         RunScriptOutput,
+        DataAsset,
     }
 
     /// <summary>
@@ -164,6 +165,32 @@ namespace StoryFlow.Execution
                         return charVar;
                     }
                     return null;
+                }
+
+                case StoryFlowNodeType.GetDataAssetVariable:
+                case StoryFlowNodeType.SetDataAssetVariable:
+                {
+                    // Map-typed .sfd variables resolve to a DETACHED copy — the store copies
+                    // out by contract (§3), and there is no live variable behind an accessor
+                    // to alias in the first place. Flagged READ-ONLY like charvar and
+                    // runScript chains, so setMap SNAPSHOTS it rather than aliasing and the
+                    // mutators no-op: the reference builds a fresh Map off the read the same
+                    // way, and a .sfd map is written by the Set node (which replaces the whole
+                    // value), never by a mutator reaching into store storage.
+                    var resolved = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, sourceNode);
+                    if (resolved == null || resolved.Type != StoryFlowVariableType.Map) return null;
+
+                    sourceKind = MapSourceKind.DataAsset;
+                    // Synthetic wrapper, exactly as the runScript arm below mints one:
+                    // accessors resolve to variants, not variables, and the read-only kind
+                    // gates every mutating path before scope checks can touch Id.
+                    return new StoryFlowVariable
+                    {
+                        Id = sourceNode.Id,
+                        Name = sourceNode.GetData("variable"),
+                        Type = StoryFlowVariableType.Map,
+                        Value = resolved,
+                    };
                 }
 
                 case StoryFlowNodeType.RunScript:

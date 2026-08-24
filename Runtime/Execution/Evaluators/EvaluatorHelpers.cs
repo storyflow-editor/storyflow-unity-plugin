@@ -70,6 +70,22 @@ namespace StoryFlow.Execution
             return type == StoryFlowNodeType.RunScript;
         }
 
+        /// <summary>
+        /// Returns true for the two .sfd accessor node types (the Set's pass-through output
+        /// answers what its Get twin would, so both read).
+        ///
+        /// Data-asset reads are never memoized: they resolve through the session OVERLAY,
+        /// which a Set node, the public API or a save load can move between two reads of the
+        /// same accessor — the same liveness argument <see cref="IsMapReadNode"/> makes for
+        /// map storage. Cheap to recompute (a short chain walk), and the alternative is an
+        /// option condition that keeps answering with a value the game has already changed.
+        /// </summary>
+        internal static bool IsDataAssetAccessor(StoryFlowNodeType type)
+        {
+            return type == StoryFlowNodeType.GetDataAssetVariable ||
+                   type == StoryFlowNodeType.SetDataAssetVariable;
+        }
+
         // =====================================================================
         // Dual-input evaluation with fallback to node data
         // =====================================================================
@@ -452,6 +468,25 @@ namespace StoryFlow.Execution
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Evaluates the .sfd variable an accessor node is bound to, or null for every
+        /// degraded case (contract §6, the ladder on the context) — each typed evaluator then
+        /// substitutes ITS OWN type default, which is how the character-variable arms degrade
+        /// on a missing character too, and what the degraded fixture pins.
+        ///
+        /// The value is already a deep copy: the store copies out by contract (§3), so graph
+        /// code cannot mutate the seed or the overlay through a read.
+        /// </summary>
+        internal static StoryFlowVariant EvaluateDataAssetVariable(
+            StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            if (ctx == null || node == null) return null;
+            if (!ctx.TryResolveDataAssetBinding(node, out var assetId)) return null;
+            return ctx.TryResolveDataAsset(assetId, node.GetData("variableId"), out var value)
+                ? value
+                : null;
         }
     }
 }

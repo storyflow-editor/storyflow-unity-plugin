@@ -227,6 +227,16 @@ namespace StoryFlow.Editor
             { "getCharacterVar", StoryFlowNodeType.GetCharacterVar },
             { "setCharacterVar", StoryFlowNodeType.SetCharacterVar },
 
+            // Data Asset (.sfd) nodes. Their payload fields (assetId on the pill;
+            // variableId / variable / variableType / isArray / keyType / valueType on the
+            // accessors) need no mapping of their own: ParseNodes flattens every
+            // non-structural field into Data verbatim, so node.GetData reads them by their
+            // exported names. Only getCharacterVar's "variable" -> "variableName" remap is
+            // special, and it is keyed on characterPath, which these nodes never carry.
+            { "getDataAsset", StoryFlowNodeType.GetDataAsset },
+            { "getDataAssetVariable", StoryFlowNodeType.GetDataAssetVariable },
+            { "setDataAssetVariable", StoryFlowNodeType.SetDataAssetVariable },
+
             // Map Variables
             { "getMap", StoryFlowNodeType.GetMap },
             { "setMap", StoryFlowNodeType.SetMap },

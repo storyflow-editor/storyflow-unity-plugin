@@ -51,7 +51,8 @@ namespace StoryFlow.Execution
                 // live map storage; see the matching block in BooleanEvaluator for the rationale)
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
                                  EvaluatorHelpers.IsMapReadNode(node.Type) ||
-                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type) ||
+                                 EvaluatorHelpers.IsDataAssetAccessor(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return ctx.ResolveStringKey(state.CachedOutput.GetString());
@@ -184,6 +185,17 @@ namespace StoryFlow.Execution
                 {
                     var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
                     return charVar?.GetString() ?? "";
+                }
+
+                // Get/SetDataAssetVariable returning a string-family value. GetString covers
+                // String / Image / Audio / Character (StoryFlowVariant:111-119), which is the
+                // same four the .sfd seed stores in StringValue; enum reads through the enum
+                // evaluator instead, because it stores in EnumValue.
+                case StoryFlowNodeType.GetDataAssetVariable:
+                case StoryFlowNodeType.SetDataAssetVariable:
+                {
+                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    return dataAssetVar?.GetString() ?? "";
                 }
 
                 // Image/Audio/Character array elements return string paths

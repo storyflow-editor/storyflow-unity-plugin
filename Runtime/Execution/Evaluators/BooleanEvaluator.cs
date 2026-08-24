@@ -54,10 +54,14 @@ namespace StoryFlow.Execution
                 // resolve to LIVE variable storage and in-place mutations must be observable
                 // on the next read (see EvaluatorHelpers.IsMapReadNode). forEachMap key/value
                 // reads come from the iteration snapshot, not the live map, but forEachMap
-                // is already cache-exempt via IsForEachNode.
+                // is already cache-exempt via IsForEachNode. Data-asset accessors join them
+                // for the same liveness reason — they read the session overlay, which a Set
+                // node or the public API can move between two reads (see
+                // EvaluatorHelpers.IsDataAssetAccessor).
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
                                  EvaluatorHelpers.IsMapReadNode(node.Type) ||
-                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type) ||
+                                 EvaluatorHelpers.IsDataAssetAccessor(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetBool();
@@ -407,6 +411,22 @@ namespace StoryFlow.Execution
                 {
                     var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
                     return charVar?.GetBool() ?? false;
+                }
+
+                // Get/SetDataAssetVariable returning boolean. BOTH accessors read: the Set's
+                // pass-through output answers what its Get twin would.
+                //
+                // This switch IS this engine's boolean-producer list (contract §6.2) — its
+                // default: arm fails closed, so an option condition wired to a .sfd boolean is
+                // permanently hidden until these two cases exist. Degraded bindings answer
+                // false, the type default, which is also what a missing arm would answer:
+                // only the VISIBLE direction can catch the omission, which is what
+                // BooleanGetGatesAnOption asserts.
+                case StoryFlowNodeType.GetDataAssetVariable:
+                case StoryFlowNodeType.SetDataAssetVariable:
+                {
+                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    return dataAssetVar?.GetBool() ?? false;
                 }
 
                 // Dialogue node — read from input option values

@@ -51,7 +51,8 @@ namespace StoryFlow.Execution
                 // live map storage; see the matching block in BooleanEvaluator for the rationale)
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
                                  EvaluatorHelpers.IsMapReadNode(node.Type) ||
-                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type) ||
+                                 EvaluatorHelpers.IsDataAssetAccessor(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetFloat();
@@ -217,6 +218,15 @@ namespace StoryFlow.Execution
                 {
                     var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
                     return charVar?.GetFloat() ?? 0f;
+                }
+
+                // Get/SetDataAssetVariable returning float (both accessors — the Set's
+                // pass-through output answers what its Get twin would)
+                case StoryFlowNodeType.GetDataAssetVariable:
+                case StoryFlowNodeType.SetDataAssetVariable:
+                {
+                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    return dataAssetVar?.GetFloat() ?? 0f;
                 }
 
                 case StoryFlowNodeType.Dialogue:

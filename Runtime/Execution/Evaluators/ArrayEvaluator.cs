@@ -80,6 +80,18 @@ namespace StoryFlow.Execution
                 return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
             }
 
+            // .sfd accessors bound to an array variable. AHEAD of the name lookup at the
+            // bottom on purpose: an accessor's "variable" data is the .sfd variable's display
+            // NAME, not a script variable id, so falling through would ask FindVariable a
+            // question about the wrong namespace. The list is already a deep copy (the store
+            // copies out), so mutating callers get their own storage — which is what makes the
+            // array ops' read-copy/mutate/write-back routing safe.
+            if (EvaluatorHelpers.IsDataAssetAccessor(sourceNode.Type))
+            {
+                var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, sourceNode);
+                return dataAssetVar?.ArrayValue ?? new List<StoryFlowVariant>();
+            }
+
             // Handle array modify nodes (add/remove/clear) that output their result array.
             // These nodes don't have a 'variable' field — their output is stored in CachedOutput.
             if (IsArrayModifyNode(sourceNode.Type))
@@ -164,6 +176,14 @@ namespace StoryFlow.Execution
                 {
                     var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
                     return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
+                }
+
+                // .sfd accessors bound to an array variable (see the twin arm in EvaluateArray
+                // for why this sits ahead of the name lookup)
+                if (EvaluatorHelpers.IsDataAssetAccessor(node.Type))
+                {
+                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    return dataAssetVar?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
                 // Handle array modify nodes (add/remove/clear) that output their result array

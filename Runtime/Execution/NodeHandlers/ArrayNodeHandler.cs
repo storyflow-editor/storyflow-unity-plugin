@@ -176,34 +176,48 @@ namespace StoryFlow.Execution.NodeHandlers
         {
             var context = component.GetContext();
 
-            // Find the connected array source variable and clear it
-            var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
-            if (variable != null)
+            // A .sfd accessor on the array input clears INTO the session overlay, and is
+            // resolved FIRST — ahead of this node's own "variable" field, not just ahead of
+            // the edge fallback — because the accessor is what the author wired the op to,
+            // and a name lookup that happened to hit would clear the wrong array. The output
+            // stamp and the flow tail below are shared with the routed case.
+            var clearInputEdge = context.CurrentScript.FindInputEdge(
+                node.Id, GetArrayInputSuffix(elementType, "2"));
+            var clearInputSource = clearInputEdge != null
+                ? context.CurrentScript.GetNode(clearInputEdge.Source)
+                : null;
+            if (!DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
+                    component, context, node, clearInputSource, new List<StoryFlowVariant>()))
             {
-                variable.Value.ArrayValue = new List<StoryFlowVariant>();
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
-                component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
-                component.BroadcastVariableChanged(variable, isGlobal);
-            }
-            else
-            {
-                // Try to clear via connected array input
-                var arraySuffix = GetArrayInputSuffix(elementType, "2");
-                var inputEdge = context.CurrentScript.FindInputEdge(node.Id, arraySuffix);
-                if (inputEdge != null)
+                // Find the connected array source variable and clear it
+                var variableId = node.GetData("variable");
+                var variable = context.FindVariable(variableId);
+                if (variable != null)
                 {
-                    var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
-                    if (sourceNode != null)
+                    variable.Value.ArrayValue = new List<StoryFlowVariant>();
+                    bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                    component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
+                    component.BroadcastVariableChanged(variable, isGlobal);
+                }
+                else
+                {
+                    // Try to clear via connected array input
+                    var arraySuffix = GetArrayInputSuffix(elementType, "2");
+                    var inputEdge = context.CurrentScript.FindInputEdge(node.Id, arraySuffix);
+                    if (inputEdge != null)
                     {
-                        var sourceVarId = sourceNode.GetData("variable");
-                        var sourceVar = context.FindVariable(sourceVarId);
-                        if (sourceVar != null)
+                        var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
+                        if (sourceNode != null)
                         {
-                            sourceVar.Value.ArrayValue = new List<StoryFlowVariant>();
-                            bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
-                            component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
-                            component.BroadcastVariableChanged(sourceVar, isGlobal);
+                            var sourceVarId = sourceNode.GetData("variable");
+                            var sourceVar = context.FindVariable(sourceVarId);
+                            if (sourceVar != null)
+                            {
+                                sourceVar.Value.ArrayValue = new List<StoryFlowVariant>();
+                                bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
+                                component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
+                                component.BroadcastVariableChanged(sourceVar, isGlobal);
+                            }
                         }
                     }
                 }
@@ -429,6 +443,12 @@ namespace StoryFlow.Execution.NodeHandlers
 
             var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
             if (sourceNode == null) return;
+
+            // A .sfd accessor on the far end routes the whole op into the session overlay,
+            // and outranks EVERY name-based lookup below (see TryRouteArrayOpToDataAsset).
+            if (DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
+                    component, context, node, sourceNode, newArray))
+                return;
 
             var sourceVarId = sourceNode.GetData("variable");
             var sourceVar = context.FindVariable(sourceVarId);

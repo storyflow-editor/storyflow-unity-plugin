@@ -51,7 +51,8 @@ namespace StoryFlow.Execution
                 // live map storage; see the matching block in BooleanEvaluator for the rationale)
                 bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
                                  EvaluatorHelpers.IsMapReadNode(node.Type) ||
-                                 EvaluatorHelpers.IsMultiOutputNode(node.Type);
+                                 EvaluatorHelpers.IsMultiOutputNode(node.Type) ||
+                                 EvaluatorHelpers.IsDataAssetAccessor(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetEnum();
@@ -129,6 +130,19 @@ namespace StoryFlow.Execution
                         }
                     }
                     return "";
+                }
+
+                // Get/SetDataAssetVariable returning an enum. Enum storage is EnumValue, not
+                // StringValue, so this arm and the string one are not interchangeable — a
+                // .sfd enum read through the string evaluator would answer "" (GetString is
+                // type-gated). The charvar arm above gates on variableType == "enum" and so
+                // does the ladder here, one rung earlier: declMatches refuses a snapshot
+                // whose type is not the declaration's.
+                case StoryFlowNodeType.GetDataAssetVariable:
+                case StoryFlowNodeType.SetDataAssetVariable:
+                {
+                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    return dataAssetVar?.GetEnum() ?? "";
                 }
 
                 // Map op branches on the node's keyType/valueType data (K/V in node data —

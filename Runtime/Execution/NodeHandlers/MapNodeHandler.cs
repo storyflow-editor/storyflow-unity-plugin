@@ -41,12 +41,13 @@ namespace StoryFlow.Execution.NodeHandlers
                     if (sourceVar != null)
                     {
                         if (sourceKind == MapSourceKind.CharacterVariable ||
-                            sourceKind == MapSourceKind.RunScriptOutput)
+                            sourceKind == MapSourceKind.RunScriptOutput ||
+                            sourceKind == MapSourceKind.DataAsset)
                         {
                             // Read-only-terminal chain: HTML's setMap SNAPSHOTS the entries
                             // into fresh objects (charvars get a throwaway snapshot; runScript
-                            // outputs are converted to a fresh Map at the read site). Neither
-                            // aliases live storage.
+                            // outputs are converted to a fresh Map at the read site; a .sfd
+                            // read is already a store copy). None aliases live storage.
                             variable.Value.SetMap(MapEvaluator.CopyEntries(sourceVar.Value.GetMap()));
                         }
                         else
@@ -124,13 +125,16 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            if (sourceKind == MapSourceKind.CharacterVariable || sourceKind == MapSourceKind.RunScriptOutput)
+            if (sourceKind == MapSourceKind.CharacterVariable ||
+                sourceKind == MapSourceKind.RunScriptOutput ||
+                sourceKind == MapSourceKind.DataAsset)
             {
-                // Read-only-terminal chain (charvar or runScript output): HTML hands the
-                // mutator a THROWAWAY fresh Map — the stored variable is observably
-                // unchanged and no variable-change dispatch fires. Observable no-op:
-                // use setCharacterVar to write charvars.
-                LogVerbose($"[StoryFlow] Map mutator node {node.Id} resolves to a read-only map source (character variable or runScript output) - mutation skipped.");
+                // Read-only-terminal chain (charvar, runScript output or .sfd accessor): HTML
+                // hands the mutator a THROWAWAY fresh Map — the stored variable is observably
+                // unchanged and no variable-change dispatch fires. Observable no-op: use
+                // setCharacterVar to write charvars, setDataAssetVariable to write .sfd maps
+                // (which REPLACE the whole value, contract §5).
+                LogVerbose($"[StoryFlow] Map mutator node {node.Id} resolves to a read-only map source (character variable, runScript output or data asset) - mutation skipped.");
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }
