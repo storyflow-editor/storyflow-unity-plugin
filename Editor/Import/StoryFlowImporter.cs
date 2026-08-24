@@ -943,11 +943,14 @@ namespace StoryFlow.Editor
 
             // Nothing outside the asset's own JSON object feeds it — no string table, no
             // resolved media (contract §2.1 keeps .sfd image/audio values as bare path
-            // strings for now) — so the object alone is the whole certified payload.
+            // strings for now) — so the object plus the parse-schema token is the whole
+            // certified payload. The token matters here too: ParseDataAssetVariable decides
+            // which rows enter the asset and how overrides are stored, and a change to either
+            // must not be skipped over on an unchanged data-assets.json.
             CommitAsset(
                 dataAsset, assetPath,
                 dataAsset.ImportedSourceHash,
-                ComputeTextHash(assetObj.ToString(Newtonsoft.Json.Formatting.None)),
+                ComputeTextHash(assetObj.ToString(Newtonsoft.Json.Formatting.None) + ParseSchemaToken()),
                 isNewDataAsset,
                 hash => dataAsset.ImportedSourceHash = hash,
                 report);
@@ -2123,6 +2126,47 @@ namespace StoryFlow.Editor
         // Change detection
         // ================================================================
 
+        /// <summary>
+        /// The IMPORT-SIDE PARSE SCHEMA version, mixed into every asset hash below.
+        ///
+        /// WHY IT HAS TO BE IN THE HASH. The recorded hash certifies the SOURCE, but what the
+        /// skip protects is the OUTPUT, and the two only stay equivalent while the code that
+        /// turns one into the other is unchanged. Upgrading the plugin changes exactly that
+        /// code and nothing about the JSON, so every hash still matches, CommitAsset skips
+        /// every asset, and whatever the new parser would have produced never lands. For the
+        /// .sfd nodes that means a script imported by 1.2.2 keeps its nodes serialized as
+        /// StoryFlowNodeType.Unknown (an int in the .asset file, never re-parsed) forever, on
+        /// a project whose JSON the author has no reason to touch.
+        ///
+        /// BUMP THIS on any change to how an import PARSES its input: a NodeTypeMap entry,
+        /// ParseNodes, ParseDataAssetVariable, ParseGlobalVariableEntry, the variable/asset
+        /// pool builders, or the shape of anything written onto an imported asset. Do not
+        /// bump it for a change that only affects which files are read or written.
+        ///
+        /// "1" is the implicit pre-token era: every hash recorded by 1.2.2 and earlier was
+        /// computed without this suffix, so it can never collide with a hash recorded now.
+        /// One consequence, and it is the intended one: the first sync after an upgrade that
+        /// bumps this rewrites every asset once, which under version control is one diff per
+        /// asset. Sibling ports carry the same mechanism (Unreal's ImportHashSchemaVersion).
+        /// </summary>
+        private const string ParseSchemaVersion = "2";
+
+        /// <summary>
+        /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser
+        /// changed, which is not otherwise reachable from a test. Nothing in production ever
+        /// assigns it, so <see cref="ParseSchemaVersion"/> is what ships.
+        /// </summary>
+        internal static string ParseSchemaVersionForTests;
+
+        /// <summary>
+        /// The parse-schema suffix every certified payload ends with. A suffix rather than a
+        /// prefix so the readable part of a payload still starts at its own first byte.
+        /// </summary>
+        private static string ParseSchemaToken()
+        {
+            return "\n#schema=" + (ParseSchemaVersionForTests ?? ParseSchemaVersion);
+        }
+
         private static string ComputeTextHash(string text)
         {
             using (var sha = System.Security.Cryptography.SHA256.Create())
@@ -2185,12 +2229,17 @@ namespace StoryFlow.Editor
         /// input rather than the output — an import whose media copy failed would record a
         /// hash saying "this asset is up to date with that JSON" while its resolved-asset
         /// pool was still missing the sprite, and every later sync would skip the repair.
+        ///
+        /// The parse-schema token is MANDATORY here above all: a script asset is where node
+        /// types are serialized, so it is the asset a parser change is most likely to strand
+        /// (see <see cref="ParseSchemaVersion"/>).
         /// </summary>
         private static string CertifyScript(string condensedJson, StoryFlowScriptAsset asset)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(condensedJson);
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
+            sb.Append(ParseSchemaToken());
             return ComputeTextHash(sb.ToString());
         }
 
@@ -2254,6 +2303,7 @@ namespace StoryFlow.Editor
             sb.Append(condensedJson);
             sb.Append("\n#name=").Append(asset.CharacterName ?? string.Empty);
             sb.Append("\n#image=").Append(CertifyReference(asset.ResolvedImage, "<missing>"));
+            sb.Append(ParseSchemaToken());
             return ComputeTextHash(sb.ToString());
         }
 
@@ -2304,6 +2354,7 @@ namespace StoryFlow.Editor
             }
 
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
+            sb.Append(ParseSchemaToken());
             return ComputeTextHash(sb.ToString());
         }
 

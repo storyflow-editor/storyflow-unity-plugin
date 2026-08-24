@@ -93,7 +93,8 @@ namespace StoryFlow.Editor
             string fileName = System.IO.Path.GetFileName(path);
 
             // Known StoryFlow export filenames
-            if (fileName == "project.json" || fileName == "global-variables.json" || fileName == "characters.json")
+            if (fileName == "project.json" || fileName == "global-variables.json" ||
+                fileName == "characters.json" || fileName == "data-assets.json")
                 return true;
 
             // Files in a build/ directory (StoryFlow editor exports here)

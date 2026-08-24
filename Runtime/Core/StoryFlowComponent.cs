@@ -1204,6 +1204,14 @@ namespace StoryFlow
         /// skipped the invalidation the Set NODE runs would leave a mid-dialogue write invisible
         /// to any option condition already memoized above the accessor. The accessors themselves
         /// are cache-exempt; their notBool / comparison parents are not.
+        ///
+        /// ASYMMETRIC ON PURPOSE, and worth knowing about: the WRITE is manager-global (one
+        /// overlay for the game) while the INVALIDATION is this component's own context. A
+        /// second component mid-dialogue keeps its memoized parents until its next rebuild, so
+        /// it can answer a condition with the pre-write value for a moment. That is exactly
+        /// what global variables have always done here, and the blast radius is small because
+        /// the accessors are cache-exempt: only a memoized parent ABOVE one goes stale, never
+        /// the read itself.
         /// </summary>
         private bool CommitDataAssetWrite(
             StoryFlowDataAssetStoreRef store, string assetId, string variableId, StoryFlowVariant value)
