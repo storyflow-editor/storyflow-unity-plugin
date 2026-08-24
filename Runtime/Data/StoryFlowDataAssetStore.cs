@@ -384,13 +384,22 @@ namespace StoryFlow.Data
 
             // resolveEntry's two accumulators, kept apart on purpose:
             //  - nearest: the FIRST overlay-or-override hit leaf -> root (§4.1/§4.2).
-            //  - declared: the ROOT-MOST declaration's own value (§4.3), which is why a
-            //    declaration must NOT stop the walk.
+            //  - declaration: the ROOT-MOST DECLARATION (§4.3), which is why a declaration
+            //    must NOT stop the walk.
             // Returning early on an override would resurrect ORPHAN overrides on other
             // levels; an override counts only where the chain still declares the id, and the
             // declaration that proves it may be further up than the override is.
+            //
+            // The second accumulator holds the DECLARATION, not its value, because "did any
+            // level declare this id?" and "does that declaration carry a value?" are
+            // different questions (§4.3 asks only the first). Keying success on the value
+            // reports a valueless declaration as UNDECLARED — the same answer a deleted
+            // variable gets — so an accessor would take the degraded path instead of reading
+            // its type default. Nothing BuildSeed produces has a null value, but the seed is
+            // a plain dictionary any caller can assemble, and this function should not
+            // depend on a repair that happens in another one.
             StoryFlowVariant nearest = null;
-            StoryFlowVariant declared = null;
+            StoryFlowVariable declaration = null;
 
             WalkChain(seed, assetId, level =>
             {
@@ -409,13 +418,20 @@ namespace StoryFlow.Data
                 }
 
                 var decl = FindDeclaredOnLevel(level, variableId);
-                if (decl != null) declared = decl.Value;
+                if (decl != null) declaration = decl;
                 return true;
             });
 
-            if (declared == null) return false;
+            if (declaration == null) return false;
 
-            value = new StoryFlowVariant(nearest ?? declared);
+            // A declaration carrying no value at all resolves to its TYPE DEFAULT rather
+            // than to nothing. The reference implementation reaches the same place by a
+            // different road — JS `declared = decl.value` can be undefined and resolve()
+            // still reports found — and no seed the exporter writes has the shape, so this
+            // is the translation that keeps "resolved" meaning the same thing in a language
+            // where the caller gets a typed object instead of undefined.
+            value = new StoryFlowVariant(
+                nearest ?? declaration.Value ?? new StoryFlowVariant { Type = declaration.Type });
             return true;
         }
 
@@ -478,6 +494,14 @@ namespace StoryFlow.Data
             string assetId, string variableId, StoryFlowVariant value)
         {
             if (overlay == null || value == null) return false;
+            // Two guards, and the first is NOT redundant despite answering the same way as
+            // the second for an absent asset today (the declaration walk starts at
+            // seed[assetId], so it also refuses one). They ask different questions —
+            // "is this asset here at all?" vs "does its chain declare this id?" — which is
+            // the line the degraded ladder draws between a dead reference and a stale
+            // binding (§6), and the read side draws it with HasAsset too. Both are checked
+            // BEFORE the per-asset table is minted, so a refused write leaves no empty
+            // table behind to ride every later save.
             if (!HasAsset(seed, assetId)) return false;
             if (!IsDeclaredOnChain(seed, assetId, variableId)) return false;
 
