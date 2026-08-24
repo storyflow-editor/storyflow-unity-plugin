@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace StoryFlow.Data
 {
     public enum StoryFlowNodeType
@@ -226,5 +229,52 @@ namespace StoryFlow.Data
         Audio,
         Character,
         Map,
+    }
+
+    /// <summary>
+    /// THE wire-type table: the exporter's variable-type strings mapped to
+    /// <see cref="StoryFlowVariableType"/>. There is exactly ONE of these in the plugin.
+    ///
+    /// It lives Runtime-side rather than in the importer because both halves need it and
+    /// Runtime cannot reference Editor: the data-asset store compares an accessor node's
+    /// spawn-time type SNAPSHOT (wire strings, as exported) against a seed declaration
+    /// (an enum), while the importer converts the same strings while building assets.
+    /// Two tables would be two chances to drift, and a type this table did not know would
+    /// silently become a different type on one side than on the other.
+    ///
+    /// Try-shaped on purpose. Callers disagree about what an unknown type means: the
+    /// importer warns and falls back to Boolean (an old export with a type this build
+    /// predates still imports), while the store treats it as "no match", so a garbled
+    /// snapshot degrades to the type default instead of resolving to something.
+    /// </summary>
+    public static class StoryFlowWireTypes
+    {
+        private static readonly Dictionary<string, StoryFlowVariableType> Table =
+            new Dictionary<string, StoryFlowVariableType>(StringComparer.Ordinal)
+            {
+                { "boolean", StoryFlowVariableType.Boolean },
+                { "integer", StoryFlowVariableType.Integer },
+                { "float", StoryFlowVariableType.Float },
+                { "string", StoryFlowVariableType.String },
+                { "enum", StoryFlowVariableType.Enum },
+                { "image", StoryFlowVariableType.Image },
+                { "audio", StoryFlowVariableType.Audio },
+                { "character", StoryFlowVariableType.Character },
+                { "map", StoryFlowVariableType.Map },
+            };
+
+        /// <summary>
+        /// Converts an exported type string. Returns false — leaving <paramref name="type"/>
+        /// at its default — for null, empty and anything not in the table, including
+        /// "category", which is a section header in the editor's table and never a value.
+        /// </summary>
+        public static bool TryParseWireType(string typeString, out StoryFlowVariableType type)
+        {
+            if (!string.IsNullOrEmpty(typeString) && Table.TryGetValue(typeString, out type))
+                return true;
+
+            type = default;
+            return false;
+        }
     }
 }

@@ -283,7 +283,8 @@ namespace StoryFlow
                 script,
                 manager.GlobalVariables,
                 manager.RuntimeCharacters,
-                manager.UsedOnceOnlyOptions
+                manager.UsedOnceOnlyOptions,
+                manager.GetDataAssetStore()
             );
 
             _isDialogueActive = true;

@@ -27,6 +27,15 @@ namespace StoryFlow.Data
         [Header("Assets")]
         public List<ScriptReference> ScriptReferences = new();
         public List<CharacterReference> CharacterReferences = new();
+
+        /// <summary>
+        /// The project's imported .sfd Data Assets. A flat list rather than path-keyed
+        /// references like scripts and characters: .sfd files are addressed by ASSET ID
+        /// everywhere downstream — the pills, the resolver, the save key — so the id each
+        /// asset already carries is the key, and <see cref="DataAssets"/> indexes by it.
+        /// </summary>
+        public List<StoryFlowDataAssetAsset> DataAssetReferences = new();
+
         public List<GlobalVariableEntry> GlobalVariableEntries = new();
         public List<GlobalStringEntry> GlobalStringEntries = new();
 
@@ -39,6 +48,7 @@ namespace StoryFlow.Data
         [NonSerialized] private Dictionary<string, StoryFlowVariable> _globalVariables;
         [NonSerialized] private Dictionary<string, StoryFlowCharacterAsset> _characters;
         [NonSerialized] private Dictionary<string, string> _globalStrings;
+        [NonSerialized] private Dictionary<string, StoryFlowDataAssetAsset> _dataAssets;
 
         [Serializable]
         public class ResolvedAssetEntry
@@ -93,6 +103,7 @@ namespace StoryFlow.Data
             _globalVariables = null;
             _characters = null;
             _globalStrings = null;
+            _dataAssets = null;
             _resolvedAssets = null;
         }
 
@@ -139,6 +150,16 @@ namespace StoryFlow.Data
             {
                 if (cr.Asset != null)
                     _characters[cr.Path] = cr.Asset;
+            }
+        }
+
+        private void RebuildDataAssets()
+        {
+            _dataAssets = new Dictionary<string, StoryFlowDataAssetAsset>(DataAssetReferences.Count);
+            foreach (var asset in DataAssetReferences)
+            {
+                if (asset != null && !string.IsNullOrEmpty(asset.Id))
+                    _dataAssets[asset.Id] = asset;
             }
         }
 
@@ -190,6 +211,16 @@ namespace StoryFlow.Data
             }
         }
 
+        /// <summary>The project's Data Assets, keyed by asset id (the seed's key too).</summary>
+        public Dictionary<string, StoryFlowDataAssetAsset> DataAssets
+        {
+            get
+            {
+                if (_dataAssets == null) RebuildDataAssets();
+                return _dataAssets;
+            }
+        }
+
         public Dictionary<string, string> GlobalStrings
         {
             get
@@ -226,6 +257,11 @@ namespace StoryFlow.Data
         public StoryFlowCharacterAsset GetCharacterAsset(string normalizedPath)
         {
             return Characters.TryGetValue(normalizedPath, out var asset) ? asset : null;
+        }
+
+        public StoryFlowDataAssetAsset GetDataAsset(string assetId)
+        {
+            return assetId != null && DataAssets.TryGetValue(assetId, out var asset) ? asset : null;
         }
 
         public string GetGlobalString(string key)

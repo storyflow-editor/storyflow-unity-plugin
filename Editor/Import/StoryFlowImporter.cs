@@ -245,18 +245,9 @@ namespace StoryFlow.Editor
         // Variable type string → enum mapping
         // ================================================================
 
-        private static readonly Dictionary<string, StoryFlowVariableType> VariableTypeMap = new(StringComparer.Ordinal)
-        {
-            { "boolean", StoryFlowVariableType.Boolean },
-            { "integer", StoryFlowVariableType.Integer },
-            { "float", StoryFlowVariableType.Float },
-            { "string", StoryFlowVariableType.String },
-            { "enum", StoryFlowVariableType.Enum },
-            { "image", StoryFlowVariableType.Image },
-            { "audio", StoryFlowVariableType.Audio },
-            { "character", StoryFlowVariableType.Character },
-            { "map", StoryFlowVariableType.Map },
-        };
+        // The variable-type table this used to hold now lives Runtime-side, as
+        // StoryFlowWireTypes.TryParseWireType — the runtime data-asset store needs the same
+        // conversion and cannot reference the Editor assembly. ONE table, two callers.
 
         // Supported image file extensions
         private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -382,11 +373,16 @@ namespace StoryFlow.Editor
                 string charactersDir = outputPath;
                 string mediaImagesDir = outputPath;
                 string mediaAudioDir = outputPath;
+                // Data assets are the one family named by ID rather than by source path, so
+                // they get their own folder instead of mirroring a build-directory structure
+                // they do not have.
+                string dataAssetsDir = CombineAssetPath(outputPath, "DataAssets");
 
-                // Condensed forms feed the project asset's certification: a change to either file
-                // has to invalidate the project hash even when project.json itself is untouched.
+                // Condensed forms feed the project asset's certification: a change to any of these
+                // files has to invalidate the project hash even when project.json itself is untouched.
                 string globalVariablesCondensed = string.Empty;
                 string charactersCondensed = string.Empty;
+                string dataAssetsCondensed = string.Empty;
 
                 // --- Read global variables ---
                 var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
@@ -502,6 +498,34 @@ namespace StoryFlow.Editor
                     }
                 }
 
+                // --- Read data-assets.json ---
+                // A TRUSTED SEED (engine contract §2.1): the editor's collector already stripped
+                // orphan and stale overrides, collapsed duplicate map keys and removed its own
+                // fields before shipping it. Nothing here re-validates or de-duplicates — a plugin
+                // that "fixes" the seed diverges from the other three runtimes. There is also no
+                // string-table pass: .sfd values are literals, and running the character lookup
+                // over them would turn every literal into a failed lookup.
+                var dataAssetReferences = new List<StoryFlowDataAssetAsset>();
+                string dataAssetsJsonPath = Path.Combine(buildDirectory, "data-assets.json");
+                if (File.Exists(dataAssetsJsonPath))
+                {
+                    JObject dataAssetsJson = JObject.Parse(File.ReadAllText(dataAssetsJsonPath));
+                    dataAssetsCondensed = dataAssetsJson.ToString(Newtonsoft.Json.Formatting.None);
+
+                    JObject dataAssetsObj = dataAssetsJson.Value<JObject>("dataAssets");
+                    if (dataAssetsObj != null)
+                    {
+                        foreach (var assetProp in dataAssetsObj.Properties())
+                        {
+                            var assetObj = assetProp.Value as JObject;
+                            if (assetObj == null) continue;
+
+                            dataAssetReferences.Add(
+                                ImportDataAsset(assetProp.Name, assetObj, dataAssetsDir, report));
+                        }
+                    }
+                }
+
                 // --- Find and import script JSON files ---
                 var scriptReferences = new List<StoryFlowProjectAsset.ScriptReference>();
                 var scriptFiles = FindJsonScriptFiles(buildDirectory);
@@ -554,6 +578,7 @@ namespace StoryFlow.Editor
                 }
                 projectAsset.ScriptReferences = scriptReferences;
                 projectAsset.CharacterReferences = characterReferences;
+                projectAsset.DataAssetReferences = dataAssetReferences;
                 projectAsset.GlobalVariableEntries = globalVariableEntries;
                 projectAsset.GlobalStringEntries = globalStringEntries;
 
@@ -583,7 +608,7 @@ namespace StoryFlow.Editor
                     projectAsset.ImportedSourceHash,
                     CertifyProject(
                         projectJson.ToString(Newtonsoft.Json.Formatting.None),
-                        globalVariablesCondensed, charactersCondensed, projectAsset),
+                        globalVariablesCondensed, charactersCondensed, dataAssetsCondensed, projectAsset),
                     isNewProject,
                     hash => projectAsset.ImportedSourceHash = hash,
                     report);
@@ -864,6 +889,175 @@ namespace StoryFlow.Editor
         }
 
         // ================================================================
+        // Data Asset Import
+        // ================================================================
+
+        /// <summary>
+        /// Imports one .sfd Data Asset into Assets/StoryFlow/DataAssets/{assetId}.asset.
+        ///
+        /// Named by ASSET ID, not by the display name: ids are unique by construction and
+        /// survive a rename in the editor, so a re-import lands on the same .asset instead of
+        /// creating a second one and orphaning the first.
+        /// </summary>
+        private static StoryFlowDataAssetAsset ImportDataAsset(
+            string assetId, JObject assetObj, string dataAssetsDir, StoryFlowImportReport report)
+        {
+            string assetPath = CombineAssetPath(dataAssetsDir, assetId + ".asset");
+            EnsureDirectory(AssetParentFolder(assetPath));
+
+            var dataAsset = AssetDatabase.LoadAssetAtPath<StoryFlowDataAssetAsset>(assetPath);
+            bool isNewDataAsset = dataAsset == null;
+            if (isNewDataAsset)
+                dataAsset = ScriptableObject.CreateInstance<StoryFlowDataAssetAsset>();
+
+            PopulateDataAsset(dataAsset, assetId, assetObj);
+
+            // Create asset AFTER all data is set so the first disk write contains full state
+            if (isNewDataAsset)
+                AssetDatabase.CreateAsset(dataAsset, assetPath);
+
+            // Nothing outside the asset's own JSON object feeds it — no string table, no
+            // resolved media (contract §2.1 keeps .sfd image/audio values as bare path
+            // strings for now) — so the object alone is the whole certified payload.
+            CommitAsset(
+                dataAsset, assetPath,
+                dataAsset.ImportedSourceHash,
+                ComputeTextHash(assetObj.ToString(Newtonsoft.Json.Formatting.None)),
+                isNewDataAsset,
+                hash => dataAsset.ImportedSourceHash = hash,
+                report);
+
+            return dataAsset;
+        }
+
+        /// <summary>
+        /// Fills a Data Asset from its entry in data-assets.json. Public because the test
+        /// harness builds seed assets through it: the seed-to-asset mapping — which rows are
+        /// dropped, how overrides are stored — must be exercised by the same code the
+        /// importer runs, or the store's fixture tests would pin a second, private mapping.
+        ///
+        /// Overrides are kept as RAW JSON. Typing them needs the declaration, which may live
+        /// on an ancestor this run has not built yet, so it happens at seed build instead —
+        /// see StoryFlowDataAssetAsset.OverrideEntry.
+        /// </summary>
+        public static void PopulateDataAsset(
+            StoryFlowDataAssetAsset dataAsset, string assetId, JObject assetObj)
+        {
+            dataAsset.Id = assetId;
+            dataAsset.DisplayName = assetObj.Value<string>("name") ?? "";
+            // A root asset's "parent" is JSON null; empty string is what ends the chain walk.
+            dataAsset.ParentId = assetObj.Value<string>("parent") ?? "";
+
+            // "variables" is a JSON ARRAY here, not the id-keyed object characters and global
+            // variables use: declaration ORDER is contractual (§2.1) and an array is what
+            // carries it.
+            var variables = new List<StoryFlowVariable>();
+            JArray varsArray = assetObj.Value<JArray>("variables");
+            if (varsArray != null)
+            {
+                foreach (var varToken in varsArray)
+                {
+                    var varObj = varToken as JObject;
+                    if (varObj == null) continue;
+
+                    var parsed = ParseDataAssetVariable(varObj);
+                    if (parsed != null) variables.Add(parsed);
+                }
+            }
+            dataAsset.Variables = variables;
+
+            var overrides = new List<StoryFlowDataAssetAsset.OverrideEntry>();
+            JObject overridesObj = assetObj.Value<JObject>("overrides");
+            if (overridesObj != null)
+            {
+                foreach (var overrideProp in overridesObj.Properties())
+                {
+                    overrides.Add(new StoryFlowDataAssetAsset.OverrideEntry
+                    {
+                        VariableId = overrideProp.Name,
+                        ValueJson = overrideProp.Value.ToString(Newtonsoft.Json.Formatting.None)
+                    });
+                }
+            }
+            dataAsset.Overrides = overrides;
+        }
+
+        /// <summary>
+        /// Parses one .sfd declaration, or null when the row must not enter the seed.
+        ///
+        /// Deliberately NOT ParseGlobalVariableEntry: that one walks a JObject's properties
+        /// and answers a project-asset entry, while a .sfd declaration is one element of an
+        /// ordered array and answers a StoryFlowVariable.
+        ///
+        /// TWO KINDS OF ROW ARE DROPPED. A `category` row is a section header in the editor's
+        /// table with no value and nothing an accessor can ever read; dropping it rather than
+        /// carrying a valueless declaration is contract-sanctioned (§2.1, the category-drop
+        /// ruling — Unreal drops too) and needs no log line, because it is not a problem. A
+        /// row whose type this build does not know is a genuine mismatch between the export
+        /// and the plugin, so it says so.
+        /// </summary>
+        private static StoryFlowVariable ParseDataAssetVariable(JObject varObj)
+        {
+            string id = varObj.Value<string>("id") ?? "";
+            string name = varObj.Value<string>("name") ?? "";
+            string typeName = varObj.Value<string>("type") ?? "";
+
+            if (string.Equals(typeName, "category", StringComparison.Ordinal))
+                return null;
+
+            if (!StoryFlowWireTypes.TryParseWireType(typeName, out var varType))
+            {
+                Debug.LogWarning($"[StoryFlow] Data Asset variable \"{name}\" has unknown type " +
+                                 $"'{typeName}'; skipping it. Values that would have read through " +
+                                 "it fall back to their accessor's type default.");
+                return null;
+            }
+
+            bool isArray = varObj.Value<bool?>("isArray") ?? false;
+
+            var keyType = default(StoryFlowVariableType);
+            var valueType = default(StoryFlowVariableType);
+            var keyEnumValues = new List<string>();
+            var valueEnumValues = new List<string>();
+            if (varType == StoryFlowVariableType.Map)
+                ParseMapTypeInfo(varObj, out keyType, out valueType, out keyEnumValues, out valueEnumValues);
+
+            var enumValues = new List<string>();
+            JArray enumArr = varObj.Value<JArray>("enumValues");
+            if (enumArr != null)
+            {
+                foreach (var ev in enumArr)
+                    enumValues.Add(ev.ToString());
+            }
+
+            var defaultValue = varType == StoryFlowVariableType.Map
+                ? StoryFlowVariant.DeserializeMapFromJson(keyType, valueType,
+                    varObj["value"] is JArray mapEntries
+                        ? mapEntries.ToString(Newtonsoft.Json.Formatting.None)
+                        : null)
+                : ParseDefaultValue(varType, varObj["value"], isArray);
+
+            return new StoryFlowVariable
+            {
+                Id = id,
+                Name = name,
+                Type = varType,
+                Value = defaultValue,
+                IsArray = isArray,
+                EnumValues = enumValues,
+                KeyType = keyType,
+                ValueType = valueType,
+                KeyEnumValues = keyEnumValues,
+                ValueEnumValues = valueEnumValues,
+                // Array and map storage is [NonSerialized] on StoryFlowVariant, so the JSON
+                // beside it is what survives to be rehydrated at seed build.
+                DefaultValueJson = (isArray || varType == StoryFlowVariableType.Map) && varObj["value"] != null
+                    ? varObj["value"].ToString(Newtonsoft.Json.Formatting.None)
+                    : null
+            };
+        }
+
+        // ================================================================
         // JSON → Data Parsers
         // ================================================================
 
@@ -1134,7 +1328,7 @@ namespace StoryFlow.Editor
             if (string.IsNullOrEmpty(typeString))
                 return StoryFlowVariableType.Boolean;
 
-            if (VariableTypeMap.TryGetValue(typeString, out var varType))
+            if (StoryFlowWireTypes.TryParseWireType(typeString, out var varType))
                 return varType;
 
             Debug.LogWarning($"[StoryFlow] Unknown variable type: '{typeString}', defaulting to Boolean.");
@@ -1316,8 +1510,10 @@ namespace StoryFlow.Editor
         // ================================================================
 
         /// <summary>
-        /// Finds all JSON script files in the build directory (excluding project.json,
-        /// global-variables.json, and characters.json).
+        /// Finds all JSON script files in the build directory (excluding the top-level files
+        /// that are read by name: project.json, global-variables.json, characters.json and
+        /// data-assets.json). Anything left here is imported as a script asset, so a file
+        /// missing from this set becomes a garbage script.
         /// </summary>
         private static List<string> FindJsonScriptFiles(string buildDirectory)
         {
@@ -1326,7 +1522,8 @@ namespace StoryFlow.Editor
             {
                 "project.json",
                 "global-variables.json",
-                "characters.json"
+                "characters.json",
+                "data-assets.json"
             };
 
             FindJsonFilesRecursive(buildDirectory, buildDirectory, excludedFiles, results);
@@ -2034,19 +2231,25 @@ namespace StoryFlow.Editor
         }
 
         /// <summary>
-        /// The certified payload for the project asset: all three top-level JSON files plus
+        /// The certified payload for the project asset: all four top-level JSON files plus
         /// the membership the asset actually ended up holding. A script that failed to import
         /// leaves a different membership, so the project asset is rewritten and the next sync
         /// still sees an honest picture.
+        ///
+        /// data-assets.json has to be in here for the same reason the other two are: a .sfd
+        /// edit that changes no membership — a variable's default, an override — touches none
+        /// of the other inputs, so without it the project asset would report itself up to date
+        /// forever and the change would never reach Unity.
         /// </summary>
         private static string CertifyProject(
             string projectJson, string globalVariablesJson, string charactersJson,
-            StoryFlowProjectAsset asset)
+            string dataAssetsJson, StoryFlowProjectAsset asset)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(projectJson).Append('\n')
               .Append(globalVariablesJson).Append('\n')
-              .Append(charactersJson);
+              .Append(charactersJson).Append('\n')
+              .Append(dataAssetsJson);
 
             sb.Append("\n#startup=").Append(CertifyReference(asset.StartupScript, "<none>"));
 
@@ -2062,6 +2265,13 @@ namespace StoryFlow.Editor
             {
                 sb.Append('\n').Append(cr.Path).Append('=');
                 sb.Append(CertifyReference(cr.Asset, "<missing>"));
+            }
+
+            sb.Append("\n#dataAssets");
+            foreach (var da in asset.DataAssetReferences)
+            {
+                sb.Append('\n').Append(da != null ? da.Id : "<missing>").Append('=');
+                sb.Append(CertifyReference(da, "<missing>"));
             }
 
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);

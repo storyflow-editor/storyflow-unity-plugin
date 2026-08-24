@@ -27,6 +27,13 @@ namespace StoryFlow
         [NonSerialized] internal Dictionary<string, StoryFlowCharacterData> RuntimeCharacters = new();
         [NonSerialized] internal HashSet<string> UsedOnceOnlyOptions = new();
 
+        // The .sfd Data Asset store (engine contract §3). The SEED is rebuilt from the
+        // project and never written to again; the OVERLAY holds this session's script
+        // writes and is what a save persists. Both are handed to execution contexts by
+        // reference, the same way GlobalVariables and RuntimeCharacters are.
+        [NonSerialized] internal Dictionary<string, StoryFlowDataAssetDef> DataAssetSeed = new();
+        [NonSerialized] internal Dictionary<string, Dictionary<string, StoryFlowVariant>> DataAssetOverlay = new();
+
         // Dialogue tracking
         private int _activeDialogueCount;
 
@@ -174,10 +181,12 @@ namespace StoryFlow
         {
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
+            BuildDataAssetSeed();
             UsedOnceOnlyOptions.Clear();
 
             Debug.Log($"[StoryFlow] Project initialized: \"{Project.Title}\" " +
-                      $"({GlobalVariables.Count} global variables, {RuntimeCharacters.Count} characters)");
+                      $"({GlobalVariables.Count} global variables, {RuntimeCharacters.Count} characters, " +
+                      $"{DataAssetSeed.Count} data assets)");
         }
 
         private void DeepCopyGlobalVariables()
@@ -204,6 +213,31 @@ namespace StoryFlow
                 // do not affect the source ScriptableObject.
                 RuntimeCharacters[kvp.Key] = kvp.Value.CreateRuntimeData();
             }
+        }
+
+        /// <summary>
+        /// Rebuilds the Data Asset seed from the project and drops every session write.
+        /// The two always move together: a fresh seed is a fresh session, and an overlay
+        /// entry against a seed that no longer carries its asset is unreadable anyway.
+        /// </summary>
+        private void BuildDataAssetSeed()
+        {
+            StoryFlowDataAssetStore.BuildSeed(Project, DataAssetSeed);
+            StoryFlowDataAssetStore.ResetOverlay(DataAssetOverlay);
+        }
+
+        /// <summary>
+        /// The Data Asset store as one reference, for an execution context to hold. Minted
+        /// per call rather than cached, so it can never outlive or disagree with the maps
+        /// it points at.
+        /// </summary>
+        internal StoryFlowDataAssetStoreRef GetDataAssetStore()
+        {
+            return new StoryFlowDataAssetStoreRef
+            {
+                Seed = DataAssetSeed,
+                Overlay = DataAssetOverlay
+            };
         }
 
         // =====================================================================
@@ -486,6 +520,7 @@ namespace StoryFlow
 
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
+            BuildDataAssetSeed();
             UsedOnceOnlyOptions.Clear();
             Debug.Log("[StoryFlow] All shared state reset to project defaults.");
         }

@@ -133,6 +133,10 @@ namespace StoryFlow.Editor
                 if (json.ContainsKey("variables") && json.ContainsKey("strings"))
                     return true;
 
+                // data-assets.json pattern: has "dataAssets" at root (the only file that does)
+                if (json.ContainsKey("dataAssets"))
+                    return true;
+
                 // characters.json pattern: array of character objects
                 // (root is an array, not an object, so JObject.Parse would fail;
                 // catch it if the file starts with '[')

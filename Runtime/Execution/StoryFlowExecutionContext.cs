@@ -106,6 +106,14 @@ namespace StoryFlow.Execution
         /// </summary>
         private readonly HashSet<string> warnedMapNodes = new();
 
+        /// <summary>
+        /// The manager-owned .sfd Data Asset store (seed + overlay), or null when there is
+        /// none — a context built without a manager, or one that has been Reset. Data-asset
+        /// accessors treat a null or invalid store as a dead reference and degrade, so this
+        /// never needs a null object.
+        /// </summary>
+        internal StoryFlowDataAssetStoreRef DataAssetStore { get; private set; }
+
         /// <summary>Current recursion depth for expression evaluation.</summary>
         public int EvaluationDepth { get; set; }
 
@@ -146,9 +154,11 @@ namespace StoryFlow.Execution
             StoryFlowScriptAsset script,
             Dictionary<string, StoryFlowVariable> globalVars,
             Dictionary<string, StoryFlowCharacterData> characters,
-            HashSet<string> usedOnceOnlyOptions)
+            HashSet<string> usedOnceOnlyOptions,
+            StoryFlowDataAssetStoreRef dataAssetStore = null)
         {
             CurrentScript = script;
+            DataAssetStore = dataAssetStore;
             CurrentNodeId = script != null ? script.StartNodeId : "0";
 
             externalGlobalVariables = globalVars ?? new Dictionary<string, StoryFlowVariable>();
@@ -674,6 +684,11 @@ namespace StoryFlow.Execution
             LastDialogueNodeId = null;
             EnteringDialogueViaEdge = false;
             PersistentBackgroundImage = null;
+            // Unlike globalVars/characters/onceOnly below, this is a REFERENCE HOLDER minted
+            // per Initialize rather than a manager-owned collection, so dropping it here
+            // costs nothing and keeps a reset context from pointing at a store it has no
+            // business reading through.
+            DataAssetStore = null;
 
             CurrentDialogueState = new StoryFlowDialogueState();
 
