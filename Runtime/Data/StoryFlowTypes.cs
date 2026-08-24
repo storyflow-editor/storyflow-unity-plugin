@@ -246,6 +246,11 @@ namespace StoryFlow.Data
     /// importer warns and falls back to Boolean (an old export with a type this build
     /// predates still imports), while the store treats it as "no match", so a garbled
     /// snapshot degrades to the type default instead of resolving to something.
+    ///
+    /// MATCHING IS EXACT-MATCH LOWERCASE (StringComparer.Ordinal) on the nine tokens below —
+    /// that is the wire rule per the engine contract. The exporter writes these tokens and
+    /// only these; a differently cased string is not a type this format has, and accepting
+    /// one would make the plugin resolve payloads the other runtimes reject.
     /// </summary>
     public static class StoryFlowWireTypes
     {
@@ -264,9 +269,14 @@ namespace StoryFlow.Data
             };
 
         /// <summary>
-        /// Converts an exported type string. Returns false — leaving <paramref name="type"/>
-        /// at its default — for null, empty and anything not in the table, including
-        /// "category", which is a section header in the editor's table and never a value.
+        /// Converts an exported type string. Returns false for null, empty and anything not
+        /// in the table, including "category", which is a section header in the editor's
+        /// table and never a value.
+        ///
+        /// CHECK THE BOOL. On failure <paramref name="type"/> is left at default(
+        /// StoryFlowVariableType), which is Boolean — member 0, a perfectly ordinary type,
+        /// not a None sentinel this enum has no room for. A caller that ignores the return
+        /// value silently treats every unknown type as a boolean.
         /// </summary>
         public static bool TryParseWireType(string typeString, out StoryFlowVariableType type)
         {

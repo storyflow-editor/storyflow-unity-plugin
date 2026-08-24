@@ -505,6 +505,18 @@ namespace StoryFlow.Editor
                 // that "fixes" the seed diverges from the other three runtimes. There is also no
                 // string-table pass: .sfd values are literals, and running the character lookup
                 // over them would turn every literal into a failed lookup.
+                //
+                // See also — data assets touch FIVE places, and each one breaks SILENTLY on
+                // its own if it is missed when this format changes:
+                //   1. here: read data-assets.json and build one .asset per entry.
+                //   2. FindJsonScriptFiles: data-assets.json is excluded from the script sweep,
+                //      or it imports a second time as a garbage script asset.
+                //   3. CertifyProject: the condensed JSON and the #dataAssets membership feed
+                //      the project hash, or a .sfd-only edit never invalidates Project.asset.
+                //   4. projectAsset.DataAssetReferences below: assignment is what the runtime
+                //      seed is built from, so without it every accessor is a dead reference.
+                //   5. StoryFlowAssetPostprocessor.IsStoryFlowJson: the "dataAssets" root-key
+                //      sniff, or dropping the file into the project triggers no re-import.
                 var dataAssetReferences = new List<StoryFlowDataAssetAsset>();
                 string dataAssetsJsonPath = Path.Combine(buildDirectory, "data-assets.json");
                 if (File.Exists(dataAssetsJsonPath))
@@ -578,6 +590,9 @@ namespace StoryFlow.Editor
                 }
                 projectAsset.ScriptReferences = scriptReferences;
                 projectAsset.CharacterReferences = characterReferences;
+                // Registration point 4 of 5 for data assets - see the "See also" list at
+                // the data-assets.json read site above. This assignment is what the runtime
+                // seed (StoryFlowDataAssetStore.BuildSeed) reads.
                 projectAsset.DataAssetReferences = dataAssetReferences;
                 projectAsset.GlobalVariableEntries = globalVariableEntries;
                 projectAsset.GlobalStringEntries = globalStringEntries;
@@ -1523,6 +1538,8 @@ namespace StoryFlow.Editor
                 "project.json",
                 "global-variables.json",
                 "characters.json",
+                // Registration point 2 of 5 for data assets - see the "See also" list at
+                // the data-assets.json read site in ImportProject.
                 "data-assets.json"
             };
 
@@ -2249,6 +2266,8 @@ namespace StoryFlow.Editor
             sb.Append(projectJson).Append('\n')
               .Append(globalVariablesJson).Append('\n')
               .Append(charactersJson).Append('\n')
+              // Registration point 3 of 5 for data assets (with the #dataAssets section
+              // below) - see the "See also" list at the data-assets.json read site.
               .Append(dataAssetsJson);
 
             sb.Append("\n#startup=").Append(CertifyReference(asset.StartupScript, "<none>"));

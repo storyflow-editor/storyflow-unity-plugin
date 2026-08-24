@@ -133,7 +133,9 @@ namespace StoryFlow.Editor
                 if (json.ContainsKey("variables") && json.ContainsKey("strings"))
                     return true;
 
-                // data-assets.json pattern: has "dataAssets" at root (the only file that does)
+                // data-assets.json pattern: has "dataAssets" at root (the only file that does).
+                // Registration point 5 of 5 for data assets - see the "See also" list at the
+                // data-assets.json read site in StoryFlowImporter.ImportProject.
                 if (json.ContainsKey("dataAssets"))
                     return true;
 

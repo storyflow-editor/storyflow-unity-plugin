@@ -37,6 +37,16 @@ namespace StoryFlow.Data
     ///    Cleared on a game reset, persisted sparsely in saves (§7).
     /// Both are owned by StoryFlowManager and passed in, so tests can drive the resolver
     /// against a seed built straight from the fixture JSON.
+    ///
+    /// ONE HOLE IN "the seed is never mutated": FindDeclaration and FindDeclarationByName
+    /// hand back a StoryFlowVariable BY REFERENCE into the seed, and C# has no const to stop
+    /// a caller writing through it. Everything else here copies — TryResolve deep-copies out,
+    /// TrySet deep-copies in — so these two are the only way to reach seed storage, and a
+    /// caller assigning to declaration.Value would corrupt every descendant that inherits it
+    /// for the rest of the session, silently and permanently. Read declarations, never write
+    /// to them, and do not hold one across a re-seed. If Task N3's public API ends up holding
+    /// declarations rather than consuming them at the boundary, revisit this and hand back a
+    /// readonly declaration-info struct instead.
     /// </summary>
     public static class StoryFlowDataAssetStore
     {
@@ -243,6 +253,13 @@ namespace StoryFlow.Data
         /// starting level — 65 levels — are visited (contract §4.4). An absent parent, a
         /// cycle, or the cap ends the walk silently, and callers answer with whatever they
         /// collected so far.
+        ///
+        /// The visited set is allocated only on the SECOND hop. Real chains are one to three
+        /// levels, so the walk a running game does constantly — option conditions re-resolve
+        /// on every render — usually never needs a set at all, and a root asset never does.
+        /// (The Func closure per walk is left alone: a generic struct visitor would remove it
+        /// too, but that is a measurement Task N2 should take with the node arms in place,
+        /// not a shape guessed at now.)
         /// </summary>
         private static void WalkChain(
             Dictionary<string, StoryFlowDataAssetDef> seed, string assetId,
@@ -250,12 +267,25 @@ namespace StoryFlow.Data
         {
             if (seed == null || string.IsNullOrEmpty(assetId)) return;
 
-            var visited = new HashSet<string>();
+            string firstId = null;
+            HashSet<string> visited = null;
             int depth = 0;
             seed.TryGetValue(assetId, out var level);
-            while (level != null && depth++ <= MaxChainDepth && !visited.Contains(level.Id))
+            while (level != null && depth++ <= MaxChainDepth)
             {
-                visited.Add(level.Id);
+                // depth is 1 on the first level — it was incremented by the test above — and
+                // that is what identifies it, rather than a null check on firstId, which a
+                // level carrying no id would defeat.
+                if (depth == 1)
+                {
+                    firstId = level.Id;
+                }
+                else
+                {
+                    if (visited == null) visited = new HashSet<string> { firstId };
+                    if (!visited.Add(level.Id)) return;
+                }
+
                 if (!visit(level)) return;
 
                 if (string.IsNullOrEmpty(level.ParentId)) return;
@@ -336,8 +366,14 @@ namespace StoryFlow.Data
         ///
         /// The SAME NAME ON TWO DIFFERENT IDS across levels leaves the descendant's variable
         /// unreachable by name — one rule, no special case, and a name lookup with two right
-        /// answers has no better one. Logged, because from the caller's chair it looks like
-        /// the setter wrote to the wrong variable.
+        /// answers has no better one.
+        ///
+        /// SILENT, deliberately: this answers root-most and says nothing, matching Unreal and
+        /// matching the rule TrySet's own doc states — the CALLER owns the warning. This is a
+        /// per-call path (Task N3's typed getters and setters run it on every access, which a
+        /// game can do per frame), so a diagnostic here would be an unlatched log in a hot
+        /// loop. Duplicate-name diagnostics belong to the public API, which can decide once
+        /// when a caller binds a name rather than every time it reads one.
         /// </summary>
         public static StoryFlowVariable FindDeclarationByName(
             Dictionary<string, StoryFlowDataAssetDef> seed, string assetId, string name)
@@ -348,16 +384,7 @@ namespace StoryFlow.Data
             WalkChain(seed, assetId, level =>
             {
                 var decl = FindDeclaredOnLevelByName(level, name);
-                if (decl != null)
-                {
-                    if (declared != null && declared.Id != decl.Id)
-                    {
-                        Debug.Log($"[StoryFlow] Data Asset '{assetId}' has the name '{name}' on two " +
-                                  $"different variables ('{decl.Id}' and '{declared.Id}') - the root-most " +
-                                  "one wins and the other cannot be reached by name.");
-                    }
-                    declared = decl;
-                }
+                if (decl != null) declared = decl;
                 return true;
             });
             return declared;
