@@ -428,9 +428,14 @@ namespace StoryFlow.Execution
         /// nodes are read from render paths — a dialogue's option conditions re-evaluate on
         /// every render — so the suppressed call is the common one by orders of magnitude, and
         /// a message parameter means building an interpolated string on every one of them to
-        /// throw it away here. Building it inside the `if` costs nothing when nothing is
-        /// logged. The counter moves HERE, with the claim, so "claimed but never logged" is
-        /// not a state a caller can reach by forgetting to log.
+        /// throw it away here. Building it inside the `if` costs nothing when nothing is logged.
+        ///
+        /// The trade that buys is real: the counter moves on the CLAIM while the log lives in
+        /// the caller, so a caller that claims and then forgets to log leaves the counter saying
+        /// a warning happened that the console never saw. Nothing here can catch that — what
+        /// does is DegradedFixtureReadsAndWarnOnce, which asserts the counter delta AND the
+        /// captured log lines for every one of the fixture's cases, so the two halves cannot
+        /// drift apart unnoticed. Add a rung to this ladder and add it to that test.
         ///
         /// The reason is part of the key because the reasons have different FIXES; the tokens
         /// themselves are informational (§9.1), so nothing matches on them.

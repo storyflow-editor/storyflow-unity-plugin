@@ -36,12 +36,22 @@ namespace StoryFlow.Utilities
         /// this is NOT readable by plugin versions before the unification, which expected
         /// the legacy "1.0.0" envelope. Reading old saves still works, so upgrades are safe;
         /// downgrades are not.
+        ///
+        /// THE DATA ASSET PAIR IS REQUIRED HERE, and optional on
+        /// <see cref="StoryFlowStateSerializer.Serialize"/> — deliberately, and the difference is
+        /// the audience. This type is PUBLIC SURFACE a host calls; a defaulted pair would let a
+        /// host write a save that silently drops the whole .sfd session and only notice a
+        /// playthrough later, and the compiler naming every caller is the only thing that
+        /// catches that. The serializer is internal plumbing with exactly three callers, all in
+        /// this package, and its defaults exist so a caller with genuinely no store (the state
+        /// tests, and any host that predates .sfd) can still produce a valid document. Pass
+        /// nulls here to mean "no store", but pass them ON PURPOSE.
         /// </summary>
         public static void Save(string slotName, Dictionary<string, StoryFlowVariable> globalVariables,
             Dictionary<string, StoryFlowCharacterData> runtimeCharacters,
             HashSet<string> usedOnceOnlyOptions,
-            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed = null,
-            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay = null)
+            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay)
         {
             var json = StoryFlowStateSerializer.Serialize(
                 globalVariables, runtimeCharacters, usedOnceOnlyOptions, dataAssetSeed, dataAssetOverlay);
@@ -180,13 +190,17 @@ namespace StoryFlow.Utilities
         /// <summary>
         /// Asynchronous variant of <see cref="Save"/> that uses non-blocking file I/O.
         /// Returns true if the save succeeded, false otherwise.
+        ///
+        /// The Data Asset pair is required for the same reason it is on <see cref="Save"/>, and
+        /// more so: nothing in this package calls this one, so a host is its ONLY caller and
+        /// there is no in-package call site whose correctness could stand in for theirs.
         /// </summary>
         public static async Task<bool> SaveAsync(string slotName,
             Dictionary<string, StoryFlowVariable> globalVariables,
             Dictionary<string, StoryFlowCharacterData> runtimeCharacters,
             HashSet<string> usedOnceOnlyOptions,
-            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed = null,
-            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay = null)
+            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay)
         {
             try
             {

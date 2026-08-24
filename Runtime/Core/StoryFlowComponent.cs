@@ -983,7 +983,7 @@ namespace StoryFlow
             var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
-                LogDataAssetRefusal(asset, variableName, declaration, "a string");
+                LogDataAssetRefusal(asset, variableName, declaration, StringFamilyNames);
                 found = false;
                 return "";
             }
@@ -1050,7 +1050,7 @@ namespace StoryFlow
             var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
-                LogDataAssetRefusal(asset, variableName, declaration, "a string");
+                LogDataAssetRefusal(asset, variableName, declaration, StringFamilyNames);
                 return false;
             }
             return CommitDataAssetWrite(assetId, declaration.Id, StoryFlowVariant.String(value));
@@ -1113,6 +1113,15 @@ namespace StoryFlow
             }
             return declaration;
         }
+
+        /// <summary>
+        /// What the string pair accepts, named the way every other refusal names what it
+        /// wanted: DECLARED TYPE NAMES, so one message shape covers the whole surface. "a
+        /// string" would have been a lie on this pair anyway — an Image declaration is reachable
+        /// through it, and an author told "not a string" about their image variable learns the
+        /// wrong thing.
+        /// </summary>
+        private const string StringFamilyNames = "String, Image, Audio or Character";
 
         /// <summary>True for the four types that share <c>StringValue</c>. Enum is NOT one.</summary>
         private static bool IsStringFamilyScalar(StoryFlowVariable declaration)
@@ -1189,6 +1198,13 @@ namespace StoryFlow
             return true;
         }
 
+        /// <summary>
+        /// ONE refusal shape for every typed accessor: <c>is declared {actual}, not {wanted}</c>,
+        /// with both sides named in DECLARED TYPE NAMES (the string pair passes
+        /// <see cref="StringFamilyNames"/>, which is the same vocabulary, just four of them).
+        /// Mixing type names on one accessor with prose on another makes two refusals of the
+        /// same kind read as two different problems.
+        /// </summary>
         private static void LogDataAssetRefusal(
             StoryFlowDataAssetAsset asset, string variableName,
             StoryFlowVariable declaration, string wanted)

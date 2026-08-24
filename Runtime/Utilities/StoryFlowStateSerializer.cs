@@ -28,12 +28,16 @@ namespace StoryFlow.Utilities
         /// <summary>
         /// Writes the unified state document.
         ///
-        /// The Data Asset pair is OPTIONAL only so a caller with no store — the tests that
-        /// exercise globals and characters, and any host that predates .sfd — keeps compiling
-        /// and writing a valid document. Every shipping call site passes both: the SEED is
-        /// needed because the overlay's values are written BARE, and only the declaration can
-        /// say whether a value is an array (contract §7 / the F13 rule on
-        /// <see cref="BareValueToJson"/>).
+        /// The Data Asset pair is OPTIONAL here and REQUIRED on StoryFlowSaveHelpers.Save /
+        /// SaveAsync, which is not an inconsistency but the line between plumbing and public
+        /// surface. This method has three callers, all inside this package, and its defaults
+        /// exist so a caller with genuinely no store still writes a valid document. The save
+        /// helpers are what a HOST calls, and a defaulted pair there would let a game ship
+        /// saves that silently drop the whole .sfd session — so those name every caller.
+        ///
+        /// The SEED is needed alongside the overlay because the overlay's values are written
+        /// BARE, and only the declaration can say whether a value is an array (contract §7 and
+        /// the rule on <see cref="BareValueToJson"/>).
         /// </summary>
         public static string Serialize(
             Dictionary<string, StoryFlowVariable> globalVariables,
