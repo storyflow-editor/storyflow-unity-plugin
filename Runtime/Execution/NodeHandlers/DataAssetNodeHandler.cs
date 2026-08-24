@@ -193,8 +193,11 @@ namespace StoryFlow.Execution.NodeHandlers
             // condition whose answer changed.
             if (!sourceNode.GetDataBool("isArray"))
             {
-                context.MaybeWarnDataAsset(sourceNode.Id, "arrayop",
-                    $"Data Asset array op refused: node {sourceNode.Id} is not bound to an array variable");
+                if (context.ShouldWarnDataAsset(sourceNode.Id, "arrayop"))
+                {
+                    Debug.LogWarning("[StoryFlow] Data Asset array op refused: " +
+                                     $"node {sourceNode.Id} is not bound to an array variable");
+                }
                 return true;
             }
 

@@ -25,10 +25,22 @@ namespace StoryFlow.Utilities
 
         // ---------------------------------------------------------------- write
 
+        /// <summary>
+        /// Writes the unified state document.
+        ///
+        /// The Data Asset pair is OPTIONAL only so a caller with no store — the tests that
+        /// exercise globals and characters, and any host that predates .sfd — keeps compiling
+        /// and writing a valid document. Every shipping call site passes both: the SEED is
+        /// needed because the overlay's values are written BARE, and only the declaration can
+        /// say whether a value is an array (contract §7 / the F13 rule on
+        /// <see cref="BareValueToJson"/>).
+        /// </summary>
         public static string Serialize(
             Dictionary<string, StoryFlowVariable> globalVariables,
             Dictionary<string, StoryFlowCharacterData> runtimeCharacters,
-            HashSet<string> usedOnceOnlyOptions)
+            HashSet<string> usedOnceOnlyOptions,
+            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed = null,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay = null)
         {
             var root = new JObject { ["version"] = FormatVersion };
 
@@ -69,7 +81,159 @@ namespace StoryFlow.Utilities
             }
             root["usedOnceOnlyOptions"] = onceOnly;
 
+            root["dataAssets"] = DataAssetOverlayToJson(dataAssetSeed, dataAssetOverlay);
+
             return root.ToString(Formatting.Indented);
+        }
+
+        // --- The Data Asset overlay: the sparse `dataAssets` key (contract §7) ---
+        //
+        // NORMATIVE SOURCE: the HTML runtime's runtime-data-assets.js snapshot()/restore(),
+        // whose table this key is byte-shape-identical to — the first envelope section all
+        // four runtimes share verbatim even though the documents around it differ.
+        //
+        // BARE values, not the typed {id,name,type,isArray,value} records VariableToJson
+        // writes for globals and characters. The seed is schema-authoritative and always ships
+        // with the game, so a save that pinned types would freeze content the author later
+        // edited — and TryVariableValueFromJson, which reads those records, is not reusable
+        // here for the same reason: there is no type field to read.
+
+        /// <summary>
+        /// The sparse overlay table: <c>{ assetId: { variableId: bare value } }</c>. ALWAYS
+        /// PRESENT, <c>{}</c> when the session has written nothing — the reference's envelope
+        /// convention, and what makes "the key is absent" mean "an older save" rather than
+        /// "an untouched session".
+        /// </summary>
+        private static JObject DataAssetOverlayToJson(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay)
+        {
+            var root = new JObject();
+            if (overlay == null) { return root; }
+
+            foreach (var assetEntry in overlay)
+            {
+                var assetObj = new JObject();
+                foreach (var valueEntry in assetEntry.Value)
+                {
+                    var declaration = seed != null
+                        ? StoryFlowDataAssetStore.FindDeclaration(seed, assetEntry.Key, valueEntry.Key)
+                        : null;
+                    assetObj[valueEntry.Key] = BareValueToJson(valueEntry.Value, declaration);
+                }
+                root[assetEntry.Key] = assetObj;
+            }
+            return root;
+        }
+
+        /// <summary>
+        /// One overlay value as a BARE JSON value: a native scalar, an array of scalars, or a
+        /// map's ordered <c>[{key, value}]</c> entry list.
+        ///
+        /// THE DECLARATION DECIDES array-vs-scalar, and it can say NO as well as yes.
+        /// StoryFlowVariant's scalar setters do not clear ArrayValue (only SetMap does), so a
+        /// variant that once held an array and was re-set as a scalar still carries the old
+        /// elements — trusting "there are elements" over the declaration would persist that
+        /// residue as a JSON array under a scalar declaration, and it would reload as a scalar,
+        /// silently losing the value. No writer produces that state today; the rule costs
+        /// nothing and does not depend on that staying true. The element count only answers for
+        /// a value with NO declaration at all (deleted from the .sfd since the write), which is
+        /// dropped on the way back in anyway, so the fallback only has to be harmless.
+        ///
+        /// A map is told by the variant's own TYPE rather than by MapValue being non-null:
+        /// MapValue is [NonSerialized], so type is the half that always survives, and a
+        /// Map-typed variant with no entries must still write <c>[]</c> rather than fall
+        /// through to the scalar writer.
+        /// </summary>
+        private static JToken BareValueToJson(StoryFlowVariant variant, StoryFlowVariable declaration)
+        {
+            if (variant == null) { return JValue.CreateNull(); }
+
+            if (variant.Type == StoryFlowVariableType.Map)
+            {
+                // The ordered entry list of §2.1 — the same shape the typed map path writes,
+                // minus the keyType/valueType record around it. Entry ORDER is authored and
+                // observable, so this walks the list in order.
+                var entries = new JArray();
+                foreach (var entry in variant.GetMap())
+                {
+                    entries.Add(new JObject
+                    {
+                        ["key"] = VariantToJson(entry.Key),
+                        ["value"] = VariantToJson(entry.Value)
+                    });
+                }
+                return entries;
+            }
+
+            bool isArray = declaration != null
+                ? declaration.IsArray
+                : variant.ArrayValue != null && variant.ArrayValue.Count > 0;
+            if (isArray)
+            {
+                var elements = new JArray();
+                foreach (var element in variant.GetArray())
+                {
+                    elements.Add(VariantToJson(element));
+                }
+                return elements;
+            }
+
+            return VariantToJson(variant);
+        }
+
+        /// <summary>
+        /// One saved bare value back into a variant, TYPED FROM THE DECLARATION.
+        ///
+        /// The save carries no types, so the declaration is the only authority — the same rule
+        /// BuildSeed's second pass applies to file overrides. Getting this wrong is invisible
+        /// to a read (an enum and a string both answer GetString) and visible in the NEXT save,
+        /// so a save -> load -> save cycle would stop being stable.
+        ///
+        /// Non-throwing on every shape: a token of the wrong kind produces the declared type's
+        /// default rather than an exception, because this input arrives from a file.
+        /// </summary>
+        internal static StoryFlowVariant BareValueFromJson(JToken token, StoryFlowVariable declaration)
+        {
+            if (declaration.Type == StoryFlowVariableType.Map)
+            {
+                var entries = new List<StoryFlowMapEntry>();
+                if (token is JArray entryArray)
+                {
+                    foreach (var entryToken in entryArray)
+                    {
+                        // An entry without a key is unaddressable — skip it, matching the
+                        // importer and the typed reader above.
+                        if (!(entryToken is JObject entryObj) || entryObj["key"] == null) { continue; }
+                        entries.Add(new StoryFlowMapEntry
+                        {
+                            Key = VariantFromJson(entryObj["key"], declaration.KeyType),
+                            Value = VariantFromJson(entryObj["value"], declaration.ValueType)
+                        });
+                    }
+                }
+                var map = new StoryFlowVariant();
+                map.SetMap(entries);
+                return map;
+            }
+
+            if (declaration.IsArray)
+            {
+                var list = new List<StoryFlowVariant>();
+                if (token is JArray array)
+                {
+                    foreach (var element in array)
+                    {
+                        list.Add(VariantFromJson(element, declaration.Type));
+                    }
+                }
+                // The ELEMENT TYPE is stated, never inferred: an emptied array carries nothing
+                // to infer from, and a variant that reads back typed or untyped depending on
+                // the last writer is a variant whose next save has a different shape.
+                return new StoryFlowVariant { Type = declaration.Type, ArrayValue = list };
+            }
+
+            return VariantFromJson(token, declaration.Type);
         }
 
         private static JObject VariableToJson(StoryFlowVariable variable)
@@ -227,6 +391,27 @@ namespace StoryFlow.Utilities
                     var key = entry?.ToString();
                     if (!string.IsNullOrEmpty(key)) { snapshot.UsedOnceOnlyOptions.Add(key); }
                 }
+            }
+
+            // The .sfd overlay comes through as RAW tokens: typing them needs the seed's
+            // declarations, which this reader does not have. A key that is absent, or present
+            // as anything other than an object, leaves the field NULL — which the manager
+            // reads as "clear the overlay", not as "leave it alone" (see the field's doc).
+            if (root["dataAssets"] is JObject dataAssets)
+            {
+                var table = new Dictionary<string, Dictionary<string, JToken>>();
+                foreach (var assetProperty in dataAssets.Properties())
+                {
+                    if (!(assetProperty.Value is JObject assetObj)) { continue; }
+
+                    var values = new Dictionary<string, JToken>();
+                    foreach (var valueProperty in assetObj.Properties())
+                    {
+                        values[valueProperty.Name] = valueProperty.Value;
+                    }
+                    table[assetProperty.Name] = values;
+                }
+                snapshot.DataAssetValues = table;
             }
 
             return snapshot;

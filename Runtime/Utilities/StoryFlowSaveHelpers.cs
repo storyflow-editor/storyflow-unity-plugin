@@ -39,9 +39,12 @@ namespace StoryFlow.Utilities
         /// </summary>
         public static void Save(string slotName, Dictionary<string, StoryFlowVariable> globalVariables,
             Dictionary<string, StoryFlowCharacterData> runtimeCharacters,
-            HashSet<string> usedOnceOnlyOptions)
+            HashSet<string> usedOnceOnlyOptions,
+            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed = null,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay = null)
         {
-            var json = StoryFlowStateSerializer.Serialize(globalVariables, runtimeCharacters, usedOnceOnlyOptions);
+            var json = StoryFlowStateSerializer.Serialize(
+                globalVariables, runtimeCharacters, usedOnceOnlyOptions, dataAssetSeed, dataAssetOverlay);
             File.WriteAllText(GetSavePath(slotName), json);
         }
 
@@ -181,11 +184,14 @@ namespace StoryFlow.Utilities
         public static async Task<bool> SaveAsync(string slotName,
             Dictionary<string, StoryFlowVariable> globalVariables,
             Dictionary<string, StoryFlowCharacterData> runtimeCharacters,
-            HashSet<string> usedOnceOnlyOptions)
+            HashSet<string> usedOnceOnlyOptions,
+            Dictionary<string, StoryFlowDataAssetDef> dataAssetSeed = null,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> dataAssetOverlay = null)
         {
             try
             {
-                var json = StoryFlowStateSerializer.Serialize(globalVariables, runtimeCharacters, usedOnceOnlyOptions);
+                var json = StoryFlowStateSerializer.Serialize(
+                    globalVariables, runtimeCharacters, usedOnceOnlyOptions, dataAssetSeed, dataAssetOverlay);
                 await File.WriteAllTextAsync(GetSavePath(slotName), json);
                 return true;
             }

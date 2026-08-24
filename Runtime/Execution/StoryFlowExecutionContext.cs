@@ -107,14 +107,14 @@ namespace StoryFlow.Execution
         private readonly HashSet<string> warnedMapNodes = new();
 
         /// <summary>
-        /// Degraded data-asset accessors already warned about, keyed "{nodeId}|{reason}" so a
+        /// Degraded data-asset accessors already warned about, keyed (nodeId, reason) so a
         /// node with two problems reports both once and a re-broken node stays quiet until the
         /// next run. Reset by <see cref="Initialize"/> and <see cref="Reset"/> — that is the
         /// re-arm the contract's "once per node, re-armed on game reset/restart" asks for
         /// (§6), and the reference latch (node.data._sfdWarned, cleared by resetGame) does the
         /// same thing on its own graph.
         /// </summary>
-        private readonly HashSet<string> warnedDataAssetNodes = new();
+        private readonly HashSet<(string NodeId, string Reason)> warnedDataAssetNodes = new();
 
         /// <summary>
         /// How many data-asset warnings this context has actually EMITTED. A test seam, and a
@@ -408,19 +408,6 @@ namespace StoryFlow.Execution
         // =====================================================================
 
         /// <summary>
-        /// Reads a .sfd variable through this context's store (contract §4). False for every
-        /// "no value" case, INCLUDING having no store at all — so arms do not repeat the null
-        /// dance around every read.
-        /// </summary>
-        internal bool TryResolveDataAsset(string assetId, string variableId, out StoryFlowVariant value)
-        {
-            value = null;
-            if (DataAssetStore == null || !DataAssetStore.IsValid) return false;
-            return StoryFlowDataAssetStore.TryResolve(
-                DataAssetStore.Seed, DataAssetStore.Overlay, assetId, variableId, out value);
-        }
-
-        /// <summary>
         /// Records a session write through this context's store (contract §5), reporting
         /// whether it landed. No store means no write, quietly — the caller reached here past
         /// a ladder that already refused and warned for that case.
@@ -433,18 +420,26 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
-        /// Warns about a degraded data-asset accessor ONCE per node per reason (contract §6).
+        /// Claims the ONE warning a degraded data-asset accessor gets per node per reason
+        /// (contract §6): true the first time, false forever after, until the latch re-arms on
+        /// the next Initialize/Reset.
         ///
-        /// These nodes are read from render paths — a dialogue's option conditions re-evaluate
-        /// on every render — so an unlatched warning would be a line per frame. The reason is
-        /// part of the key because the reasons have different FIXES; the tokens themselves are
-        /// informational (§9.1), so nothing matches on them.
+        /// The caller EMITS. This returns a bool rather than taking a message because these
+        /// nodes are read from render paths — a dialogue's option conditions re-evaluate on
+        /// every render — so the suppressed call is the common one by orders of magnitude, and
+        /// a message parameter means building an interpolated string on every one of them to
+        /// throw it away here. Building it inside the `if` costs nothing when nothing is
+        /// logged. The counter moves HERE, with the claim, so "claimed but never logged" is
+        /// not a state a caller can reach by forgetting to log.
+        ///
+        /// The reason is part of the key because the reasons have different FIXES; the tokens
+        /// themselves are informational (§9.1), so nothing matches on them.
         /// </summary>
-        internal void MaybeWarnDataAsset(string nodeId, string reason, string message)
+        internal bool ShouldWarnDataAsset(string nodeId, string reason)
         {
-            if (!warnedDataAssetNodes.Add(nodeId + "|" + reason)) return;
+            if (!warnedDataAssetNodes.Add((nodeId, reason))) return false;
             DataAssetWarningsEmitted++;
-            Debug.LogWarning("[StoryFlow] " + message);
+            return true;
         }
 
         /// <summary>
@@ -475,7 +470,10 @@ namespace StoryFlow.Execution
         /// <summary>
         /// THE degradation ladder both accessor arms walk (contract §6), in order: nodata,
         /// unwired, deadref, missing, changed. Each rung latches its warning and answers false;
-        /// success hands back the assetId the caller reads or writes through.
+        /// success hands back the assetId the caller writes through.
+        ///
+        /// This is the WRITE half — see <see cref="TryReadDataAssetBinding"/> for the read half,
+        /// which is the same ladder with the value picked up on the same walk.
         ///
         /// ONE ladder for Get and Set, ON PURPOSE. A reason honored on the read path but not
         /// the write path gives you an accessor that reads the declared default while its twin
@@ -493,21 +491,79 @@ namespace StoryFlow.Execution
         internal bool TryResolveDataAssetBinding(StoryFlowNode accessor, out string assetId)
         {
             assetId = "";
+            if (!TryBindDataAssetAccessor(accessor, out var resolvedId, out var variableId)) return false;
+
+            var status = StoryFlowDataAssetStore.CheckBound(
+                DataAssetStore.Seed, resolvedId, variableId,
+                accessor.GetData("variableType"),
+                accessor.GetDataBool("isArray"),
+                accessor.GetData("keyType"),
+                accessor.GetData("valueType"));
+
+            if (!ReportDataAssetBinding(accessor, resolvedId, variableId, status)) return false;
+
+            assetId = resolvedId;
+            return true;
+        }
+
+        /// <summary>
+        /// The READ half of the ladder: the same five reasons, and on success the resolved
+        /// value, taken from the SAME chain walk that settled the ladder rather than from a
+        /// second one behind it.
+        /// </summary>
+        internal bool TryReadDataAssetBinding(
+            StoryFlowNode accessor, out string assetId, out StoryFlowVariant value)
+        {
+            assetId = "";
+            value = null;
+            if (!TryBindDataAssetAccessor(accessor, out var resolvedId, out var variableId)) return false;
+
+            var status = StoryFlowDataAssetStore.ReadBound(
+                DataAssetStore.Seed, DataAssetStore.Overlay, resolvedId, variableId,
+                accessor.GetData("variableType"),
+                accessor.GetDataBool("isArray"),
+                accessor.GetData("keyType"),
+                accessor.GetData("valueType"),
+                out var resolved);
+
+            if (!ReportDataAssetBinding(accessor, resolvedId, variableId, status)) return false;
+
+            assetId = resolvedId;
+            value = resolved;
+            return true;
+        }
+
+        /// <summary>
+        /// The ladder's first three rungs, which are GRAPH questions and so are settled before
+        /// there is anything to walk: the node's own binding data, the wire to its pill, and
+        /// whether this context has a store at all.
+        /// </summary>
+        private bool TryBindDataAssetAccessor(
+            StoryFlowNode accessor, out string resolvedId, out string variableId)
+        {
+            resolvedId = "";
+            variableId = "";
             if (accessor == null) return false;
 
-            string variableId = accessor.GetData("variableId");
+            variableId = accessor.GetData("variableId");
             if (string.IsNullOrEmpty(variableId))
             {
-                MaybeWarnDataAsset(accessor.Id, "nodata",
-                    $"Data Asset accessor has no variable binding: node {accessor.Id}");
+                if (ShouldWarnDataAsset(accessor.Id, "nodata"))
+                {
+                    Debug.LogWarning(
+                        $"[StoryFlow] Data Asset accessor has no variable binding: node {accessor.Id}");
+                }
                 return false;
             }
 
-            string resolvedId = ResolveDataAssetId(accessor);
+            resolvedId = ResolveDataAssetId(accessor);
             if (string.IsNullOrEmpty(resolvedId))
             {
-                MaybeWarnDataAsset(accessor.Id, "unwired",
-                    $"Data Asset accessor has no Data Asset connected: node {accessor.Id}");
+                if (ShouldWarnDataAsset(accessor.Id, "unwired"))
+                {
+                    Debug.LogWarning(
+                        $"[StoryFlow] Data Asset accessor has no Data Asset connected: node {accessor.Id}");
+                }
                 return false;
             }
 
@@ -516,47 +572,55 @@ namespace StoryFlow.Execution
             // healthy miss.
             if (DataAssetStore == null || !DataAssetStore.IsValid)
             {
-                MaybeWarnDataAsset(accessor.Id, "deadref",
-                    $"Data Asset store unavailable: {resolvedId} (node {accessor.Id})");
+                if (ShouldWarnDataAsset(accessor.Id, "deadref"))
+                {
+                    Debug.LogWarning(
+                        $"[StoryFlow] Data Asset store unavailable: {resolvedId} (node {accessor.Id})");
+                }
                 return false;
             }
 
-            // Dead REFERENCE vs stale BINDING: FindDeclaration answers null for both, so ask the
-            // seed which one this is and name it — the two have different fixes (rebind the pill
-            // vs rebind the accessor).
-            if (!StoryFlowDataAssetStore.HasAsset(DataAssetStore.Seed, resolvedId))
-            {
-                MaybeWarnDataAsset(accessor.Id, "deadref",
-                    $"Data Asset not found: {resolvedId} (node {accessor.Id})");
-                return false;
-            }
-
-            var declaration = StoryFlowDataAssetStore.FindDeclaration(
-                DataAssetStore.Seed, resolvedId, variableId);
-            if (declaration == null)
-            {
-                MaybeWarnDataAsset(accessor.Id, "missing",
-                    $"Data Asset variable not found: {resolvedId}.{variableId} (node {accessor.Id})");
-                return false;
-            }
-
-            // §6.1: the declaration moved under a live node. Treated as MISSING, never coerced —
-            // within the string family a value carries no evidence of its declared type, which is
-            // exactly why the check is on the DECLARATION.
-            if (!StoryFlowDataAssetStore.DeclMatches(
-                    declaration,
-                    accessor.GetData("variableType"),
-                    accessor.GetDataBool("isArray"),
-                    accessor.GetData("keyType"),
-                    accessor.GetData("valueType")))
-            {
-                MaybeWarnDataAsset(accessor.Id, "changed",
-                    $"Data Asset variable type changed since this node was made: {resolvedId}.{variableId} (node {accessor.Id})");
-                return false;
-            }
-
-            assetId = resolvedId;
             return true;
+        }
+
+        /// <summary>
+        /// Names the walk's answer for the author, once per node per reason, and reports
+        /// whether the binding is usable.
+        /// </summary>
+        private bool ReportDataAssetBinding(
+            StoryFlowNode accessor, string resolvedId, string variableId,
+            StoryFlowDataAssetBinding status)
+        {
+            switch (status)
+            {
+                case StoryFlowDataAssetBinding.Ok:
+                    return true;
+
+                case StoryFlowDataAssetBinding.DeadRef:
+                    if (ShouldWarnDataAsset(accessor.Id, "deadref"))
+                    {
+                        Debug.LogWarning(
+                            $"[StoryFlow] Data Asset not found: {resolvedId} (node {accessor.Id})");
+                    }
+                    return false;
+
+                case StoryFlowDataAssetBinding.Missing:
+                    if (ShouldWarnDataAsset(accessor.Id, "missing"))
+                    {
+                        Debug.LogWarning("[StoryFlow] Data Asset variable not found: " +
+                                         $"{resolvedId}.{variableId} (node {accessor.Id})");
+                    }
+                    return false;
+
+                default:
+                    if (ShouldWarnDataAsset(accessor.Id, "changed"))
+                    {
+                        Debug.LogWarning(
+                            "[StoryFlow] Data Asset variable type changed since this node was made: " +
+                            $"{resolvedId}.{variableId} (node {accessor.Id})");
+                    }
+                    return false;
+            }
         }
 
         // =====================================================================

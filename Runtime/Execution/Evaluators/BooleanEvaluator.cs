@@ -49,19 +49,8 @@ namespace StoryFlow.Execution
 
             try
             {
-                // ForEach nodes — skip evaluation cache to avoid cross-type conflicts.
-                // Map reads (getMapValue/hasMapKey/mapSize) are never memoized either: maps
-                // resolve to LIVE variable storage and in-place mutations must be observable
-                // on the next read (see EvaluatorHelpers.IsMapReadNode). forEachMap key/value
-                // reads come from the iteration snapshot, not the live map, but forEachMap
-                // is already cache-exempt via IsForEachNode. Data-asset accessors join them
-                // for the same liveness reason — they read the session overlay, which a Set
-                // node or the public API can move between two reads (see
-                // EvaluatorHelpers.IsDataAssetAccessor).
-                bool skipCache = EvaluatorHelpers.IsForEachNode(node.Type) ||
-                                 EvaluatorHelpers.IsMapReadNode(node.Type) ||
-                                 EvaluatorHelpers.IsMultiOutputNode(node.Type) ||
-                                 EvaluatorHelpers.IsDataAssetAccessor(node.Type);
+                // The exemptions and why each one exists live on ShouldSkipCache.
+                bool skipCache = EvaluatorHelpers.ShouldSkipCache(node.Type);
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return state.CachedOutput.GetBool();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 using StoryFlow.Data;
 using StoryFlow.Utilities;
 using UnityEngine;
@@ -306,7 +307,8 @@ namespace StoryFlow
         /// </summary>
         public string ExportState()
         {
-            return StoryFlowStateSerializer.Serialize(GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions);
+            return StoryFlowStateSerializer.Serialize(
+                GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions, DataAssetSeed, DataAssetOverlay);
         }
 
         /// <summary>
@@ -402,6 +404,71 @@ namespace StoryFlow
             {
                 UsedOnceOnlyOptions.Add(key);
             }
+
+            ApplyDataAssetValues(snapshot.DataAssetValues);
+        }
+
+        /// <summary>
+        /// REPLACES the .sfd session overlay with the saved table (contract §7). Clears FIRST
+        /// and unconditionally, so an absent or malformed key restores seed state — which is
+        /// exactly the state such a save was made in. Merging instead would let the pre-load
+        /// session's writes survive into the loaded game; the once-only options above are the
+        /// same shape and the precedent for it, while every other section of a snapshot merges.
+        ///
+        /// Two kinds of entry are DROPPED rather than restored:
+        ///  - an asset the current seed does not carry (deleted since the save). Resolution
+        ///    starts its walk at seed[assetId], so the entry can never be read, and keeping it
+        ///    would make it ride every subsequent save forever.
+        ///  - a variable no level of that asset's chain declares any more (contract §7's
+        ///    carve-out). The reference keeps such entries because JS values need no
+        ///    declaration; a variant does — with no declaration there is no type to restore it
+        ///    AS, and §4.3 already makes it unreadable. Unreal drops them and so does this.
+        ///
+        /// Values are NOT otherwise re-validated: a stale-TYPED entry degrades at the accessor
+        /// via §6.1, exactly as a stale session write does.
+        /// </summary>
+        private void ApplyDataAssetValues(Dictionary<string, Dictionary<string, JToken>> table)
+        {
+            StoryFlowDataAssetStore.ResetOverlay(DataAssetOverlay);
+            if (table == null) { return; }
+
+            foreach (var assetEntry in table)
+            {
+                if (!StoryFlowDataAssetStore.HasAsset(DataAssetSeed, assetEntry.Key))
+                {
+                    // WARNING, where the per-variable drop below is quiet: a whole asset gone
+                    // means the save outlived the .sfd, which is a project-shape change worth
+                    // surfacing, and it can fire at most once per saved asset. The variable
+                    // drop is one line per stale entry and is the expected residue of any
+                    // variable rename. Deliberately not the write path's wording either — a
+                    // load-time drop and a script write to a dead reference are different
+                    // problems with different fixes.
+                    Debug.LogWarning($"[StoryFlow] Save load dropped Data Asset \"{assetEntry.Key}\" - " +
+                                     "no such asset in this project.");
+                    continue;
+                }
+
+                Dictionary<string, StoryFlowVariant> values = null;
+                foreach (var valueEntry in assetEntry.Value)
+                {
+                    var declaration = StoryFlowDataAssetStore.FindDeclaration(
+                        DataAssetSeed, assetEntry.Key, valueEntry.Key);
+                    if (declaration == null)
+                    {
+                        Debug.Log($"[StoryFlow] Save load dropped Data Asset value " +
+                                  $"\"{assetEntry.Key}.{valueEntry.Key}\" - the chain no longer declares it.");
+                        continue;
+                    }
+
+                    if (values == null) { values = new Dictionary<string, StoryFlowVariant>(); }
+                    values[valueEntry.Key] = StoryFlowStateSerializer.BareValueFromJson(
+                        valueEntry.Value, declaration);
+                }
+
+                // An asset whose every entry was dropped leaves NO entry behind: an empty inner
+                // table would ride every subsequent save carrying nothing.
+                if (values != null) { DataAssetOverlay[assetEntry.Key] = values; }
+            }
         }
 
         /// <summary>
@@ -418,7 +485,8 @@ namespace StoryFlow
 
             try
             {
-                StoryFlowSaveHelpers.Save(slotName, GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions);
+                StoryFlowSaveHelpers.Save(slotName, GlobalVariables, RuntimeCharacters, UsedOnceOnlyOptions,
+                    DataAssetSeed, DataAssetOverlay);
                 Debug.Log($"[StoryFlow] State saved to slot \"{slotName}\".");
                 return true;
             }

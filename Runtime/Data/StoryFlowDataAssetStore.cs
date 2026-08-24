@@ -22,6 +22,29 @@ namespace StoryFlow.Data
     }
 
     /// <summary>
+    /// What ONE chain walk found for an accessor's binding: either a usable value, or which
+    /// rung of the degraded ladder (contract §6) the binding fell off.
+    ///
+    /// The three failure members are the three the walk itself can answer. The other two
+    /// ladder reasons — no variableId on the node, and no pill wired to its dataAsset pin —
+    /// are graph questions the caller settles before there is an assetId to walk from.
+    /// </summary>
+    public enum StoryFlowDataAssetBinding
+    {
+        /// <summary>The chain declares the id, the declaration still matches the snapshot.</summary>
+        Ok,
+
+        /// <summary>The seed carries no such asset (a deleted .sfd, or a pill left unbound).</summary>
+        DeadRef,
+
+        /// <summary>The asset is here, but no level of its chain declares the id.</summary>
+        Missing,
+
+        /// <summary>Declared, but the declaration no longer matches the spawn snapshot (§6.1).</summary>
+        Changed,
+    }
+
+    /// <summary>
     /// The .sfd Data Asset STORE (engine contract §3) and its chain RESOLVER (§4).
     ///
     /// NORMATIVE SOURCE: the HTML runtime's src/renderer/runtime/runtime-data-assets.js — its
@@ -409,57 +432,158 @@ namespace StoryFlow.Data
             value = null;
             if (string.IsNullOrEmpty(variableId)) return false;
 
-            // resolveEntry's two accumulators, kept apart on purpose:
-            //  - nearest: the FIRST overlay-or-override hit leaf -> root (§4.1/§4.2).
-            //  - declaration: the ROOT-MOST DECLARATION (§4.3), which is why a declaration
-            //    must NOT stop the walk.
-            // Returning early on an override would resurrect ORPHAN overrides on other
-            // levels; an override counts only where the chain still declares the id, and the
-            // declaration that proves it may be further up than the override is.
-            //
-            // The second accumulator holds the DECLARATION, not its value, because "did any
-            // level declare this id?" and "does that declaration carry a value?" are
-            // different questions (§4.3 asks only the first). Keying success on the value
-            // reports a valueless declaration as UNDECLARED — the same answer a deleted
-            // variable gets — so an accessor would take the degraded path instead of reading
-            // its type default. Nothing BuildSeed produces has a null value, but the seed is
-            // a plain dictionary any caller can assemble, and this function should not
-            // depend on a repair that happens in another one.
-            StoryFlowVariant nearest = null;
-            StoryFlowVariable declaration = null;
+            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration);
+            if (declaration == null) return false;
+
+            value = CopyOut(nearest, declaration);
+            return true;
+        }
+
+        /// <summary>
+        /// resolveEntry's ONE walk, with its two accumulators kept apart on purpose:
+        ///  - <paramref name="nearest"/>: the FIRST overlay-or-override hit leaf -> root
+        ///    (§4.1/§4.2).
+        ///  - <paramref name="declaration"/>: the ROOT-MOST DECLARATION (§4.3), which is why
+        ///    a declaration must NOT stop the walk.
+        /// Returning early on an override would resurrect ORPHAN overrides on other levels;
+        /// an override counts only where the chain still declares the id, and the declaration
+        /// that proves it may be further up than the override is.
+        ///
+        /// The second accumulator holds the DECLARATION, not its value, because "did any
+        /// level declare this id?" and "does that declaration carry a value?" are different
+        /// questions (§4.3 asks only the first). Keying success on the value reports a
+        /// valueless declaration as UNDECLARED — the same answer a deleted variable gets — so
+        /// an accessor would take the degraded path instead of reading its type default.
+        /// Nothing BuildSeed produces has a null value, but the seed is a plain dictionary any
+        /// caller can assemble, and this walk should not depend on a repair that happens
+        /// somewhere else.
+        ///
+        /// A NULL overlay skips the session lookups entirely — that is the write path, which
+        /// needs the declaration and nothing else.
+        /// </summary>
+        private static void WalkForValue(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
+            string assetId, string variableId,
+            out StoryFlowVariant nearest, out StoryFlowVariable declaration)
+        {
+            StoryFlowVariant foundValue = null;
+            StoryFlowVariable foundDecl = null;
 
             WalkChain(seed, assetId, level =>
             {
-                if (nearest == null)
+                if (foundValue == null)
                 {
                     if (overlay != null &&
                         overlay.TryGetValue(level.Id, out var levelOverlay) &&
                         levelOverlay.TryGetValue(variableId, out var written))
                     {
-                        nearest = written;
+                        foundValue = written;
                     }
                     else if (level.Overrides.TryGetValue(variableId, out var overridden))
                     {
-                        nearest = overridden;
+                        foundValue = overridden;
                     }
                 }
 
                 var decl = FindDeclaredOnLevel(level, variableId);
-                if (decl != null) declaration = decl;
+                if (decl != null) foundDecl = decl;
                 return true;
             });
 
-            if (declaration == null) return false;
+            nearest = foundValue;
+            declaration = foundDecl;
+        }
 
-            // A declaration carrying no value at all resolves to its TYPE DEFAULT rather
-            // than to nothing. The reference implementation reaches the same place by a
-            // different road — JS `declared = decl.value` can be undefined and resolve()
-            // still reports found — and no seed the exporter writes has the shape, so this
-            // is the translation that keeps "resolved" meaning the same thing in a language
-            // where the caller gets a typed object instead of undefined.
-            value = new StoryFlowVariant(
+        /// <summary>
+        /// The value a completed walk hands OUT: a deep copy, always (contract §3 — graph code
+        /// must not be able to mutate the seed or the overlay through a read).
+        ///
+        /// A declaration carrying no value at all copies out as its TYPE DEFAULT rather than
+        /// as nothing. The reference implementation reaches the same place by a different road
+        /// — JS `declared = decl.value` can be undefined and resolve() still reports found —
+        /// and no seed the exporter writes has the shape, so this is the translation that
+        /// keeps "resolved" meaning the same thing in a language where the caller gets a typed
+        /// object instead of undefined.
+        /// </summary>
+        private static StoryFlowVariant CopyOut(StoryFlowVariant nearest, StoryFlowVariable declaration)
+        {
+            return new StoryFlowVariant(
                 nearest ?? declaration.Value ?? new StoryFlowVariant { Type = declaration.Type });
-            return true;
+        }
+
+        /// <summary>
+        /// ONE WALK for a bound accessor's read: resolve the value AND settle which degraded
+        /// rung (if any) the binding is on, without handing the declaration back.
+        ///
+        /// The pair this replaces — FindDeclaration for the ladder, then TryResolve for the
+        /// value — walked the same chain twice on every single read, and option conditions
+        /// re-resolve on every render. Splitting them also let the two disagree in principle
+        /// (declMatches checked against one walk's declaration, the value taken from
+        /// another's), which is a class of bug this shape cannot have.
+        ///
+        /// The DECLARATION deliberately does not come back out. Past a Ok result the caller's
+        /// own snapshot (variableType / isArray / keyType / valueType) IS the chain's declared
+        /// shape, so it already holds everything a declaration would tell it — and a
+        /// declaration is a live reference into the seed (see this class's header).
+        /// </summary>
+        public static StoryFlowDataAssetBinding ReadBound(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
+            string assetId, string variableId,
+            string variableType, bool isArray, string keyType, string valueType,
+            out StoryFlowVariant value)
+        {
+            value = null;
+
+            var status = CheckBoundInternal(
+                seed, overlay, assetId, variableId, variableType, isArray, keyType, valueType,
+                out var nearest, out var declaration);
+            if (status != StoryFlowDataAssetBinding.Ok) return status;
+
+            value = CopyOut(nearest, declaration);
+            return StoryFlowDataAssetBinding.Ok;
+        }
+
+        /// <summary>
+        /// <see cref="ReadBound"/> for the WRITE path: the same one walk and the same ladder
+        /// answer, minus the overlay lookups and the copy-out that only a reader needs.
+        /// </summary>
+        public static StoryFlowDataAssetBinding CheckBound(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            string assetId, string variableId,
+            string variableType, bool isArray, string keyType, string valueType)
+        {
+            return CheckBoundInternal(
+                seed, null, assetId, variableId, variableType, isArray, keyType, valueType,
+                out _, out _);
+        }
+
+        private static StoryFlowDataAssetBinding CheckBoundInternal(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
+            string assetId, string variableId,
+            string variableType, bool isArray, string keyType, string valueType,
+            out StoryFlowVariant nearest, out StoryFlowVariable declaration)
+        {
+            nearest = null;
+            declaration = null;
+
+            // Dead REFERENCE vs stale BINDING, told apart BEFORE the walk: FindDeclaration
+            // answers "no" to both, and the two have different fixes (rebind the pill vs
+            // rebind the accessor), so the caller gets to name the right one.
+            if (!HasAsset(seed, assetId)) return StoryFlowDataAssetBinding.DeadRef;
+            if (string.IsNullOrEmpty(variableId)) return StoryFlowDataAssetBinding.Missing;
+
+            WalkForValue(seed, overlay, assetId, variableId, out nearest, out declaration);
+            if (declaration == null) return StoryFlowDataAssetBinding.Missing;
+
+            // §6.1: the declaration moved under a live node. Treated as MISSING by every
+            // caller, never coerced — within the string family a value carries no evidence of
+            // its declared type, which is exactly why the check is on the DECLARATION.
+            return DeclMatches(declaration, variableType, isArray, keyType, valueType)
+                ? StoryFlowDataAssetBinding.Ok
+                : StoryFlowDataAssetBinding.Changed;
         }
 
         /// <summary>

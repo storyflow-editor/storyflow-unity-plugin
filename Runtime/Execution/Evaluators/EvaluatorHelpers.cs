@@ -86,6 +86,32 @@ namespace StoryFlow.Execution
                    type == StoryFlowNodeType.SetDataAssetVariable;
         }
 
+        /// <summary>
+        /// THE cache-exemption list every typed evaluator asks — one home, so a new exempt
+        /// kind cannot land in four of the five and memoize in the fifth (which is invisible
+        /// until some graph reads that one type through the stale node).
+        ///
+        /// Four reasons to skip the per-node CachedOutput memo:
+        ///  - ForEach nodes: one runtime state, cross-type outputs (an int index and a string
+        ///    element) that would poison each other through the single cache slot.
+        ///  - Map reads (getMapValue/hasMapKey/mapSize): maps resolve to LIVE variable
+        ///    storage, so an in-place setMapValue/removeMapKey/clearMap must be observable on
+        ///    the next read. The HTML runtime recomputes them inline the same way. forEachMap
+        ///    key/value reads come from the iteration snapshot rather than the live map, but
+        ///    forEachMap is already exempt above.
+        ///  - Multi-output nodes (runScript): several named outputs behind one cache slot.
+        ///  - Data-asset accessors: they read the session OVERLAY, which a Set node, the
+        ///    public API or a save load can move between two reads of the same accessor —
+        ///    the same liveness argument the map reads make.
+        /// </summary>
+        internal static bool ShouldSkipCache(StoryFlowNodeType type)
+        {
+            return IsForEachNode(type) ||
+                   IsMapReadNode(type) ||
+                   IsMultiOutputNode(type) ||
+                   IsDataAssetAccessor(type);
+        }
+
         // =====================================================================
         // Dual-input evaluation with fallback to node data
         // =====================================================================
@@ -483,10 +509,7 @@ namespace StoryFlow.Execution
             StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
             if (ctx == null || node == null) return null;
-            if (!ctx.TryResolveDataAssetBinding(node, out var assetId)) return null;
-            return ctx.TryResolveDataAsset(assetId, node.GetData("variableId"), out var value)
-                ? value
-                : null;
+            return ctx.TryReadDataAssetBinding(node, out _, out var value) ? value : null;
         }
     }
 }

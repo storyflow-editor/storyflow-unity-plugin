@@ -927,6 +927,283 @@ namespace StoryFlow
             return out_;
         }
 
+        // =====================================================================
+        // Data Assets (.sfd) — the typed public surface
+        // =====================================================================
+        //
+        // Game code holds an ASSET REFERENCE and the variable NAME it typed in the editor,
+        // where everything the exporter emits is keyed by id (ids survive a rename). The name
+        // is resolved exactly once per call, at this boundary, root-most-wins like every other
+        // chain lookup (StoryFlowDataAssetStore.FindDeclarationByName).
+        //
+        // READ ANY, WRITE SCALAR. Arrays and maps come out through GetDataAssetVariant as a
+        // detached copy and have no setter: a container write from game code would have to
+        // rebuild the whole value with the right element typing to keep the save key stable,
+        // which is the Set node's job and not something a caller can be expected to get right.
+        //
+        // NO WARN-ONCE LATCH here, unlike the node arms. A latch is keyed by node id and there
+        // is no node — a per-frame caller would either flood the console or, with a latch keyed
+        // on something else, go permanently silent about a real bug. Failures report through
+        // `found` / a false return, and log at Debug.Log level so they can be found without
+        // being alarming.
+
+        /// <summary>Reads a boolean .sfd variable. <paramref name="found"/> is false for every refusal.</summary>
+        public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var value = ReadDataAssetScalar(asset, variableName, StoryFlowVariableType.Boolean, out found);
+            return found && value.GetBool();
+        }
+
+        /// <summary>Reads an integer .sfd variable.</summary>
+        public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var value = ReadDataAssetScalar(asset, variableName, StoryFlowVariableType.Integer, out found);
+            return found ? value.GetInt() : 0;
+        }
+
+        /// <summary>Reads a float .sfd variable.</summary>
+        public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var value = ReadDataAssetScalar(asset, variableName, StoryFlowVariableType.Float, out found);
+            return found ? value.GetFloat() : 0f;
+        }
+
+        /// <summary>
+        /// Reads a string-family .sfd variable: string, image, audio or character, all of which
+        /// store their text in the same place and travel as bare paths / keys.
+        ///
+        /// ENUM IS NOT REACHABLE HERE, deliberately, even though an enum also reads as text. An
+        /// enum keeps its own storage and its own type tag, and a string write onto an enum
+        /// declaration would put a String-tagged value in the overlay where the save key expects
+        /// an enum — the one place the asymmetry is observable. Use
+        /// <see cref="GetDataAssetEnum"/> / <see cref="SetDataAssetEnum"/>.
+        /// </summary>
+        public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            if (declaration == null || !IsStringFamilyScalar(declaration))
+            {
+                LogDataAssetRefusal(asset, variableName, declaration, "a string");
+                found = false;
+                return "";
+            }
+            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            return found ? value.GetString() : "";
+        }
+
+        /// <summary>Reads an enum .sfd variable as its value name.</summary>
+        public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var value = ReadDataAssetScalar(asset, variableName, StoryFlowVariableType.Enum, out found);
+            return found ? value.GetEnum() : "";
+        }
+
+        /// <summary>
+        /// Reads ANY .sfd variable, including the arrays and maps the typed getters do not
+        /// cover, as a DETACHED copy — mutating what comes back cannot reach the store.
+        /// Returns null (with <paramref name="found"/> false) when nothing resolves.
+        /// </summary>
+        public StoryFlowVariant GetDataAssetVariant(
+            StoryFlowDataAssetAsset asset, string variableName, out bool found)
+        {
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            if (declaration == null)
+            {
+                found = false;
+                return null;
+            }
+            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            return found ? value : null;
+        }
+
+        /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
+        public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
+        {
+            return WriteDataAssetScalar(asset, variableName, StoryFlowVariableType.Boolean,
+                StoryFlowVariant.Bool(value));
+        }
+
+        /// <summary>Writes an integer .sfd variable.</summary>
+        public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
+        {
+            return WriteDataAssetScalar(asset, variableName, StoryFlowVariableType.Integer,
+                StoryFlowVariant.Int(value));
+        }
+
+        /// <summary>Writes a float .sfd variable.</summary>
+        public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
+        {
+            return WriteDataAssetScalar(asset, variableName, StoryFlowVariableType.Float,
+                StoryFlowVariant.Float(value));
+        }
+
+        /// <summary>
+        /// Writes a string-family .sfd variable (string / image / audio / character). Enum
+        /// declarations are refused here — see <see cref="GetDataAssetString"/>.
+        ///
+        /// The value goes in String-TAGGED, which is what the Set node's own writer produces
+        /// for the whole string family, so the save key does not depend on which writer wrote
+        /// it (a read answers GetString for either tag).
+        /// </summary>
+        public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
+        {
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            if (declaration == null || !IsStringFamilyScalar(declaration))
+            {
+                LogDataAssetRefusal(asset, variableName, declaration, "a string");
+                return false;
+            }
+            return CommitDataAssetWrite(assetId, declaration.Id, StoryFlowVariant.String(value));
+        }
+
+        /// <summary>Writes an enum .sfd variable by value name.</summary>
+        public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
+        {
+            return WriteDataAssetScalar(asset, variableName, StoryFlowVariableType.Enum,
+                StoryFlowVariant.Enum(value));
+        }
+
+        /// <summary>
+        /// The store this component reads and writes .sfd values through: the LIVE dialogue's
+        /// if there is one, else the manager's.
+        ///
+        /// Both are the same two dictionaries in a running game — the context holds a reference
+        /// the manager minted. The context is preferred anyway because it is the half that is
+        /// guaranteed present mid-dialogue, and the fallback is what makes this surface work
+        /// before a dialogue starts and after it ends, which is most of when game code calls it.
+        /// </summary>
+        private StoryFlowDataAssetStoreRef GetDataAssetStore()
+        {
+            if (_context != null && _context.DataAssetStore != null && _context.DataAssetStore.IsValid)
+                return _context.DataAssetStore;
+
+            var manager = StoryFlowManager.Instance;
+            return manager != null ? manager.GetDataAssetStore() : null;
+        }
+
+        /// <summary>
+        /// The declaration a (asset, name) pair binds to, plus the assetId writes land at — the
+        /// REFERENCED asset's own level, never the declaring ancestor (contract §5).
+        /// Null, with one Debug.Log line, for a null asset or a name nothing on the chain
+        /// declares.
+        /// </summary>
+        private StoryFlowVariable FindDataAssetDeclaration(
+            StoryFlowDataAssetAsset asset, string variableName, out string assetId)
+        {
+            assetId = asset != null ? asset.Id : "";
+            if (asset == null || string.IsNullOrEmpty(assetId))
+            {
+                Debug.Log("[StoryFlow] Data Asset access refused: no asset supplied.");
+                return null;
+            }
+
+            var store = GetDataAssetStore();
+            if (store == null || !store.IsValid)
+            {
+                Debug.Log($"[StoryFlow] Data Asset access refused: no Data Asset store yet " +
+                          $"(\"{assetId}.{variableName}\").");
+                return null;
+            }
+
+            var declaration = StoryFlowDataAssetStore.FindDeclarationByName(store.Seed, assetId, variableName);
+            if (declaration == null)
+            {
+                Debug.Log($"[StoryFlow] Data Asset variable \"{variableName}\" is not declared on " +
+                          $"\"{assetId}\" or any of its parents.");
+            }
+            return declaration;
+        }
+
+        /// <summary>True for the four types that share <c>StringValue</c>. Enum is NOT one.</summary>
+        private static bool IsStringFamilyScalar(StoryFlowVariable declaration)
+        {
+            if (declaration.IsArray) return false;
+            return declaration.Type == StoryFlowVariableType.String ||
+                   declaration.Type == StoryFlowVariableType.Image ||
+                   declaration.Type == StoryFlowVariableType.Audio ||
+                   declaration.Type == StoryFlowVariableType.Character;
+        }
+
+        /// <summary>
+        /// The STRICT type gate every typed accessor passes through: the declaration must be a
+        /// SCALAR of exactly the asked-for type. No coercion, for the same reason §6.1 refuses
+        /// it at the node arms — a value in this engine carries no evidence of what declared it,
+        /// so a gate that guessed would write a differently shaped save key than the Set node
+        /// writes for the same variable.
+        /// </summary>
+        private StoryFlowVariant ReadDataAssetScalar(
+            StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type, out bool found)
+        {
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            if (declaration == null || declaration.IsArray || declaration.Type != type)
+            {
+                LogDataAssetRefusal(asset, variableName, declaration, type.ToString());
+                found = false;
+                return null;
+            }
+            found = TryResolveDataAssetValue(assetId, declaration, out var value);
+            return value;
+        }
+
+        private bool WriteDataAssetScalar(
+            StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type,
+            StoryFlowVariant value)
+        {
+            var declaration = FindDataAssetDeclaration(asset, variableName, out var assetId);
+            if (declaration == null || declaration.IsArray || declaration.Type != type)
+            {
+                LogDataAssetRefusal(asset, variableName, declaration, type.ToString());
+                return false;
+            }
+            return CommitDataAssetWrite(assetId, declaration.Id, value);
+        }
+
+        private bool TryResolveDataAssetValue(
+            string assetId, StoryFlowVariable declaration, out StoryFlowVariant value)
+        {
+            value = null;
+            var store = GetDataAssetStore();
+            if (store == null || !store.IsValid) return false;
+            return StoryFlowDataAssetStore.TryResolve(
+                store.Seed, store.Overlay, assetId, declaration.Id, out value);
+        }
+
+        /// <summary>
+        /// Records the write and then drops the evaluation memos, because a public setter that
+        /// skipped the invalidation the Set NODE runs would leave a mid-dialogue write invisible
+        /// to any option condition already memoized above the accessor. The accessors themselves
+        /// are cache-exempt; their notBool / comparison parents are not.
+        /// </summary>
+        private bool CommitDataAssetWrite(string assetId, string variableId, StoryFlowVariant value)
+        {
+            var store = GetDataAssetStore();
+            if (store == null || !store.IsValid) return false;
+
+            if (!StoryFlowDataAssetStore.TrySet(store.Seed, store.Overlay, assetId, variableId, value))
+            {
+                Debug.Log($"[StoryFlow] Data Asset write refused: \"{assetId}.{variableId}\".");
+                return false;
+            }
+
+            _context?.ClearNodeRuntimeStates();
+            return true;
+        }
+
+        private static void LogDataAssetRefusal(
+            StoryFlowDataAssetAsset asset, string variableName,
+            StoryFlowVariable declaration, string wanted)
+        {
+            // A null declaration was already reported by the lookup — this only names the
+            // mismatches, which the lookup cannot see.
+            if (declaration == null) return;
+
+            string actual = declaration.IsArray
+                ? declaration.Type + " array"
+                : declaration.Type.ToString();
+            Debug.Log($"[StoryFlow] Data Asset variable \"{(asset != null ? asset.Id : "")}.{variableName}\" " +
+                      $"is declared {actual}, not {wanted}.");
+        }
+
         /// <summary>
         /// Resolves a character's portrait to a Sprite.
         /// When <paramref name="assetKey"/> is empty (default), uses the character's current
