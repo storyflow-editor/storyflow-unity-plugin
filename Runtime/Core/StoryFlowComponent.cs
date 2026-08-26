@@ -942,6 +942,98 @@ namespace StoryFlow
         }
 
         // =====================================================================
+        // Character Access (by character FILE id — P4)
+        // =====================================================================
+        //
+        // The id-taking twins of the path APIs above (characters contract §4), mirrored
+        // onto StoryFlowManager like the .sfd surface below — Unity's V2 posture puts
+        // per-variable APIs on both surfaces. THIN WRAPPERS by rule: FindCharacter already
+        // routes a da_ id through THE resolution point (bridge lookup, warn-once degraded
+        // fall-back), so these delegate and never re-resolve or normalize the id
+        // themselves — a wrapper that does resolves twice, the exact drift the
+        // id-and-path-reach-one-record pin exists to catch.
+        //
+        // Per amendment A2(b), none of these raise OnCharacterVariableChanged — that
+        // event is node-lane only.
+
+        /// <summary>
+        /// The live runtime character a character FILE id resolves to, through the id
+        /// bridge. <paramref name="found"/> is false for a dangling id (no bridge entry)
+        /// and for an id whose record is not among the loaded runtime characters (the
+        /// warn-once degraded shapes — amendment A3(a)). <see cref="GetCharacterPathById"/>
+        /// can still answer in that second case, because the bridge itself is
+        /// project-derived.
+        /// </summary>
+        public StoryFlowCharacterData GetCharacterById(string characterId, out bool found)
+        {
+            var character = FindCharacter(characterId);
+            found = character != null;
+            return character;
+        }
+
+        /// <summary>
+        /// The character record key (the runtime table's key) for a character FILE id — a
+        /// PURE BRIDGE LOOKUP, deliberately NOT the resolution point (amendment A3(a)): it
+        /// answers for any indexed id whether or not the record is loaded, and never warns.
+        /// An existence query is not a degraded resolution, and the resolution point's
+        /// fall-through would answer a normalized spelling of the id instead of not-found.
+        /// The key comes back verbatim (lowercase, forward-slash — this plugin's store
+        /// form) and is valid input to every path-taking character API.
+        /// <paramref name="found"/> is false only for an id the project's character index
+        /// never carried.
+        /// </summary>
+        public string GetCharacterPathById(string characterId, out bool found)
+        {
+            var store = GetCharacterStore();
+            if (store != null && store.IsValid && !string.IsNullOrEmpty(characterId) &&
+                store.Bridge.TryGetValue(characterId, out var recordKey))
+            {
+                found = true;
+                return recordKey;
+            }
+
+            found = false;
+            return "";
+        }
+
+        /// <summary>
+        /// Record keys of every LOADED character, in map order (no sort promise) — the
+        /// amendment A4 enumeration surface. Ids serve stable BINDING, record keys serve
+        /// enumeration and the path-taking APIs, so by-id enumeration is deliberately not
+        /// provided. The list reflects what the RUNTIME holds, which the project asset
+        /// cannot tell you — though in this engine the two coincide: a save load MERGES
+        /// per-variable onto the project-derived table and never removes, so after any
+        /// load the loaded set still equals the project's character set.
+        /// </summary>
+        public List<string> GetCharacterPaths()
+        {
+            var store = GetCharacterStore();
+            return store != null && store.IsValid
+                ? new List<string>(store.Characters.Keys)
+                : new List<string>();
+        }
+
+        /// <summary>
+        /// Id twin of <see cref="GetCharacterVariable"/> — a pure delegate, since the path
+        /// API already resolves ids through the one point. cf_name / cf_image alias the
+        /// Name / Image builtins here too (amendment A2(a)).
+        /// </summary>
+        public StoryFlowVariant GetCharacterVariableById(string characterId, string variableName)
+        {
+            return GetCharacterVariable(characterId, variableName);
+        }
+
+        /// <summary>
+        /// Id twin of <see cref="SetCharacterVariable"/> — the same delegate rule. Warns
+        /// and no-ops when the character does not declare the variable (amendment A3(b): a
+        /// write never creates one).
+        /// </summary>
+        public void SetCharacterVariableById(string characterId, string variableName, StoryFlowVariant value)
+        {
+            SetCharacterVariable(characterId, variableName, value);
+        }
+
+        // =====================================================================
         // Data Assets (.sfd) — the typed public surface
         // =====================================================================
         //

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using StoryFlow.Data;
+using StoryFlow.Execution;
 using StoryFlow.Utilities;
 using UnityEngine;
 
@@ -393,6 +394,142 @@ namespace StoryFlow
         {
             return StoryFlowDataAssetAccess.SetEnum(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
+        }
+
+        // =====================================================================
+        // Characters (by character FILE id — P4) — the host mirror
+        // =====================================================================
+        //
+        // The same five StoryFlowComponent carries, for game code that owns no dialogue —
+        // the same reason the .sfd surface above is mirrored (Unity's V2 posture: the
+        // manager carries per-variable APIs). The component's five prefer its live
+        // context's tables; these read the manager's own — the SAME dictionaries by
+        // reference in a running game, so the two surfaces cannot come apart. Ids resolve
+        // through THE resolution point (ResolveCharacterKeyIn) with the null warn latch:
+        // there is no context out here to own the once-per-run latch, so a degraded id
+        // logs on every call (the established outside-dialogue posture — fail open).
+        //
+        // TWO deliberate asymmetries against the component's five, both this surface's
+        // existing precedents rather than new rules:
+        //  - VALUES COME BACK STORED, VERBATIM: a Name that is a string-table key stays a
+        //    key, exactly as ExportState and the .sfd surface's character branch answer
+        //    it. Language resolution is a component concern (LanguageCode lives there), so
+        //    the component's GetCharacterVariable/ById is the language-aware door.
+        //  - NO EVENTS: the manager has none to raise, the same way its .sfd setters
+        //    invalidate no caches (and amendment A2(b) keeps OnCharacterVariableChanged
+        //    node-lane only regardless).
+
+        /// <summary>
+        /// The live runtime character a character FILE id resolves to, through the id
+        /// bridge. <paramref name="found"/> is false for a dangling id (no bridge entry)
+        /// and for an id whose record is not among the loaded runtime characters
+        /// (amendment A3(a)); <see cref="GetCharacterPathById"/> can still answer in that
+        /// second case, because the bridge itself is project-derived.
+        /// </summary>
+        public StoryFlowCharacterData GetCharacterById(string characterId, out bool found)
+        {
+            var recordKey = StoryFlowExecutionContext.ResolveCharacterKeyIn(
+                CharacterIdBridge, RuntimeCharacters, characterId, null);
+            found = RuntimeCharacters.TryGetValue(recordKey, out var character);
+            return found ? character : null;
+        }
+
+        /// <summary>
+        /// The character record key for a character FILE id — a PURE BRIDGE LOOKUP,
+        /// deliberately NOT the resolution point (amendment A3(a)): it answers for any
+        /// indexed id whether or not the record is loaded, and never warns. An existence
+        /// query is not a degraded resolution, and the resolution point's fall-through
+        /// would answer a normalized spelling of the id instead of not-found. The key
+        /// comes back verbatim (lowercase, forward-slash — this plugin's store form).
+        /// </summary>
+        public string GetCharacterPathById(string characterId, out bool found)
+        {
+            if (!string.IsNullOrEmpty(characterId) &&
+                CharacterIdBridge.TryGetValue(characterId, out var recordKey))
+            {
+                found = true;
+                return recordKey;
+            }
+
+            found = false;
+            return "";
+        }
+
+        /// <summary>
+        /// Record keys of every LOADED character, in map order (no sort promise) — the
+        /// amendment A4 enumeration surface; see the component twin for why by-id
+        /// enumeration is deliberately not provided and why in this engine the loaded set
+        /// always equals the project's (merge loads never remove).
+        /// </summary>
+        public List<string> GetCharacterPaths()
+        {
+            return new List<string>(RuntimeCharacters.Keys);
+        }
+
+        /// <summary>
+        /// A character variable by character FILE id and variable NAME (amendment A1).
+        /// cf_name / cf_image alias the Name / Image builtins (amendment A2(a)); both
+        /// answer their STORED value verbatim (see the section header). Null, with a
+        /// warning, for an unresolvable id or an undeclared name.
+        /// </summary>
+        public StoryFlowVariant GetCharacterVariableById(string characterId, string variableName)
+        {
+            var character = GetCharacterById(characterId, out var found);
+            if (!found)
+            {
+                Debug.LogWarning($"[StoryFlow] GetCharacterVariableById: character id \"{characterId}\" not found.");
+                return null;
+            }
+
+            // First-tier aliases (the builtin arms below are case-insensitive like the
+            // component's — see StoryFlowCharacterTokens for the two-tier design).
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
+            {
+                return StoryFlowVariant.String(character.Name ?? "");
+            }
+            if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
+            {
+                return StoryFlowVariant.String(character.ImageAssetKey ?? "");
+            }
+
+            var v = character.FindVariableByName(variableName);
+            if (v != null)
+                return v.Value;
+
+            Debug.LogWarning($"[StoryFlow] GetCharacterVariableById: variable \"{variableName}\" not found on character id \"{characterId}\".");
+            return null;
+        }
+
+        /// <summary>
+        /// Sets a character variable by character FILE id and variable NAME. Warns and
+        /// no-ops when the character does not declare the variable — a write NEVER creates
+        /// one (amendment A3(b)). No builtin write arms, matching the component's
+        /// SetCharacterVariable (pre-P4 posture; the .sfd surface's character branch is
+        /// the API route that writes Name/Image).
+        /// </summary>
+        public void SetCharacterVariableById(string characterId, string variableName, StoryFlowVariant value)
+        {
+            var character = GetCharacterById(characterId, out var found);
+            if (!found)
+            {
+                Debug.LogWarning($"[StoryFlow] SetCharacterVariableById: character id \"{characterId}\" not found.");
+                return;
+            }
+
+            // Second-tier alias (the list search below is case-sensitive): only the
+            // reserved cf_ tokens rewrite — see RewriteCfTokensOnly for why.
+            variableName = StoryFlowCharacterTokens.RewriteCfTokensOnly(variableName);
+
+            var v = character.FindVariableByName(variableName);
+            if (v != null)
+            {
+                v.Value = value ?? new StoryFlowVariant();
+                // Also update the quick-lookup dictionary, as the component's twin does.
+                character.Variables[variableName] = v.Value;
+                return;
+            }
+
+            Debug.LogWarning($"[StoryFlow] SetCharacterVariableById: variable \"{variableName}\" not found on character id \"{characterId}\".");
         }
 
         // =====================================================================
