@@ -636,6 +636,156 @@ namespace StoryFlow.Editor
                     }
                 }
 
+                // --- Read localization.json ---
+                // THE TRANSLATIONS SIDECAR (localization spec §9), on the same degraded ladder
+                // as the character index above and for the same reason: absence is a FORMAT
+                // VERSION, not a fault.
+                //
+                // THE FILE-PRESENCE MARKER is the only branch this contract has. No
+                // localization.json beside the artifacts means a pre-localization export —
+                // source-only, byte-for-byte the behavior of every release before this one —
+                // and never a count of anything: a project whose author registered a language
+                // and translated nothing still exports FULL tables of source text, and that is
+                // a localized project. hasLocalization records which of the two a project is,
+                // because an absent sidecar and a sidecar with no rows are the same empty list
+                // once they are in C#.
+                //
+                // THE TABLES ARE FULL AND PRE-RESOLVED. Every §7 fallback was applied at
+                // export: an outdated row carries the OLD translation (user ruling 2), an
+                // untranslated or cleared one carries the source text, an orphan has no row at
+                // all. So nothing here computes a status or compares a hash, and the lookup
+                // that reads these tables holds no rule beyond the tiers in
+                // StoryFlowExecutionContext.LookUpLocalizedIn.
+                //
+                // THE ID SET IS THE SHIPPED SET — the ids that KEYED an artifact this export
+                // wrote. .sfui widget and dropdown strings have no rows here: .sfui documents
+                // never reach a plugin, and their text localizes in the HTML lane. Their
+                // absence is the contract, not a missing feature, and nothing downstream should
+                // infer a bug from it.
+                //
+                // The five-point registration list — like the two artifacts above, this one
+                // touches FIVE places, each breaking SILENTLY on its own if missed:
+                //   1. here: read localization.json and build the language block.
+                //   2. FindJsonScriptFiles: localization.json is excluded from the script
+                //      sweep, or it imports a second time as a garbage script asset.
+                //   3. CertifyProject: the condensed JSON and the #localization membership feed
+                //      the project hash, or a translation-only edit never invalidates
+                //      Project.asset (absent and present-but-empty MUST hash differently).
+                //   4. projectAsset.SetLocalization below: the assignment the runtime tables are
+                //      built from, and the container reset that keeps a same-session re-import
+                //      from serving the previous import's translations.
+                //   5. StoryFlowAssetPostprocessor: BOTH gates — the filename in
+                //      CouldBeStoryFlowFile and the root-key sniff in IsStoryFlowJson — or
+                //      dropping the file into the project triggers no re-import.
+                //
+                // Degraded ladder (warn text names the consequence): an ABSENT file stays
+                // silent; everything else — unreadable JSON, a MISSING schemaVersion, an
+                // UNSUPPORTED one, no strings object — warns once and skips, leaving the
+                // project source-only so strings keep resolving to their source text. Missing
+                // and unsupported are DISTINCT messages: reading the field with Value<string>()
+                // would answer null for both and collapse two different authoring mistakes into
+                // one warning.
+                string localizationCondensed = string.Empty;
+                bool hasLocalization = false;
+                string sourceLanguage = "en";
+                var languageEntries = new List<StoryFlowProjectAsset.LanguageEntry>();
+                var languageStringEntries = new List<StoryFlowProjectAsset.LanguageStringEntry>();
+                string localizationPath = Path.Combine(buildDirectory, "localization.json");
+                if (File.Exists(localizationPath))
+                {
+                    JObject localizationJson = null;
+                    try
+                    {
+                        localizationJson = JObject.Parse(File.ReadAllText(localizationPath));
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning("[StoryFlow] localization.json could not be parsed " +
+                                         $"({e.Message}). The language tables were skipped; " +
+                                         "strings keep resolving to their source text.");
+                    }
+
+                    if (localizationJson != null)
+                    {
+                        localizationCondensed = localizationJson.ToString(Newtonsoft.Json.Formatting.None);
+
+                        JToken schemaToken = localizationJson["schemaVersion"];
+                        string localizationSchemaVersion =
+                            schemaToken != null && schemaToken.Type == JTokenType.String
+                                ? schemaToken.ToString()
+                                : null;
+                        JObject localizationStrings = localizationJson.Value<JObject>("strings");
+
+                        if (schemaToken == null)
+                        {
+                            Debug.LogWarning("[StoryFlow] localization.json declares no schemaVersion " +
+                                             "(this plugin reads \"1\"). The language tables were " +
+                                             "skipped; strings keep resolving to their source text.");
+                        }
+                        else if (localizationSchemaVersion != "1")
+                        {
+                            Debug.LogWarning("[StoryFlow] localization.json declares schemaVersion " +
+                                             $"(\"{localizationSchemaVersion ?? schemaToken.ToString()}\"), " +
+                                             "which this plugin does not support (it reads \"1\"). The " +
+                                             "language tables were skipped; strings keep resolving to " +
+                                             "their source text.");
+                        }
+                        else if (localizationStrings == null)
+                        {
+                            Debug.LogWarning("[StoryFlow] localization.json carries no strings object. " +
+                                             "The language tables were skipped; strings keep resolving " +
+                                             "to their source text.");
+                        }
+                        else
+                        {
+                            // Past every rung: this project IS localized. Set before a single row
+                            // is counted, so a present-but-empty sidecar is still localized.
+                            hasLocalization = true;
+
+                            string declaredSource = localizationJson.Value<string>("sourceLanguage");
+                            if (!string.IsNullOrEmpty(declaredSource))
+                                sourceLanguage = declaredSource;
+
+                            // Registry ORDER is the author's and is preserved: it is the order a
+                            // picker draws.
+                            JArray declaredLanguages = localizationJson.Value<JArray>("languages");
+                            if (declaredLanguages != null)
+                            {
+                                foreach (var languageToken in declaredLanguages)
+                                {
+                                    if (!(languageToken is JObject languageObj)) continue;
+                                    string code = languageObj.Value<string>("code");
+                                    if (string.IsNullOrEmpty(code)) continue;
+                                    string label = languageObj.Value<string>("name");
+                                    languageEntries.Add(new StoryFlowProjectAsset.LanguageEntry
+                                    {
+                                        Code = code,
+                                        Name = string.IsNullOrEmpty(label) ? code : label
+                                    });
+                                }
+                            }
+
+                            foreach (var tableProp in localizationStrings.Properties())
+                            {
+                                if (!(tableProp.Value is JObject table)) continue;
+                                foreach (var rowProp in table.Properties())
+                                {
+                                    if (rowProp.Value.Type != JTokenType.String) continue;
+                                    // Ids are stored VERBATIM and are opaque: this plugin never
+                                    // parses one, and the only thing it does with one is look
+                                    // it up.
+                                    languageStringEntries.Add(new StoryFlowProjectAsset.LanguageStringEntry
+                                    {
+                                        Language = tableProp.Name,
+                                        Key = rowProp.Name,
+                                        Value = rowProp.Value.ToString()
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // --- Find and import script JSON files ---
                 var scriptReferences = new List<StoryFlowProjectAsset.ScriptReference>();
                 var scriptFiles = FindJsonScriptFiles(buildDirectory);
@@ -698,6 +848,12 @@ namespace StoryFlow.Editor
                 // runtime bridge (StoryFlowProjectAsset.CharacterIdBridge) is built from
                 // this.
                 projectAsset.SetCharacterIdEntries(characterIdEntries);
+                // Registration point 4 of 5 for localization - see the five-point registration
+                // list at the localization.json read site above. One setter for the whole
+                // block, so the marker can never survive without the tables it describes and a
+                // same-session re-import cannot serve the previous import's translations.
+                projectAsset.SetLocalization(
+                    hasLocalization, sourceLanguage, languageEntries, languageStringEntries);
                 projectAsset.GlobalVariableEntries = globalVariableEntries;
                 projectAsset.GlobalStringEntries = globalStringEntries;
 
@@ -728,7 +884,7 @@ namespace StoryFlow.Editor
                     CertifyProject(
                         projectJson.ToString(Newtonsoft.Json.Formatting.None),
                         globalVariablesCondensed, charactersCondensed, dataAssetsCondensed,
-                        characterIndexCondensed, projectAsset),
+                        characterIndexCondensed, localizationCondensed, projectAsset),
                     isNewProject,
                     hash => projectAsset.ImportedSourceHash = hash,
                     report);
@@ -1635,7 +1791,8 @@ namespace StoryFlow.Editor
         /// <summary>
         /// Finds all JSON script files in the build directory (excluding the top-level files
         /// that are read by name: project.json, global-variables.json, characters.json,
-        /// data-assets.json and character-index.json). Anything left here is imported as a
+        /// data-assets.json, character-index.json and localization.json). Anything left here
+        /// is imported as a
         /// script asset, so a file missing from this set becomes a garbage script.
         /// </summary>
         private static List<string> FindJsonScriptFiles(string buildDirectory)
@@ -1652,7 +1809,10 @@ namespace StoryFlow.Editor
                 // Registration point 2 of 5 for the character index - see the five-point
                 // registration list at the character-index.json read site in
                 // ImportProject.
-                "character-index.json"
+                "character-index.json",
+                // Registration point 2 of 5 for localization - see the five-point
+                // registration list at the localization.json read site in ImportProject.
+                "localization.json"
             };
 
             FindJsonFilesRecursive(buildDirectory, buildDirectory, excludedFiles, results);
@@ -2251,8 +2411,13 @@ namespace StoryFlow.Editor
         /// "2" -> "3" (P4 characters): the project asset gained the serialized
         /// CharacterIdEntries bridge — "the shape of anything written onto an imported
         /// asset" changed, which is this doc's bump rule.
+        ///
+        /// "3" -> "4" (localization §9): the project asset gained the serialized localization
+        /// block — the presence marker, the source language, the language registry and the
+        /// per-language tables — so a project asset written under 3 must re-parse to pick its
+        /// translations up.
         /// </summary>
-        private const string ParseSchemaVersion = "3";
+        private const string ParseSchemaVersion = "4";
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser
@@ -2411,7 +2576,7 @@ namespace StoryFlow.Editor
         }
 
         /// <summary>
-        /// The certified payload for the project asset: all four top-level JSON files plus
+        /// The certified payload for the project asset: all six top-level JSON files plus
         /// the membership the asset actually ended up holding. A script that failed to import
         /// leaves a different membership, so the project asset is rewritten and the next sync
         /// still sees an honest picture.
@@ -2423,7 +2588,8 @@ namespace StoryFlow.Editor
         /// </summary>
         private static string CertifyProject(
             string projectJson, string globalVariablesJson, string charactersJson,
-            string dataAssetsJson, string characterIndexJson, StoryFlowProjectAsset asset)
+            string dataAssetsJson, string characterIndexJson, string localizationJson,
+            StoryFlowProjectAsset asset)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(projectJson).Append('\n')
@@ -2438,7 +2604,13 @@ namespace StoryFlow.Editor
               // the character-index.json read site. The condensed JSON is empty for an
               // ABSENT file and "{...}" for a present-but-empty one, which is what keeps
               // the two states hash-distinguishable.
-              .Append(characterIndexJson);
+              .Append(characterIndexJson).Append('\n')
+              // Registration point 3 of 5 for localization (with the #localization section
+              // below) - see the five-point registration list at the localization.json read
+              // site. The condensed JSON is empty for an ABSENT file and "{...}" for a present
+              // one, which is what keeps the two states hash-distinguishable; a
+              // translation-only edit reaches Unity through this and nothing else.
+              .Append(localizationJson);
 
             sb.Append("\n#startup=").Append(CertifyReference(asset.StartupScript, "<none>"));
 
@@ -2472,6 +2644,15 @@ namespace StoryFlow.Editor
             {
                 sb.Append('\n').Append(entry.Id).Append('=').Append(entry.Path);
             }
+
+            // Like #characterIndex above, a pure function of the condensed sidecar already
+            // appended - what it adds is sensitivity to how this import DECIDED, so a build
+            // whose sidecar the degraded ladder refused certifies differently from one whose
+            // tables loaded.
+            sb.Append("\n#localization=").Append(asset.HasLocalization ? "1" : "0")
+              .Append('/').Append(asset.SourceLanguage ?? string.Empty)
+              .Append('/').Append(asset.LanguageEntries.Count)
+              .Append('/').Append(asset.LanguageStringEntries.Count);
 
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);
             sb.Append(ParseSchemaToken());

@@ -51,6 +51,52 @@ namespace StoryFlow.Data
         public List<GlobalVariableEntry> GlobalVariableEntries = new();
         public List<GlobalStringEntry> GlobalStringEntries = new();
 
+        /// <summary>
+        /// THE FILE-PRESENCE MARKER (localization spec §9): true when this project was
+        /// imported from a build that carried a localization.json beside its artifacts.
+        ///
+        /// A bool and not an "are there any tables" test ON PURPOSE. An absent sidecar and a
+        /// sidecar carrying no rows are the same empty list once they are in C#, and only one
+        /// of them is a pre-localization export. The contract branches on the FILE EXISTING,
+        /// never on a key count: an author who registered a language and translated nothing
+        /// still ships full tables of source text, and that is a localized project. False here
+        /// means source-only and ZERO behavior change — every lookup falls straight through to
+        /// the artifact tables it always used.
+        /// </summary>
+        public bool HasLocalization;
+
+        /// <summary>
+        /// The language the documents are AUTHORED in, and therefore the language the
+        /// artifacts' own strings blocks are keyed by — the second tier of the lookup. "en"
+        /// without a sidecar, which is exactly what every pre-localization export's strings
+        /// block carries.
+        /// </summary>
+        public string SourceLanguage = "en";
+
+        /// <summary>
+        /// The project's TARGET languages, in the author's registry order (the order a picker
+        /// draws). Never includes the source language, which has no table of its own.
+        /// </summary>
+        public List<LanguageEntry> LanguageEntries = new();
+
+        /// <summary>
+        /// The sidecar's per-language tables, flattened to one entry per (language, id) because
+        /// Unity cannot serialize a nested dictionary — rebuilt into <see cref="LanguageStrings"/>
+        /// exactly like <see cref="CharacterIdEntries"/> is rebuilt into the id bridge.
+        ///
+        /// FULL AND PRE-RESOLVED is the whole engine contract (§9): the export already applied
+        /// every fallback rule — an outdated row ships the OLD translation, an untranslated or
+        /// cleared one ships the source text, an orphan has no row at all — so this plugin
+        /// computes NO status, compares NO hash, and holds no rule beyond the lookup ladder in
+        /// StoryFlowExecutionContext.LookUpLocalizedIn.
+        ///
+        /// These ids are the ids that KEYED an engine artifact. .sfui widget and dropdown
+        /// strings have no rows here and never will: .sfui documents do not reach a plugin at
+        /// all and their text localizes in the HTML lane. Their absence is the contract, not a
+        /// missing feature.
+        /// </summary>
+        public List<LanguageStringEntry> LanguageStringEntries = new();
+
         // Resolved asset references (asset key → Unity object)
         [SerializeField] public List<ResolvedAssetEntry> ResolvedAssetEntries = new();
         [NonSerialized] private Dictionary<string, UnityEngine.Object> _resolvedAssets;
@@ -62,6 +108,7 @@ namespace StoryFlow.Data
         [NonSerialized] private Dictionary<string, string> _globalStrings;
         [NonSerialized] private Dictionary<string, StoryFlowDataAssetAsset> _dataAssets;
         [NonSerialized] private Dictionary<string, string> _characterIdBridge;
+        [NonSerialized] private Dictionary<string, Dictionary<string, string>> _languageStrings;
 
         [Serializable]
         public class ResolvedAssetEntry
@@ -115,6 +162,34 @@ namespace StoryFlow.Data
             public string Value;
         }
 
+        /// <summary>
+        /// One TARGET language of the localization sidecar (§9): the code its table is keyed
+        /// by, and the display label the author registered for it.
+        ///
+        /// The SOURCE language is not one of these. It is a code with no table at all — the
+        /// artifacts themselves carry the source text — so it appears in
+        /// StoryFlowManager.GetLanguages as a row whose Name is its Code, exactly as the HTML
+        /// runtime's getLanguages builds it.
+        /// </summary>
+        [Serializable]
+        public class LanguageEntry
+        {
+            /// <summary>The language code, and the key of this language's table ("fr", "es").</summary>
+            public string Code;
+
+            /// <summary>The display label the author registered ("French"), for a game's own picker.</summary>
+            public string Name;
+        }
+
+        /// <summary>One row of one language's table: the id, its text, and which language it is in.</summary>
+        [Serializable]
+        public class LanguageStringEntry
+        {
+            public string Language;
+            public string Key;
+            public string Value;
+        }
+
         #region Initialization
 
         private void OnEnable()
@@ -125,6 +200,7 @@ namespace StoryFlow.Data
             _globalStrings = null;
             _dataAssets = null;
             _characterIdBridge = null;
+            _languageStrings = null;
             _resolvedAssets = null;
         }
 
@@ -191,6 +267,22 @@ namespace StoryFlow.Data
             {
                 if (!string.IsNullOrEmpty(entry.Id) && !string.IsNullOrEmpty(entry.Path))
                     _characterIdBridge[entry.Id] = entry.Path;
+            }
+        }
+
+        private void RebuildLanguageStrings()
+        {
+            _languageStrings = new Dictionary<string, Dictionary<string, string>>();
+            foreach (var entry in LanguageStringEntries)
+            {
+                if (entry == null || string.IsNullOrEmpty(entry.Language) || string.IsNullOrEmpty(entry.Key))
+                    continue;
+                if (!_languageStrings.TryGetValue(entry.Language, out var table))
+                {
+                    table = new Dictionary<string, string>();
+                    _languageStrings[entry.Language] = table;
+                }
+                table[entry.Key] = entry.Value;
             }
         }
 
@@ -274,6 +366,19 @@ namespace StoryFlow.Data
             }
         }
 
+        /// <summary>
+        /// `language code` → that language's FULL, PRE-RESOLVED table, straight from the
+        /// sidecar. Empty for a project with no localization.json.
+        /// </summary>
+        public Dictionary<string, Dictionary<string, string>> LanguageStrings
+        {
+            get
+            {
+                if (_languageStrings == null) RebuildLanguageStrings();
+                return _languageStrings;
+            }
+        }
+
         public Dictionary<string, UnityEngine.Object> ResolvedAssets
         {
             get
@@ -311,6 +416,52 @@ namespace StoryFlow.Data
         public string GetGlobalString(string key)
         {
             return GlobalStrings.TryGetValue(key, out var value) ? value : null;
+        }
+
+        /// <summary>
+        /// THE OVERLAY TIER (localization spec §9), and the first step of every string lookup
+        /// in this plugin: the sidecar's row for <paramref name="key"/> in
+        /// <paramref name="languageCode"/>, or null when there is none.
+        ///
+        /// Null covers all four ways a row can be absent — no sidecar, an unknown code, the
+        /// SOURCE language (which has no table by construction), and an id this table does not
+        /// carry — and every one of them means the same thing to a caller: fall through to the
+        /// artifact's own source table. THE EMPTY-TEXT GUARD LIVES HERE AND NOWHERE ELSE: an
+        /// empty row reads as absent, because the export already turned a cleared translation
+        /// back into source text and this is the second net for a hand-edited sidecar.
+        /// </summary>
+        public string FindLocalizedString(string key, string languageCode)
+        {
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(languageCode)) return null;
+            if (!LanguageStrings.TryGetValue(languageCode, out var table)) return null;
+            if (!table.TryGetValue(key, out var text)) return null;
+            return string.IsNullOrEmpty(text) ? null : text;
+        }
+
+        /// <summary>
+        /// The code this project actually carries that matches <paramref name="code"/>, or
+        /// EMPTY when it carries none.
+        ///
+        /// Case-INSENSITIVE with the REGISTERED casing winning, matching the HTML runtime's
+        /// resolveLanguage and the store's own rule that a code IS a file name: "ES" and "es"
+        /// are one language, and the canonical form is the one the tables are keyed by. The
+        /// SOURCE language matches too — running in the authored language is a legitimate
+        /// choice, it simply has no table. A project with no sidecar therefore matches its
+        /// source language and nothing else.
+        /// </summary>
+        public string ResolveLanguageCode(string code)
+        {
+            if (string.IsNullOrEmpty(code)) return "";
+            if (!string.IsNullOrEmpty(SourceLanguage) &&
+                string.Equals(SourceLanguage, code, StringComparison.OrdinalIgnoreCase))
+                return SourceLanguage;
+            foreach (var language in LanguageEntries)
+            {
+                if (language != null && !string.IsNullOrEmpty(language.Code) &&
+                    string.Equals(language.Code, code, StringComparison.OrdinalIgnoreCase))
+                    return language.Code;
+            }
+            return "";
         }
 
         public List<string> GetAllScriptPaths()
@@ -356,6 +507,28 @@ namespace StoryFlow.Data
         {
             CharacterIdEntries = entries ?? new List<CharacterIdEntry>();
             _characterIdBridge = null;
+        }
+
+        /// <summary>
+        /// Replaces the whole localization block and invalidates the runtime tables. The
+        /// importer assigns through this rather than the fields because a re-import inside one
+        /// editor session gets no OnEnable — a directly assigned list would leave the
+        /// [NonSerialized] table serving the previous import's translations, which is the same
+        /// stale-bridge hazard <see cref="SetCharacterIdEntries"/> exists to prevent.
+        ///
+        /// The four move TOGETHER and are REPLACED, never appended to: a re-import of a build
+        /// that dropped its sidecar must leave a source-only project, not a stale claim to be
+        /// localized, and a second import in one session must not stack a second copy of every
+        /// row on top of the first.
+        /// </summary>
+        public void SetLocalization(bool hasLocalization, string sourceLanguage,
+            List<LanguageEntry> languages, List<LanguageStringEntry> strings)
+        {
+            HasLocalization = hasLocalization;
+            SourceLanguage = string.IsNullOrEmpty(sourceLanguage) ? "en" : sourceLanguage;
+            LanguageEntries = languages ?? new List<LanguageEntry>();
+            LanguageStringEntries = strings ?? new List<LanguageStringEntry>();
+            _languageStrings = null;
         }
 
         public void SetResolvedAsset(string key, UnityEngine.Object asset)

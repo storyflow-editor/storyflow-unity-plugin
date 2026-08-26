@@ -41,7 +41,14 @@ namespace StoryFlow
         [Tooltip("The script to run when StartDialogue() is called. If not set, uses the project's startup script.")]
         public StoryFlowScriptAsset Script;
 
-        [Tooltip("Language code for localized string lookup (e.g. \"en\", \"fr\", \"ja\").")]
+        /// <summary>
+        /// PRE-LOCALIZATION ONLY. It is the prefix into an artifact strings block that carries
+        /// more than one language, and it is still honored for a project exported before
+        /// localization existed. Once a project ships a localization.json the language is the
+        /// PLAYER'S and game-wide: StoryFlowManager.SetLanguage owns it and this field is
+        /// ignored. See <see cref="ActiveLanguageCode"/>.
+        /// </summary>
+        [Tooltip("Language code for localized string lookup (e.g. \"en\", \"fr\", \"ja\"). Ignored once the project ships a localization.json - StoryFlowManager.SetLanguage owns the language then.")]
         public string LanguageCode = "en";
 
         [Header("UI")]
@@ -696,24 +703,42 @@ namespace StoryFlow
         }
 
         /// <summary>
-        /// Resolves a string table key to localized text using the component's LanguageCode.
+        /// THE LANGUAGE every lookup on this component runs in (localization spec §9) — the
+        /// manager's once the loaded project carries a sidecar, this component's LanguageCode
+        /// otherwise. See StoryFlowExecutionContext.ActiveLanguageCodeFor.
+        /// </summary>
+        internal string ActiveLanguageCode()
+        {
+            return StoryFlowExecutionContext.ActiveLanguageCodeFor(ResolutionProject(), LanguageCode);
+        }
+
+        /// <summary>
+        /// The project a string lookup reads through: the live context's while one exists, the
+        /// manager's otherwise. Preserves the pre-localization precedence exactly — the
+        /// during-dialogue branch went through the context (and therefore its project), the
+        /// outside-dialogue branch through the manager's.
+        /// </summary>
+        private StoryFlowProjectAsset ResolutionProject()
+        {
+            return _context != null ? _context.Project : GetProject();
+        }
+
+        /// <summary>
+        /// Resolves a string table key to localized text in the component's active language.
         /// Works both during and outside of active dialogue.
+        ///
+        /// Runs the SAME ladder the execution context runs — one shared method, not a copy, so
+        /// a string cannot resolve one way inside dialogue and another way outside it. During
+        /// dialogue the current script's table joins the probe; outside there is no script, and
+        /// that is the only difference between the two doors. THE LOOKUP RUNS ON THE AUTHORED
+        /// TEMPLATE: any caller that interpolates does it on this result, never before it.
         /// </summary>
         private string ResolveString(string key)
         {
             if (string.IsNullOrEmpty(key)) return key;
-            var fullKey = LanguageCode + "." + key;
 
-            // During dialogue, context handles script + global string lookup
-            if (_context != null)
-                return _context.GetString(fullKey) ?? key;
-
-            // Outside dialogue, resolve through the project's global strings
-            var project = GetProject();
-            if (project != null)
-                return project.GetGlobalString(fullKey) ?? key;
-
-            return key;
+            return StoryFlowExecutionContext.LookUpLocalizedIn(
+                ResolutionProject(), _context?.CurrentScript, key, ActiveLanguageCode()) ?? key;
         }
 
         /// <summary>Gets a boolean variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>

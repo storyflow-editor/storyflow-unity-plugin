@@ -38,6 +38,14 @@ namespace StoryFlow
 
         [NonSerialized] internal HashSet<string> UsedOnceOnlyOptions = new();
 
+        // The language every StoryFlow string is read in (localization spec §9). "en" before a
+        // project is loaded, which is what every pre-localization export's strings are keyed by;
+        // InitializeProject then points it at the project's SOURCE language unless the player
+        // has already chosen a language the new project also carries. Unlike the tables it
+        // selects, this is not project content but the player's CHOICE, so it lives here rather
+        // than on the project asset and no mirror of it exists anywhere else.
+        [NonSerialized] private string _currentLanguage = "en";
+
         // The .sfd Data Asset store (engine contract §3). The SEED is rebuilt from the
         // project and never written to again; the OVERLAY holds this session's script
         // writes and is what a save persists. Both are handed to execution contexts by
@@ -195,6 +203,16 @@ namespace StoryFlow
         /// </summary>
         private void InitializeProject()
         {
+            // THE LANGUAGE FIRST, because everything seeded below is read in it. The player's
+            // choice SURVIVES a re-set of a project that still carries it (the HTML runtime's
+            // first-wins posture: re-installing content mid-game must not undo a choice); a
+            // project that does not carry the current code snaps to that project's source
+            // language, so a game can never be left reading a language nothing ships. For a
+            // project with no localization sidecar the only code that resolves is its source
+            // language, so this is "en" -> "en" and changes nothing.
+            var carried = Project.ResolveLanguageCode(_currentLanguage);
+            _currentLanguage = string.IsNullOrEmpty(carried) ? Project.SourceLanguage : carried;
+
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
             BuildDataAssetSeed();
@@ -556,6 +574,113 @@ namespace StoryFlow
         }
 
         // =====================================================================
+        // Localization (spec §9) — the player's language, game-wide
+        // =====================================================================
+        //
+        // ONE surface, not the mirrored pair the .sfd and character sections above carry. The
+        // language is a single game-wide value rather than per-variable state, so a second door
+        // on StoryFlowComponent would be two names for one field — the component keeps only its
+        // pre-localization LanguageCode, which a localized project ignores.
+
+        /// <summary>
+        /// Switches the language every StoryFlow string is read in. True when the game is now
+        /// reading <paramref name="languageCode"/>.
+        ///
+        /// AN UNKNOWN OR EMPTY CODE IS A NO-OP: it warns, changes nothing and returns false.
+        /// Falling back to the default instead would let a typo silently move the player out of
+        /// the language they picked, and a caller that wants to know can read
+        /// <see cref="GetLanguage"/>. The codes this accepts are exactly the rows
+        /// <see cref="GetLanguages"/> returns, matched case-insensitively with the REGISTERED
+        /// casing winning; a project with no localization sidecar accepts only its source
+        /// language, so this is a no-op there by construction rather than by a special case.
+        ///
+        /// WHAT MOVES, AND WHEN. Everything this plugin resolves AT READ TIME follows
+        /// immediately — dialogue titles, text, text blocks, option labels, string and enum
+        /// variable values, character string variables, map and array elements — because this
+        /// engine keeps string-table KEYS in its runtime state and resolves them per read. The
+        /// seed-time posture the sibling engines document therefore has almost no surface here:
+        /// initial values are not pre-resolved at load, so a mid-session switch reaches them
+        /// too. ONE EXCEPTION, and it is an IMPORT-time bake rather than a load-time seed: a
+        /// character's display NAME is resolved into the imported character asset (see
+        /// StoryFlowImporter.ImportCharacter), so a speaker label does not flip until the
+        /// project is re-imported. Character string VARIABLES are unaffected and do flip.
+        ///
+        /// PERSISTENCE IS THE GAME'S. This plugin keeps the choice for the SESSION only, and
+        /// deliberately: it has no player-settings lane of its own, and the save envelope
+        /// carries story state a slot owns (globals, characters, once-only options, the .sfd
+        /// overlay) — a language is not that kind of thing. It must survive with no save file
+        /// at all, apply before any save is loaded, and not differ per slot. The HTML runtime
+        /// reaches the same conclusion and keeps it beside its volume settings rather than in
+        /// the envelope. In Unity that lane already exists and belongs to the game: persist the
+        /// code with your own settings (PlayerPrefs or your own save) and call this once at
+        /// boot. It also survives <see cref="ResetAllState"/> for the same reason.
+        /// </summary>
+        public bool SetLanguage(string languageCode)
+        {
+            var next = Project != null ? Project.ResolveLanguageCode(languageCode) : "";
+            if (string.IsNullOrEmpty(next))
+            {
+                Debug.LogWarning($"[StoryFlow] SetLanguage: unknown language \"{languageCode}\", " +
+                                 $"staying on \"{_currentLanguage}\".");
+                return false;
+            }
+
+            if (next != _currentLanguage)
+            {
+                _currentLanguage = next;
+                Debug.Log($"[StoryFlow] Language set to \"{_currentLanguage}\".");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The language code every StoryFlow string is currently read in. The loaded project's
+        /// source language until set.
+        /// </summary>
+        public string GetLanguage()
+        {
+            return _currentLanguage;
+        }
+
+        /// <summary>
+        /// Every language the player can be switched to: the SOURCE language first, then the
+        /// author's registry order — the list a game's own language picker draws.
+        ///
+        /// The source row's Name is its Code: the registry stores a display label for target
+        /// languages only, because the source language's text lives in the documents
+        /// themselves. EMPTY for a project with no localization sidecar, which is how a game
+        /// asks "is this project localized at all" without reading a key count.
+        /// </summary>
+        public List<StoryFlowProjectAsset.LanguageEntry> GetLanguages()
+        {
+            var languages = new List<StoryFlowProjectAsset.LanguageEntry>();
+            if (Project == null || !Project.HasLocalization) return languages;
+
+            // Emitted only when there IS a source language, so a hand-edited sidecar with a
+            // blank one cannot produce a row a picker would draw and SetLanguage would refuse.
+            if (!string.IsNullOrEmpty(Project.SourceLanguage))
+            {
+                languages.Add(new StoryFlowProjectAsset.LanguageEntry
+                {
+                    Code = Project.SourceLanguage,
+                    Name = Project.SourceLanguage
+                });
+            }
+
+            foreach (var language in Project.LanguageEntries)
+            {
+                if (language == null || string.IsNullOrEmpty(language.Code)) continue;
+                languages.Add(new StoryFlowProjectAsset.LanguageEntry
+                {
+                    Code = language.Code,
+                    Name = string.IsNullOrEmpty(language.Name) ? language.Code : language.Name
+                });
+            }
+
+            return languages;
+        }
+
+        // =====================================================================
         // Public Accessors
         // =====================================================================
 
@@ -903,6 +1028,8 @@ namespace StoryFlow
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
             BuildDataAssetSeed();
+            // The active language deliberately SURVIVES, for the reason it survives a save load
+            // (spec §9): it is a player SETTING, not session state.
             UsedOnceOnlyOptions.Clear();
             Debug.Log("[StoryFlow] All shared state reset to project defaults.");
         }

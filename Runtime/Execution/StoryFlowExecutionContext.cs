@@ -52,6 +52,10 @@ namespace StoryFlow.Execution
 
         /// <summary>
         /// Language code for localized string lookup (e.g. "en"). Set by the owning StoryFlowComponent.
+        ///
+        /// PRE-LOCALIZATION ONLY. Once the loaded project ships a localization.json the language
+        /// is the PLAYER'S and game-wide, StoryFlowManager.SetLanguage owns it, and this field
+        /// is ignored — see <see cref="ActiveLanguageCode"/>.
         /// </summary>
         public string LanguageCode { get; set; } = "en";
 
@@ -903,6 +907,13 @@ namespace StoryFlow.Execution
         /// <summary>
         /// Looks up a string key, checking the current script's strings first,
         /// then the project's global strings.
+        ///
+        /// A RAW, EXACT-KEY probe: the caller supplies the full `code.id` table key and no
+        /// language tier runs. It is NOT the localized door — <see cref="ResolveStringKey"/>
+        /// and <see cref="LookUpLocalized"/> are, and they own the whole ladder (§9). A caller
+        /// that builds its own `LanguageCode + "." + key` here is bypassing the overlay and the
+        /// source-table fall-through, which is exactly the silent defect
+        /// <see cref="LookUpLocalizedIn"/> exists to make impossible.
         /// </summary>
         public string GetString(string key)
         {
@@ -926,17 +937,134 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
+        /// THE ONE STRING RESOLUTION LADDER (localization spec §9), shared by both doors this
+        /// plugin has — this context's <see cref="ResolveStringKey"/> / <see cref="LookUpLocalized"/>
+        /// during dialogue and StoryFlowComponent.ResolveString outside it — for the same
+        /// reason <see cref="ResolveCharacterKeyIn"/> is shared: a second lookup that could
+        /// drift never exists. The two doors differ ONLY in whether a current script is passed,
+        /// so the difference is an argument rather than a second ladder. (The Unreal port keeps
+        /// two ladders because its script probe interleaves differently; this one does not, so
+        /// sharing is the correct shape here.)
+        ///
+        /// Returns null when nothing anywhere carries the id — callers apply their own miss
+        /// policy (the raw value, or empty for a dialogue field). The tiers:
+        ///
+        ///  1. THE LOCALIZATION OVERLAY: the sidecar's row for this id in the language being
+        ///     read. Absent for a pre-localization export, for the source language and for an
+        ///     id the sidecar does not carry — all of which fall through. The tables are FULL
+        ///     and PRE-RESOLVED, so nothing here computes a status or compares a hash.
+        ///  2. THE KEYING ARTIFACT'S OWN TABLE, current script first then the project globals
+        ///     characters.json merges into. The language-prefixed probe comes FIRST and is the
+        ///     PRE-LOCALIZATION behavior kept exactly as it was: an artifact strings block may
+        ///     itself carry more than one language block and the importer flattens each to
+        ///     `code.key`. The source-language probe beside it is the step the sidecar makes
+        ///     necessary — every export this editor writes keys its artifact strings by the
+        ///     source language alone, so once the language being read is a target language the
+        ///     first probe cannot hit and this is the fall-through the contract names
+        ///     ("-> the keying artifact's own strings.en"). The two probes are the SAME key
+        ///     whenever the codes agree, which is every pre-localization project; the redundant
+        ///     second lookup is the price of leaving tier 2's first probe untouched.
+        ///  3. the caller's miss policy (never a lookup failure a caller has to test for).
+        ///
+        /// THE LOOKUP RUNS ON THE AUTHORED TEMPLATE. Every caller that interpolates
+        /// `{Variable}` tokens calls StoryFlowInterpolation.Interpolate on the RESULT of this
+        /// function, never the other way round — a translated line is authored with the same
+        /// tokens as the source line, so interpolating first would hand this lookup a string no
+        /// table was ever keyed by. That failure is invisible: the text still renders, in the
+        /// source language, and only for lines that happen to carry a token.
+        /// </summary>
+        internal static string LookUpLocalizedIn(
+            StoryFlowProjectAsset project, StoryFlowScriptAsset script, string key, string languageCode)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+
+            // TIER 1 — the overlay. The empty-text guard lives inside FindLocalizedString.
+            if (project != null)
+            {
+                var localized = project.FindLocalizedString(key, languageCode);
+                if (localized != null) return localized;
+            }
+
+            // TIER 2 — the artifact's own table, legacy prefixed probe first.
+            var direct = LookUpExactIn(project, script, languageCode + "." + key);
+            if (direct != null) return direct;
+
+            var sourceLanguage = project != null ? project.SourceLanguage : null;
+            if (!string.IsNullOrEmpty(sourceLanguage) && sourceLanguage != languageCode)
+            {
+                var fromSource = LookUpExactIn(project, script, sourceLanguage + "." + key);
+                if (fromSource != null) return fromSource;
+            }
+
+            return null;
+        }
+
+        /// <summary>One exact table key, current script before project globals.</summary>
+        private static string LookUpExactIn(
+            StoryFlowProjectAsset project, StoryFlowScriptAsset script, string exactKey)
+        {
+            if (script != null)
+            {
+                var scriptStr = script.GetString(exactKey);
+                if (scriptStr != null) return scriptStr;
+            }
+            if (project != null)
+            {
+                var globalStr = project.GetGlobalString(exactKey);
+                if (globalStr != null) return globalStr;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// THE LANGUAGE any lookup runs in (localization spec §9), for a given project.
+        ///
+        /// The MANAGER owns it whenever the loaded project carries a localization sidecar,
+        /// because a language is the player's and game-wide, not a per-context or per-actor
+        /// setting. Without a sidecar there is nothing to switch to and the caller's own
+        /// pre-localization LanguageCode keeps its old meaning, so a project exported before
+        /// localization existed behaves EXACTLY as it did — the presence of the file is the
+        /// only branch, never a key count.
+        /// </summary>
+        internal static string ActiveLanguageCodeFor(StoryFlowProjectAsset project, string fallback)
+        {
+            if (project != null && project.HasLocalization)
+            {
+                var manager = StoryFlowManager.Instance;
+                if (manager != null && manager.GetProject() == project)
+                    return manager.GetLanguage();
+                return project.SourceLanguage;
+            }
+            return fallback;
+        }
+
+        /// <summary>The language this context's lookups run in — see <see cref="ActiveLanguageCodeFor"/>.</summary>
+        public string ActiveLanguageCode => ActiveLanguageCodeFor(Project, LanguageCode);
+
+        /// <summary>
+        /// The ladder above in this context's language, or null when nothing carries the id.
+        /// The dialogue node handler's door: a dialogue field that resolves nowhere renders
+        /// EMPTY rather than echoing its id, which is this engine's long-standing shape.
+        /// </summary>
+        public string LookUpLocalized(string key)
+        {
+            return LookUpLocalizedIn(Project, CurrentScript, key, ActiveLanguageCode);
+        }
+
+        /// <summary>
         /// Resolves a string key through the localized strings dictionary.
         /// The JSON export stores all string-type values (variable defaults, inline node values,
         /// array elements) as keys into the strings table. This method resolves a key to its
         /// actual text, falling back to the raw value if the key is not found.
+        ///
+        /// NEVER null and never an accidental empty string: a value that keyed no table
+        /// anywhere is its own text.
         /// </summary>
         public string ResolveStringKey(string key)
         {
             if (string.IsNullOrEmpty(key)) return key;
 
-            var resolved = GetString(LanguageCode + "." + key);
-            return resolved ?? key;
+            return LookUpLocalized(key) ?? key;
         }
 
         // =====================================================================

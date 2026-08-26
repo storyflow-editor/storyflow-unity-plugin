@@ -96,9 +96,12 @@ namespace StoryFlow.Editor
             // point 5 of 5 for the character index (with the root-key sniff below) - see
             // the five-point registration list at the character-index.json read site in
             // StoryFlowImporter.ImportProject.
+            // localization.json is registration point 5 of 5 for localization (with the
+            // root-key sniff below) - see the five-point registration list at the
+            // localization.json read site in StoryFlowImporter.ImportProject.
             if (fileName == "project.json" || fileName == "global-variables.json" ||
                 fileName == "characters.json" || fileName == "data-assets.json" ||
-                fileName == "character-index.json")
+                fileName == "character-index.json" || fileName == "localization.json")
                 return true;
 
             // Files in a build/ directory (StoryFlow editor exports here)
@@ -152,6 +155,14 @@ namespace StoryFlow.Editor
                 // in CouldBeStoryFlowFile) - see the five-point registration list at the
                 // character-index.json read site in StoryFlowImporter.ImportProject.
                 if (json.ContainsKey("schemaVersion") && json.ContainsKey("characters"))
+                    return true;
+
+                // localization.json pattern: "sourceLanguage" at root — the only export file
+                // that carries it, so no second key is needed to tell it apart. Registration
+                // point 5 of 5 for localization (with the filename gate in
+                // CouldBeStoryFlowFile) - see the five-point registration list at the
+                // localization.json read site in StoryFlowImporter.ImportProject.
+                if (json.ContainsKey("sourceLanguage"))
                     return true;
 
                 // characters.json pattern: array of character objects

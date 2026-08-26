@@ -69,12 +69,20 @@ namespace StoryFlow.Execution.NodeHandlers
                 state.Character = new StoryFlowCharacterData();
             }
 
-            // 2. Resolve title
+            // 2. Resolve title.
+            //
+            // THE AUTHORED-TEMPLATE INVARIANT (localization spec §9) governs every field below:
+            // the table lookup runs FIRST and Interpolate runs on its RESULT. A translated line
+            // is authored with the same {Variable} tokens as the source line, so interpolating
+            // first would hand the lookup a string no table was ever keyed by — and that
+            // failure is invisible, because the text still renders, in the source language,
+            // only for lines that happen to carry a token. LookUpLocalized is the whole ladder;
+            // never rebuild `LanguageCode + "." + key` here.
             var titleKey = node.GetData("title");
             string rawTitle = null;
             if (!string.IsNullOrEmpty(titleKey))
             {
-                rawTitle = context.GetString(component.LanguageCode + "." + titleKey);
+                rawTitle = context.LookUpLocalized(titleKey);
             }
             state.Title = !string.IsNullOrEmpty(rawTitle)
                 ? StoryFlowInterpolation.Interpolate(rawTitle, context)
@@ -85,7 +93,7 @@ namespace StoryFlow.Execution.NodeHandlers
             string rawText = null;
             if (!string.IsNullOrEmpty(textKey))
             {
-                rawText = context.GetString(component.LanguageCode + "." + textKey);
+                rawText = context.LookUpLocalized(textKey);
             }
             state.Text = !string.IsNullOrEmpty(rawText)
                 ? StoryFlowInterpolation.Interpolate(rawText, context)
@@ -164,7 +172,7 @@ namespace StoryFlow.Execution.NodeHandlers
                         string blockRawText = null;
                         if (!string.IsNullOrEmpty(blockTextKey))
                         {
-                            blockRawText = context.GetString(component.LanguageCode + "." + blockTextKey);
+                            blockRawText = context.LookUpLocalized(blockTextKey);
                         }
                         var interpolated = !string.IsNullOrEmpty(blockRawText)
                             ? StoryFlowInterpolation.Interpolate(blockRawText, context)
@@ -220,7 +228,7 @@ namespace StoryFlow.Execution.NodeHandlers
                         string optRawText = null;
                         if (!string.IsNullOrEmpty(optTextKey))
                         {
-                            optRawText = context.GetString(component.LanguageCode + "." + optTextKey);
+                            optRawText = context.LookUpLocalized(optTextKey);
                         }
                         var optText = !string.IsNullOrEmpty(optRawText)
                             ? StoryFlowInterpolation.Interpolate(optRawText, context)
