@@ -962,8 +962,9 @@ namespace StoryFlow.Execution
         ///     source language alone, so once the language being read is a target language the
         ///     first probe cannot hit and this is the fall-through the contract names
         ///     ("-> the keying artifact's own strings.en"). The two probes are the SAME key
-        ///     whenever the codes agree, which is every pre-localization project; the redundant
-        ///     second lookup is the price of leaving tier 2's first probe untouched.
+        ///     whenever the codes agree, which is every pre-localization project, so the second
+        ///     one is SKIPPED in that case rather than repeated — unlike the Unreal port, which
+        ///     computes and probes both keys unconditionally.
         ///  3. the caller's miss policy (never a lookup failure a caller has to test for).
         ///
         /// THE LOOKUP RUNS ON THE AUTHORED TEMPLATE. Every caller that interpolates
