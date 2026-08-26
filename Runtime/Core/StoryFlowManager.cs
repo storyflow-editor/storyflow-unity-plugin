@@ -414,8 +414,9 @@ namespace StoryFlow
         // call refused), and suppressing the second on the id lane would silence the
         // only line that names the call.
         //
-        // TWO deliberate asymmetries against the component's five, both this surface's
-        // existing precedents rather than new rules:
+        // THREE deliberate postures, each an existing precedent rather than a new rule —
+        // the first two asymmetries against the component's five, the third shared WITH
+        // them:
         //  - VALUES COME BACK STORED, VERBATIM: a Name that is a string-table key stays a
         //    key, exactly as ExportState and the .sfd surface's character branch answer
         //    it. Language resolution is a component concern (LanguageCode lives there), so
@@ -423,6 +424,11 @@ namespace StoryFlow
         //  - NO EVENTS: the manager has none to raise, the same way its .sfd setters
         //    invalidate no caches (and amendment A2(b) keeps OnCharacterVariableChanged
         //    node-lane only regardless).
+        //  - LIVE VARIANTS out of the variable getter: a declared variable's variant
+        //    comes back LIVE — mutating it writes through to the character — and only
+        //    the builtin arms build fresh ones. Unlike the .sfd surface above, this
+        //    getter does not detach: the component's pre-P4 GetCharacterVariable never
+        //    did, and both ById twins inherit that ownership.
 
         /// <summary>
         /// The live runtime character a character FILE id resolves to, through the id
@@ -436,7 +442,7 @@ namespace StoryFlow
             var recordKey = StoryFlowExecutionContext.ResolveCharacterKeyIn(
                 CharacterIdBridge, RuntimeCharacters, characterId, null);
             found = RuntimeCharacters.TryGetValue(recordKey, out var character);
-            return found ? character : null;
+            return character;
         }
 
         /// <summary>
@@ -483,6 +489,11 @@ namespace StoryFlow
         /// component's pre-P4 path APIs — GetCharacterVariable always had the
         /// case-insensitive builtin arms, SetCharacterVariable never did — not an
         /// accident of this mirror (see StoryFlowCharacterTokens' two-tier design).
+        ///
+        /// OWNERSHIP: a declared variable's variant comes back LIVE — mutating it writes
+        /// through to the character — while the builtin arms build fresh variants. Unlike
+        /// the .sfd surface above, this getter does not detach (the pre-P4 path API's
+        /// ownership, inherited).
         /// </summary>
         public StoryFlowVariant GetCharacterVariableById(string characterId, string variableName)
         {

@@ -1017,6 +1017,11 @@ namespace StoryFlow
         /// Id twin of <see cref="GetCharacterVariable"/> — a pure delegate, since the path
         /// API already resolves ids through the one point. cf_name / cf_image alias the
         /// Name / Image builtins here too (amendment A2(a)).
+        ///
+        /// OWNERSHIP: a declared variable's variant comes back LIVE — mutating it writes
+        /// through to the character — while the builtin arms build fresh variants. Unlike
+        /// the .sfd surface below, this getter does not detach (the pre-P4 path API's
+        /// ownership, inherited).
         /// </summary>
         public StoryFlowVariant GetCharacterVariableById(string characterId, string variableName)
         {
