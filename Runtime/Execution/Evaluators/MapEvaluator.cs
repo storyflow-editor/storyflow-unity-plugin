@@ -288,21 +288,26 @@ namespace StoryFlow.Execution
 
             var valueType = node.GetData("valueType");
             var handleSuffix = valueType + "-" + optionId;
-            switch (valueType)
+            // valueType is a wire token — resolve it through the shared StoryFlowWireTypes
+            // table instead of a hand-listed copy. An unknown token keeps this site's
+            // legacy default-arm behavior below (string), same as the old switch.
+            if (!StoryFlowWireTypes.TryParseWireType(valueType, out var declaredType))
+                declaredType = StoryFlowVariableType.String;
+            switch (declaredType)
             {
-                case "boolean":
+                case StoryFlowVariableType.Boolean:
                     value.SetBool(StoryFlowEvaluator.EvaluateBooleanWithDefault(
                         ctx, node.Id, handleSuffix, node.GetDataBool("value")));
                     break;
-                case "integer":
+                case StoryFlowVariableType.Integer:
                     value.SetInt(StoryFlowEvaluator.EvaluateIntegerWithDefault(
                         ctx, node.Id, handleSuffix, node.GetDataInt("value")));
                     break;
-                case "float":
+                case StoryFlowVariableType.Float:
                     value.SetFloat(StoryFlowEvaluator.EvaluateFloatWithDefault(
                         ctx, node.Id, handleSuffix, node.GetDataFloat("value")));
                     break;
-                case "enum":
+                case StoryFlowVariableType.Enum:
                 {
                     var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
                     var sourceNode = edge != null ? ctx.CurrentScript.GetNode(edge.Source) : null;
@@ -320,21 +325,19 @@ namespace StoryFlow.Execution
                     }
                     break;
                 }
-                case "image":
-                case "character":
-                case "audio":
+                case StoryFlowVariableType.Image:
+                case StoryFlowVariableType.Character:
+                case StoryFlowVariableType.Audio:
                 {
                     // Asset-key values flow through the string evaluator but keep their
                     // declared type (matches ArrayNodeHandler.EvaluateElementValue).
                     var val = StoryFlowEvaluator.EvaluateStringWithDefault(
                         ctx, node.Id, handleSuffix, node.GetData("value"));
-                    value.Type = valueType == "image" ? StoryFlowVariableType.Image
-                        : valueType == "character" ? StoryFlowVariableType.Character
-                        : StoryFlowVariableType.Audio;
+                    value.Type = declaredType;
                     value.StringValue = val ?? "";
                     break;
                 }
-                default: // string
+                default: // string (a map value pin never declares "map")
                     value.SetString(StoryFlowEvaluator.EvaluateStringWithDefault(
                         ctx, node.Id, handleSuffix, node.GetData("value")));
                     break;

@@ -246,7 +246,10 @@ namespace StoryFlow.Data
     /// spawn-time type SNAPSHOT (wire strings, as exported) against a seed declaration
     /// (an enum), while the importer converts the same strings while building assets.
     /// Two tables would be two chances to drift, and a type this table did not know would
-    /// silently become a different type on one side than on the other.
+    /// silently become a different type on one side than on the other. The runtime
+    /// evaluators (EvaluateTyped/EvaluateTypedArray, map value inputs) and the character
+    /// write gate resolve their tokens here too — they used to hand-list the vocabulary,
+    /// which was four extra chances to drift when a type is added.
     ///
     /// Try-shaped on purpose. Callers disagree about what an unknown type means: the
     /// importer warns and falls back to Boolean (an old export with a type this build

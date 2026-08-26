@@ -123,9 +123,11 @@ namespace StoryFlow.Execution.NodeHandlers
             // Declared-type gate (characters contract §5, type-mismatch-write-refused):
             // HTML's setCharacterVariableValue refuses when variable.type !== variableType,
             // so a mismatched write is skipped, never coerced. Same rule here against the
-            // DECLARED type. A variableType token this map does not know keeps the legacy
-            // default-arm behavior below, unchanged.
-            if (TryParseWireTypeToken(variableType, out var declaredWriteType) && targetVar.Type != declaredWriteType)
+            // DECLARED type, with the token resolved through the shared StoryFlowWireTypes
+            // table. A token the table does not know keeps the legacy default-arm behavior
+            // below, unchanged. The map arm never reaches this gate: it returned above,
+            // before the scalar path.
+            if (StoryFlowWireTypes.TryParseWireType(variableType, out var declaredWriteType) && targetVar.Type != declaredWriteType)
             {
                 Debug.LogWarning($"[StoryFlow] SetCharacterVar: variable '{variableName}' on '{characterPath}' is {targetVar.Type} but the write declares '{variableType}' - refused (node {node.Id}).");
                 FollowFlowOrFallthrough(component, context, node);
@@ -242,28 +244,6 @@ namespace StoryFlow.Execution.NodeHandlers
             component.BroadcastCharacterVariableChanged(characterPath, variableName, targetVar.Value);
 
             FollowFlowOrFallthrough(component, context, node);
-        }
-
-        /// <summary>
-        /// The wire's variableType tokens (the exporter's lowercase vocabulary) mapped to
-        /// the declared-type enum, for the gate above. False for unknown tokens - those
-        /// keep the pre-gate fall-through. The map arm never reaches this: it gates
-        /// itself on the declared map type before the scalar path.
-        /// </summary>
-        private static bool TryParseWireTypeToken(string token, out StoryFlowVariableType type)
-        {
-            switch (token)
-            {
-                case "boolean": type = StoryFlowVariableType.Boolean; return true;
-                case "integer": type = StoryFlowVariableType.Integer; return true;
-                case "float": type = StoryFlowVariableType.Float; return true;
-                case "string": type = StoryFlowVariableType.String; return true;
-                case "enum": type = StoryFlowVariableType.Enum; return true;
-                case "image": type = StoryFlowVariableType.Image; return true;
-                case "audio": type = StoryFlowVariableType.Audio; return true;
-                case "character": type = StoryFlowVariableType.Character; return true;
-                default: type = default; return false;
-            }
         }
 
         private static void FollowFlowOrFallthrough(StoryFlowComponent component, StoryFlowExecutionContext context, StoryFlowNode node)

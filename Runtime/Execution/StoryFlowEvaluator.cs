@@ -313,71 +313,57 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
-        /// Evaluates a typed value from an input edge based on a type name string
+        /// Evaluates a typed value from an input edge based on a wire type token
         /// (e.g. "boolean", "integer", "float", "string", "enum", "image", "audio", "character").
+        /// Tokens resolve through StoryFlowWireTypes — the one shared table for the
+        /// exporter's vocabulary — with scalars delegating to the enum overload above.
+        /// An unknown token keeps this site's legacy result: an empty variant.
         /// </summary>
         public static StoryFlowVariant EvaluateTyped(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string typeName)
         {
-            switch (typeName)
+            if (!StoryFlowWireTypes.TryParseWireType(typeName, out var type))
+                return new StoryFlowVariant();
+
+            if (type == StoryFlowVariableType.Map)
             {
-                case "boolean":
-                    return StoryFlowVariant.Bool(EvaluateBoolean(ctx, nodeId, targetHandleSuffix));
-                case "integer":
-                    return StoryFlowVariant.Int(EvaluateInteger(ctx, nodeId, targetHandleSuffix));
-                case "float":
-                    return StoryFlowVariant.Float(EvaluateFloat(ctx, nodeId, targetHandleSuffix));
-                case "string":
-                    return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
-                case "enum":
-                    return StoryFlowVariant.Enum(EvaluateEnum(ctx, nodeId, targetHandleSuffix));
-                case "image":
-                case "audio":
-                case "character":
-                    // Image, audio, and character types are stored as string paths/keys
-                    return StoryFlowVariant.String(EvaluateString(ctx, nodeId, targetHandleSuffix));
-                case "map":
-                {
-                    // RunScript map parameters. Their handles ("map-param-{id}") carry no
-                    // key/value types — the editor's scriptInterface does not bake them in —
-                    // so resolution goes through the explicit-handle map resolver. Maps
-                    // cross the call boundary BY VALUE (the HTML runtime's getTypedInput
-                    // hands over `new Map(...)`): deep-copy the entries so the callee's
-                    // variable never aliases the caller's storage. No edge → null so the
-                    // caller skips the param and the callee keeps its default (HTML's
-                    // `undefined` skip); wired-but-unresolved → empty map (HTML's
-                    // getMapInput empty-Map fallback). SetMap types the callee's variant.
-                    var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
-                    if (edge == null) return null;
-                    var node = ctx.CurrentScript.GetNode(nodeId);
-                    var sourceVar = MapEvaluator.ResolveMapInputVariableByHandle(
-                        ctx, node, targetHandleSuffix, out _);
-                    var variant = new StoryFlowVariant();
-                    variant.SetMap(MapEvaluator.CopyEntries(sourceVar?.Value.GetMap()));
-                    return variant;
-                }
-                default:
-                    return new StoryFlowVariant();
+                // RunScript map parameters. Their handles ("map-param-{id}") carry no
+                // key/value types — the editor's scriptInterface does not bake them in —
+                // so resolution goes through the explicit-handle map resolver. Maps
+                // cross the call boundary BY VALUE (the HTML runtime's getTypedInput
+                // hands over `new Map(...)`): deep-copy the entries so the callee's
+                // variable never aliases the caller's storage. No edge → null so the
+                // caller skips the param and the callee keeps its default (HTML's
+                // `undefined` skip); wired-but-unresolved → empty map (HTML's
+                // getMapInput empty-Map fallback). SetMap types the callee's variant.
+                var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
+                if (edge == null) return null;
+                var node = ctx.CurrentScript.GetNode(nodeId);
+                var sourceVar = MapEvaluator.ResolveMapInputVariableByHandle(
+                    ctx, node, targetHandleSuffix, out _);
+                var variant = new StoryFlowVariant();
+                variant.SetMap(MapEvaluator.CopyEntries(sourceVar?.Value.GetMap()));
+                return variant;
             }
+
+            // Scalars share the enum overload above (image/audio/character stay
+            // string-path evaluation there, same as the old hand-listed cases).
+            return EvaluateTyped(ctx, nodeId, targetHandleSuffix, type);
         }
 
         /// <summary>
-        /// Evaluates a typed array value from an input edge based on a type name string.
+        /// Evaluates a typed array value from an input edge based on a wire type token
+        /// (resolved through the shared StoryFlowWireTypes table).
         /// Returns a StoryFlowVariant with ArrayValue populated, or null if no input edge.
         /// </summary>
         public static StoryFlowVariant EvaluateTypedArray(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string typeName)
         {
-            StoryFlowVariableType elementType;
-            switch (typeName)
+            // Legacy default arm: unknown tokens fall back to String elements. So does
+            // "map" — the shared table knows it, but this site's hand-rolled switch never
+            // listed it (the format has no array-of-map).
+            if (!StoryFlowWireTypes.TryParseWireType(typeName, out var elementType)
+                || elementType == StoryFlowVariableType.Map)
             {
-                case "boolean": elementType = StoryFlowVariableType.Boolean; break;
-                case "integer": elementType = StoryFlowVariableType.Integer; break;
-                case "float":   elementType = StoryFlowVariableType.Float;   break;
-                case "string":  elementType = StoryFlowVariableType.String;  break;
-                case "enum":    elementType = StoryFlowVariableType.Enum;    break;
-                case "image":   elementType = StoryFlowVariableType.Image;   break;
-                case "audio":   elementType = StoryFlowVariableType.Audio;   break;
-                case "character": elementType = StoryFlowVariableType.Character; break;
-                default:        elementType = StoryFlowVariableType.String;  break;
+                elementType = StoryFlowVariableType.String;
             }
 
             var array = ArrayEvaluator.EvaluateTypedArray(ctx, nodeId, targetHandleSuffix, elementType);
