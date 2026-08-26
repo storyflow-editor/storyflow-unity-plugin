@@ -548,6 +548,92 @@ namespace StoryFlow.Editor
                     }
                 }
 
+                // --- Read character-index.json ---
+                // The P4 character id bridge (characters engine contract §3): character FILE
+                // id -> characters.json record key. Values are normalized ONCE here through
+                // StoryFlowPathNormalizer.NormalizeCharacterPath: the wire ships the
+                // exporter's lowercase-BACKSLASH record keys, this plugin's character store
+                // keys are lowercase-FORWARD-slash, and backslash->forward is exactly what
+                // that one existing normalizer does. Lookups use bridge values verbatim —
+                // never normalize at lookup time, never add a second normalizer.
+                //
+                // Like data-assets.json, this artifact touches FIVE places, each breaking
+                // SILENTLY on its own if missed when the format changes:
+                //   1. here: read character-index.json and build the id entries.
+                //   2. FindJsonScriptFiles: character-index.json is excluded from the script
+                //      sweep, or it imports a second time as a garbage script asset.
+                //   3. CertifyProject: the condensed JSON and the #characterIndex membership
+                //      feed the project hash, or an index-only edit never invalidates
+                //      Project.asset (absent and empty-map MUST hash differently).
+                //   4. projectAsset.SetCharacterIdEntries below: the assignment the runtime
+                //      bridge is built from; without it every id lookup is a dead reference.
+                //   5. StoryFlowAssetPostprocessor: BOTH gates — the filename in
+                //      CouldBeStoryFlowFile and the "schemaVersion"+"characters" root-key
+                //      sniff in IsStoryFlowJson — or dropping the file into the project
+                //      triggers no re-import.
+                //
+                // Degraded ladder (warn text names the consequence): an ABSENT file is a
+                // pre-P4 export and stays silent; a present file with an empty characters
+                // map is a P4 project with no characters and is equally fine; everything
+                // else — unreadable JSON, unknown or missing schemaVersion, no characters
+                // object — warns once and skips, leaving the bridge empty so characters
+                // keep resolving by path.
+                string characterIndexCondensed = string.Empty;
+                var characterIdEntries = new List<StoryFlowProjectAsset.CharacterIdEntry>();
+                string characterIndexPath = Path.Combine(buildDirectory, "character-index.json");
+                if (File.Exists(characterIndexPath))
+                {
+                    JObject characterIndexJson = null;
+                    try
+                    {
+                        characterIndexJson = JObject.Parse(File.ReadAllText(characterIndexPath));
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning("[StoryFlow] character-index.json could not be parsed " +
+                                         $"({e.Message}). The character id bridge was skipped; " +
+                                         "characters keep resolving by path.");
+                    }
+
+                    if (characterIndexJson != null)
+                    {
+                        characterIndexCondensed = characterIndexJson.ToString(Newtonsoft.Json.Formatting.None);
+
+                        string indexSchemaVersion = characterIndexJson.Value<string>("schemaVersion");
+                        JObject indexCharacters = characterIndexJson.Value<JObject>("characters");
+                        if (indexSchemaVersion != "1")
+                        {
+                            Debug.LogWarning("[StoryFlow] character-index.json has an unknown schemaVersion " +
+                                             $"(\"{indexSchemaVersion ?? "<missing>"}\"; this plugin reads \"1\"). " +
+                                             "The character id bridge was skipped; characters keep " +
+                                             "resolving by path.");
+                        }
+                        else if (indexCharacters == null)
+                        {
+                            Debug.LogWarning("[StoryFlow] character-index.json carries no characters object. " +
+                                             "The character id bridge was skipped; characters keep " +
+                                             "resolving by path.");
+                        }
+                        else
+                        {
+                            foreach (var indexProp in indexCharacters.Properties())
+                            {
+                                if (indexProp.Value.Type != JTokenType.String) continue;
+
+                                string recordKey = StoryFlowPathNormalizer.NormalizeCharacterPath(
+                                    indexProp.Value.ToString());
+                                if (string.IsNullOrEmpty(recordKey)) continue;
+
+                                characterIdEntries.Add(new StoryFlowProjectAsset.CharacterIdEntry
+                                {
+                                    Id = indexProp.Name,
+                                    Path = recordKey
+                                });
+                            }
+                        }
+                    }
+                }
+
                 // --- Find and import script JSON files ---
                 var scriptReferences = new List<StoryFlowProjectAsset.ScriptReference>();
                 var scriptFiles = FindJsonScriptFiles(buildDirectory);
@@ -604,6 +690,10 @@ namespace StoryFlow.Editor
                 // the data-assets.json read site above. This assignment is what the runtime
                 // seed (StoryFlowDataAssetStore.BuildSeed) reads.
                 projectAsset.DataAssetReferences = dataAssetReferences;
+                // Registration point 4 of 5 for the character index - see the five-point
+                // list at the character-index.json read site above. The runtime bridge
+                // (StoryFlowProjectAsset.CharacterIdBridge) is built from this.
+                projectAsset.SetCharacterIdEntries(characterIdEntries);
                 projectAsset.GlobalVariableEntries = globalVariableEntries;
                 projectAsset.GlobalStringEntries = globalStringEntries;
 
@@ -633,7 +723,8 @@ namespace StoryFlow.Editor
                     projectAsset.ImportedSourceHash,
                     CertifyProject(
                         projectJson.ToString(Newtonsoft.Json.Formatting.None),
-                        globalVariablesCondensed, charactersCondensed, dataAssetsCondensed, projectAsset),
+                        globalVariablesCondensed, charactersCondensed, dataAssetsCondensed,
+                        characterIndexCondensed, projectAsset),
                     isNewProject,
                     hash => projectAsset.ImportedSourceHash = hash,
                     report);
@@ -1539,9 +1630,9 @@ namespace StoryFlow.Editor
 
         /// <summary>
         /// Finds all JSON script files in the build directory (excluding the top-level files
-        /// that are read by name: project.json, global-variables.json, characters.json and
-        /// data-assets.json). Anything left here is imported as a script asset, so a file
-        /// missing from this set becomes a garbage script.
+        /// that are read by name: project.json, global-variables.json, characters.json,
+        /// data-assets.json and character-index.json). Anything left here is imported as a
+        /// script asset, so a file missing from this set becomes a garbage script.
         /// </summary>
         private static List<string> FindJsonScriptFiles(string buildDirectory)
         {
@@ -1553,7 +1644,10 @@ namespace StoryFlow.Editor
                 "characters.json",
                 // Registration point 2 of 5 for data assets - see the "See also" list at
                 // the data-assets.json read site in ImportProject.
-                "data-assets.json"
+                "data-assets.json",
+                // Registration point 2 of 5 for the character index - see the five-point
+                // list at the character-index.json read site in ImportProject.
+                "character-index.json"
             };
 
             FindJsonFilesRecursive(buildDirectory, buildDirectory, excludedFiles, results);
@@ -2148,8 +2242,13 @@ namespace StoryFlow.Editor
         /// One consequence, and it is the intended one: the first sync after an upgrade that
         /// bumps this rewrites every asset once, which under version control is one diff per
         /// asset. Sibling ports carry the same mechanism (Unreal's ImportHashSchemaVersion).
+        ///
+        /// "2" -> "3" (P4 characters): the project asset gained the CharacterIdEntries
+        /// bridge — "the shape of anything written onto an imported asset" changed, which
+        /// is this doc's bump rule. Without the bump, a project imported by an older build
+        /// would hash-match forever and never receive its bridge.
         /// </summary>
-        private const string ParseSchemaVersion = "2";
+        private const string ParseSchemaVersion = "3";
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser
@@ -2320,7 +2419,7 @@ namespace StoryFlow.Editor
         /// </summary>
         private static string CertifyProject(
             string projectJson, string globalVariablesJson, string charactersJson,
-            string dataAssetsJson, StoryFlowProjectAsset asset)
+            string dataAssetsJson, string characterIndexJson, StoryFlowProjectAsset asset)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(projectJson).Append('\n')
@@ -2328,7 +2427,13 @@ namespace StoryFlow.Editor
               .Append(charactersJson).Append('\n')
               // Registration point 3 of 5 for data assets (with the #dataAssets section
               // below) - see the "See also" list at the data-assets.json read site.
-              .Append(dataAssetsJson);
+              .Append(dataAssetsJson).Append('\n')
+              // Registration point 3 of 5 for the character index (with the
+              // #characterIndex section below) - see the five-point list at the
+              // character-index.json read site. The condensed JSON is empty for an
+              // ABSENT file and "{...}" for a present-but-empty one, which is what keeps
+              // the two states hash-distinguishable.
+              .Append(characterIndexJson);
 
             sb.Append("\n#startup=").Append(CertifyReference(asset.StartupScript, "<none>"));
 
@@ -2351,6 +2456,12 @@ namespace StoryFlow.Editor
             {
                 sb.Append('\n').Append(da != null ? da.Id : "<missing>").Append('=');
                 sb.Append(CertifyReference(da, "<missing>"));
+            }
+
+            sb.Append("\n#characterIndex");
+            foreach (var entry in asset.CharacterIdEntries)
+            {
+                sb.Append('\n').Append(entry.Id).Append('=').Append(entry.Path);
             }
 
             AppendResolvedAssets(sb, asset.ResolvedAssetEntries);

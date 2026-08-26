@@ -85,6 +85,13 @@ namespace StoryFlow.Execution
         /// <summary>Reference to shared character data from the manager.</summary>
         private Dictionary<string, StoryFlowCharacterData> externalCharacters;
 
+        /// <summary>
+        /// Reference to the manager's character id bridge (characters engine contract §3):
+        /// character file id → <see cref="externalCharacters"/> key. Empty on a pre-P4
+        /// import, so id lookups fall back to paths.
+        /// </summary>
+        private Dictionary<string, string> externalCharacterIdBridge;
+
         /// <summary>Reference to shared set tracking once-only option usage.</summary>
         private HashSet<string> externalUsedOnceOnlyOptions;
 
@@ -117,6 +124,15 @@ namespace StoryFlow.Execution
         private readonly HashSet<(string NodeId, string Reason)> warnedDataAssetNodes = new();
 
         /// <summary>
+        /// Degraded character-id resolutions already warned about, keyed (id, reason) with
+        /// the reasons "dangling" (an id with no bridge entry) and "unloaded" (a bridge hit
+        /// whose record is missing from the runtime character table). Same latch shape and
+        /// re-arm points as <see cref="warnedDataAssetNodes"/>: reset by
+        /// <see cref="Initialize"/> and <see cref="Reset"/>.
+        /// </summary>
+        private readonly HashSet<(string Id, string Reason)> warnedCharacterIds = new();
+
+        /// <summary>
         /// How many data-asset warnings this context has actually EMITTED. A test seam, and a
         /// necessary one: the latch set alone cannot tell "warned once, then suppressed" from
         /// "latched but never emitted", which is exactly the mutation once-ness tests must
@@ -124,6 +140,15 @@ namespace StoryFlow.Execution
         /// context's life, so a test can watch the latch re-arm and see the counter move again.
         /// </summary>
         internal int DataAssetWarningsEmitted;
+
+        /// <summary>
+        /// How many character-id warnings this context has actually EMITTED — the same test
+        /// seam as <see cref="DataAssetWarningsEmitted"/>, for the same reason: the latch
+        /// set alone cannot tell "warned once, then suppressed" from "latched but never
+        /// emitted". Deliberately NOT reset by Initialize/Reset, so a test can watch the
+        /// latch re-arm and see the counter move again.
+        /// </summary>
+        internal int CharacterWarningsEmitted;
 
         /// <summary>
         /// The manager-owned .sfd Data Asset store (seed + overlay), or null when there is
@@ -174,7 +199,8 @@ namespace StoryFlow.Execution
             Dictionary<string, StoryFlowVariable> globalVars,
             Dictionary<string, StoryFlowCharacterData> characters,
             HashSet<string> usedOnceOnlyOptions,
-            StoryFlowDataAssetStoreRef dataAssetStore = null)
+            StoryFlowDataAssetStoreRef dataAssetStore = null,
+            Dictionary<string, string> characterIdBridge = null)
         {
             CurrentScript = script;
             DataAssetStore = dataAssetStore;
@@ -182,6 +208,7 @@ namespace StoryFlow.Execution
 
             externalGlobalVariables = globalVars ?? new Dictionary<string, StoryFlowVariable>();
             externalCharacters = characters ?? new Dictionary<string, StoryFlowCharacterData>();
+            externalCharacterIdBridge = characterIdBridge ?? new Dictionary<string, string>();
             externalUsedOnceOnlyOptions = usedOnceOnlyOptions ?? new HashSet<string>();
 
             // Deep copy script's local variables so mutations don't affect the asset
@@ -226,6 +253,7 @@ namespace StoryFlow.Execution
             warnedUnknownNodes.Clear();
             warnedMapNodes.Clear();
             warnedDataAssetNodes.Clear();
+            warnedCharacterIds.Clear();
         }
 
         // =====================================================================
@@ -444,6 +472,25 @@ namespace StoryFlow.Execution
         {
             if (!warnedDataAssetNodes.Add((nodeId, reason))) return false;
             DataAssetWarningsEmitted++;
+            return true;
+        }
+
+        /// <summary>
+        /// The character id bridge this context resolves through: character file id →
+        /// <see cref="externalCharacters"/> key. Never null after Initialize.
+        /// </summary>
+        internal Dictionary<string, string> CharacterIdBridge => externalCharacterIdBridge;
+
+        /// <summary>
+        /// The character-id twin of <see cref="ShouldWarnDataAsset"/>: same claim-then-log
+        /// contract, same trade (the counter moves on the CLAIM while the log lives in the
+        /// caller). Reasons are "dangling" and "unloaded" — see
+        /// <see cref="warnedCharacterIds"/>.
+        /// </summary>
+        internal bool ShouldWarnCharacterId(string id, string reason)
+        {
+            if (!warnedCharacterIds.Add((id, reason))) return false;
+            CharacterWarningsEmitted++;
             return true;
         }
 
@@ -965,12 +1012,14 @@ namespace StoryFlow.Execution
             warnedUnknownNodes.Clear();
             warnedMapNodes.Clear();
             warnedDataAssetNodes.Clear();
+            warnedCharacterIds.Clear();
 
             localVariableNameIndex = null;
             globalVariableNameIndex = null;
 
-            // Note: external references (globalVars, characters, onceOnly) are not cleared —
-            // they are owned by the manager and may be shared across contexts.
+            // Note: external references (globalVars, characters, characterIdBridge,
+            // onceOnly) are not cleared — they are owned by the manager and may be shared
+            // across contexts.
         }
     }
 }

@@ -92,9 +92,13 @@ namespace StoryFlow.Editor
         {
             string fileName = System.IO.Path.GetFileName(path);
 
-            // Known StoryFlow export filenames
+            // Known StoryFlow export filenames. character-index.json is registration
+            // point 5 of 5 for the character index (with the root-key sniff below) - see
+            // the five-point list at the character-index.json read site in
+            // StoryFlowImporter.ImportProject.
             if (fileName == "project.json" || fileName == "global-variables.json" ||
-                fileName == "characters.json" || fileName == "data-assets.json")
+                fileName == "characters.json" || fileName == "data-assets.json" ||
+                fileName == "character-index.json")
                 return true;
 
             // Files in a build/ directory (StoryFlow editor exports here)
@@ -138,6 +142,15 @@ namespace StoryFlow.Editor
                 // Registration point 5 of 5 for data assets - see the "See also" list at the
                 // data-assets.json read site in StoryFlowImporter.ImportProject.
                 if (json.ContainsKey("dataAssets"))
+                    return true;
+
+                // character-index.json pattern: "schemaVersion" AND "characters" at root.
+                // Both keys together is what distinguishes the index from characters.json,
+                // which also has "characters" at root but ships no "schemaVersion".
+                // Registration point 5 of 5 for the character index (with the filename gate
+                // in CouldBeStoryFlowFile) - see the five-point list at the
+                // character-index.json read site in StoryFlowImporter.ImportProject.
+                if (json.ContainsKey("schemaVersion") && json.ContainsKey("characters"))
                     return true;
 
                 // characters.json pattern: array of character objects

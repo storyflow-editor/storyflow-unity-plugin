@@ -26,6 +26,15 @@ namespace StoryFlow
         // Shared mutable state (runtime copies)
         [NonSerialized] internal Dictionary<string, StoryFlowVariable> GlobalVariables = new();
         [NonSerialized] internal Dictionary<string, StoryFlowCharacterData> RuntimeCharacters = new();
+
+        // The character id bridge (characters engine contract §3): character file id ->
+        // RuntimeCharacters key, from the project's imported character-index.json. Shared by
+        // reference with execution contexts the same way RuntimeCharacters is, and refreshed
+        // in DeepCopyRuntimeCharacters — exactly where RuntimeCharacters itself is (re)built,
+        // and NEVER at save apply: a save carries character STATE, not the project's id
+        // mapping. Empty on a pre-P4 import, so every id lookup falls back to paths.
+        [NonSerialized] internal Dictionary<string, string> CharacterIdBridge = new();
+
         [NonSerialized] internal HashSet<string> UsedOnceOnlyOptions = new();
 
         // The .sfd Data Asset store (engine contract §3). The SEED is rebuilt from the
@@ -210,6 +219,7 @@ namespace StoryFlow
         private void DeepCopyRuntimeCharacters()
         {
             RuntimeCharacters.Clear();
+            CharacterIdBridge.Clear();
 
             if (Project == null) return;
 
@@ -218,6 +228,13 @@ namespace StoryFlow
                 // Deep copy the character asset into runtime data so mutations
                 // do not affect the source ScriptableObject.
                 RuntimeCharacters[kvp.Key] = kvp.Value.CreateRuntimeData();
+            }
+
+            // The bridge moves with the characters it keys into: values are plain strings,
+            // so a shallow copy is already isolation from the project asset.
+            foreach (var kvp in Project.CharacterIdBridge)
+            {
+                CharacterIdBridge[kvp.Key] = kvp.Value;
             }
         }
 

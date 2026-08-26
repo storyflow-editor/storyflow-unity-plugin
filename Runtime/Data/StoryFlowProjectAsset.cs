@@ -36,6 +36,18 @@ namespace StoryFlow.Data
         /// </summary>
         public List<StoryFlowDataAssetAsset> DataAssetReferences = new();
 
+        /// <summary>
+        /// The character id bridge from character-index.json (characters engine contract §3):
+        /// character FILE id (da_ prefixed) → the character's record key, i.e. exactly a key
+        /// of <see cref="Characters"/>. A serialized list rebuilt into a runtime dictionary,
+        /// like <see cref="CharacterReferences"/>, because Unity cannot serialize a
+        /// Dictionary. Values are normalized at IMPORT (the wire ships the exporter's
+        /// lowercase-backslash record keys; this store's keys are lowercase-forward-slash),
+        /// so lookups use them verbatim. Empty on a pre-P4 export, which is the whole
+        /// fall-back-to-paths posture.
+        /// </summary>
+        public List<CharacterIdEntry> CharacterIdEntries = new();
+
         public List<GlobalVariableEntry> GlobalVariableEntries = new();
         public List<GlobalStringEntry> GlobalStringEntries = new();
 
@@ -49,6 +61,7 @@ namespace StoryFlow.Data
         [NonSerialized] private Dictionary<string, StoryFlowCharacterAsset> _characters;
         [NonSerialized] private Dictionary<string, string> _globalStrings;
         [NonSerialized] private Dictionary<string, StoryFlowDataAssetAsset> _dataAssets;
+        [NonSerialized] private Dictionary<string, string> _characterIdBridge;
 
         [Serializable]
         public class ResolvedAssetEntry
@@ -69,6 +82,13 @@ namespace StoryFlow.Data
         {
             public string Path;
             public StoryFlowCharacterAsset Asset;
+        }
+
+        [Serializable]
+        public class CharacterIdEntry
+        {
+            public string Id;
+            public string Path;
         }
 
         [Serializable]
@@ -104,6 +124,7 @@ namespace StoryFlow.Data
             _characters = null;
             _globalStrings = null;
             _dataAssets = null;
+            _characterIdBridge = null;
             _resolvedAssets = null;
         }
 
@@ -160,6 +181,16 @@ namespace StoryFlow.Data
             {
                 if (asset != null && !string.IsNullOrEmpty(asset.Id))
                     _dataAssets[asset.Id] = asset;
+            }
+        }
+
+        private void RebuildCharacterIdBridge()
+        {
+            _characterIdBridge = new Dictionary<string, string>(CharacterIdEntries.Count);
+            foreach (var entry in CharacterIdEntries)
+            {
+                if (!string.IsNullOrEmpty(entry.Id) && !string.IsNullOrEmpty(entry.Path))
+                    _characterIdBridge[entry.Id] = entry.Path;
             }
         }
 
@@ -221,6 +252,19 @@ namespace StoryFlow.Data
             }
         }
 
+        /// <summary>
+        /// The character id bridge: character file id → <see cref="Characters"/> key.
+        /// Empty when the import saw no character-index.json (a pre-P4 export).
+        /// </summary>
+        public Dictionary<string, string> CharacterIdBridge
+        {
+            get
+            {
+                if (_characterIdBridge == null) RebuildCharacterIdBridge();
+                return _characterIdBridge;
+            }
+        }
+
         public Dictionary<string, string> GlobalStrings
         {
             get
@@ -277,6 +321,18 @@ namespace StoryFlow.Data
         #endregion
 
         #region Helpers
+
+        /// <summary>
+        /// Replaces the character id entries and invalidates the runtime bridge. The importer
+        /// assigns through this rather than the field because a re-import inside one editor
+        /// session gets no OnEnable — a directly assigned list would leave the [NonSerialized]
+        /// bridge serving the previous import's mapping.
+        /// </summary>
+        public void SetCharacterIdEntries(List<CharacterIdEntry> entries)
+        {
+            CharacterIdEntries = entries ?? new List<CharacterIdEntry>();
+            _characterIdBridge = null;
+        }
 
         public void SetResolvedAsset(string key, UnityEngine.Object asset)
         {

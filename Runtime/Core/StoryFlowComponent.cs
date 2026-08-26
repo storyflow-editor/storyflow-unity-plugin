@@ -284,7 +284,8 @@ namespace StoryFlow
                 manager.GlobalVariables,
                 manager.RuntimeCharacters,
                 manager.UsedOnceOnlyOptions,
-                manager.GetDataAssetStore()
+                manager.GetDataAssetStore(),
+                manager.CharacterIdBridge
             );
 
             _isDialogueActive = true;
