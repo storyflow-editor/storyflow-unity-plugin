@@ -944,18 +944,101 @@ namespace StoryFlow.Execution
         // =====================================================================
 
         /// <summary>
-        /// Finds runtime character data by its path. Normalizes the path before lookup.
+        /// Finds runtime character data by character FILE id or path — every input runs
+        /// through <see cref="ResolveCharacterKey"/>, THE resolution point, so no caller
+        /// can resolve differently from another.
         /// </summary>
-        public StoryFlowCharacterData FindCharacter(string path)
+        public StoryFlowCharacterData FindCharacter(string idOrPath)
         {
-            if (string.IsNullOrEmpty(path)) return null;
+            if (string.IsNullOrEmpty(idOrPath)) return null;
 
-            var normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(path);
+            var recordKey = ResolveCharacterKey(idOrPath);
 
-            if (externalCharacters != null && externalCharacters.TryGetValue(normalizedPath, out var character))
+            if (externalCharacters != null && externalCharacters.TryGetValue(recordKey, out var character))
                 return character;
 
             return null;
+        }
+
+        /// <summary>
+        /// THE ONE character resolution point (contract §3/§4), over this context's bridge,
+        /// character table and warn latch. See <see cref="ResolveCharacterKeyIn"/> for the
+        /// ladder itself.
+        /// </summary>
+        internal string ResolveCharacterKey(string idOrPath)
+        {
+            return ResolveCharacterKeyIn(externalCharacterIdBridge, externalCharacters, idOrPath, this);
+        }
+
+        /// <summary>
+        /// The static core of the resolution point, shared with the component's
+        /// outside-dialogue lane so a second lookup that could drift never exists:
+        ///
+        ///  - id-shaped input (case-sensitive da_ prefix — ids preserve case, unlike the
+        ///    authored names next door in StoryFlowCharacterTokens): a bridge hit whose
+        ///    record is loaded answers the record key VERBATIM — never re-normalized, the
+        ///    bridge value IS a store key by the import's one normalization pass, and a
+        ///    normalize here could only mask an exporter that broke that guarantee. A
+        ///    bridge hit whose record is MISSING from the character table warns once
+        ///    ("unloaded") and misses whole; an id with no bridge entry warns once
+        ///    ("dangling") and misses. A miss falls through to path treatment of the id
+        ///    below (which normally misses too), so the caller's path field
+        ///    (<see cref="ResolveCharacterRef"/>) or the existing missing-character
+        ///    behavior takes over — never a crash.
+        ///  - anything else: NormalizeCharacterPath, exactly as before P4.
+        ///
+        /// A null <paramref name="warnLatch"/> logs EVERY time — the DA access layer's
+        /// null-latch precedent: out of dialogue there is no context to own the
+        /// once-per-run latch, and failing open keeps the diagnostic loud.
+        /// </summary>
+        internal static string ResolveCharacterKeyIn(
+            Dictionary<string, string> bridge,
+            Dictionary<string, StoryFlowCharacterData> characters,
+            string idOrPath,
+            StoryFlowExecutionContext warnLatch)
+        {
+            if (StoryFlowCharacterTokens.IsCharacterIdRef(idOrPath))
+            {
+                if (bridge != null && bridge.TryGetValue(idOrPath, out var recordKey))
+                {
+                    if (characters != null && characters.ContainsKey(recordKey))
+                        return recordKey;
+
+                    if (warnLatch == null || warnLatch.ShouldWarnCharacterId(idOrPath, "unloaded"))
+                    {
+                        Debug.LogWarning($"[StoryFlow] Character id {idOrPath} maps to '{recordKey}', " +
+                                         "which is not among the loaded runtime characters - " +
+                                         "falling back to path resolution.");
+                    }
+                }
+                else if (warnLatch == null || warnLatch.ShouldWarnCharacterId(idOrPath, "dangling"))
+                {
+                    Debug.LogWarning($"[StoryFlow] Character id {idOrPath} is not in this project's " +
+                                     "character index - falling back to path resolution.");
+                }
+            }
+
+            return StoryFlowPathNormalizer.NormalizeCharacterPath(idOrPath);
+        }
+
+        /// <summary>
+        /// The wire-vocabulary entry: a node's id field first, its path sibling as the
+        /// fall-back (contract §4). The path comes back VERBATIM, not normalized — pre-P4
+        /// content must flow byte-identically through the path lane, warnings included
+        /// (they print the authored spelling, as they always have);
+        /// <see cref="FindCharacter"/> normalizes on lookup exactly as before.
+        /// </summary>
+        internal string ResolveCharacterRef(string characterId, string characterPath)
+        {
+            if (!string.IsNullOrEmpty(characterId))
+            {
+                var recordKey = ResolveCharacterKey(characterId);
+                if (externalCharacters != null && externalCharacters.ContainsKey(recordKey))
+                    return recordKey;
+                // Dangling or unloaded id (warned once inside ResolveCharacterKey): the
+                // path field is the contract's fall-back.
+            }
+            return characterPath;
         }
 
         // =====================================================================

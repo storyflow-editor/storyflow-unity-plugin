@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using StoryFlow.Data;
+using StoryFlow.Utilities;
 using UnityEngine;
 
 namespace StoryFlow.Execution
@@ -431,14 +432,15 @@ namespace StoryFlow.Execution
         // =====================================================================
 
         /// <summary>
-        /// Resolves the character path for a GetCharacterVar/SetCharacterVar node,
-        /// checking for a connected character input edge first (overrides dropdown).
+        /// Resolves the character reference for a GetCharacterVar/SetCharacterVar node.
+        /// A connected character input edge is evaluated FIRST and overrides both authored
+        /// fields, so a wired-over dangling id never warns; the wired value may itself be
+        /// an id — FindCharacter runs every input through the context's one resolution
+        /// point, so the same function handles either shape. Unwired, the node's id field
+        /// resolves first with the authored path as the fall-back (contract §4).
         /// </summary>
         internal static string ResolveCharacterPath(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
-            string charPath = node.GetData("characterPath");
-
-            // Check for connected character input edge (overrides dropdown)
             var charEdge = ctx.CurrentScript?.FindInputEdge(node.Id, StoryFlowHandles.In_CharacterInput);
             if (charEdge != null)
             {
@@ -447,11 +449,11 @@ namespace StoryFlow.Execution
                 {
                     string evaluated = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
                     if (!string.IsNullOrEmpty(evaluated))
-                        charPath = evaluated;
+                        return evaluated;
                 }
             }
 
-            return charPath;
+            return ctx.ResolveCharacterRef(node.GetData("characterId"), node.GetData("characterPath"));
         }
 
         /// <summary>
@@ -470,16 +472,16 @@ namespace StoryFlow.Execution
             if (characterData == null)
                 return null;
 
-            // Handle built-in "Name" field
-            if (string.Equals(varName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Name" field (or its reserved cf_name id — amendment A1/A2(a))
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(varName))
             {
                 var v = new StoryFlowVariant();
                 v.SetString(characterData.Name ?? "");
                 return v;
             }
 
-            // Handle built-in "Image" field
-            if (string.Equals(varName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Image" field (or cf_image — amendment A1/A2(a))
+            if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(varName))
             {
                 var v = new StoryFlowVariant();
                 v.SetString(characterData.ImageAssetKey ?? "");

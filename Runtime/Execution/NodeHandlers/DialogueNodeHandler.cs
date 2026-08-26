@@ -36,8 +36,11 @@ namespace StoryFlow.Execution.NodeHandlers
             var state = context.CurrentDialogueState;
             state.NodeId = node.Id;
 
-            // 1. Resolve character FIRST (before text interpolation so {Character.Name} works)
-            var characterPath = node.GetData("character");
+            // 1. Resolve character FIRST (before text interpolation so {Character.Name} works).
+            // Id-first per contract §4: characterRefId, with the authored path field as the
+            // fall-back — settled in the context's one resolution point.
+            var characterPath = context.ResolveCharacterRef(
+                node.GetData("characterRefId"), node.GetData("character"));
             if (!string.IsNullOrEmpty(characterPath))
             {
                 var characterData = context.FindCharacter(characterPath);

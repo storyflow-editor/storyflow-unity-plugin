@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using StoryFlow.Utilities;
 using UnityEngine;
 
 namespace StoryFlow.Data
@@ -20,6 +21,15 @@ namespace StoryFlow.Data
     /// exactly once per call, here, root-most-wins like every other chain lookup
     /// (StoryFlowDataAssetStore.FindDeclarationByName).
     ///
+    /// THE CHARACTER BRANCH (P4 characters contract §3): an asset id the SEED cannot answer
+    /// may be a character FILE id — characters never enter the data-asset store, so a bridge
+    /// hit routes the get/set to the character system's runtime state by NAME (amendment A1),
+    /// with this surface's own found/false posture and latch. The write never touches the
+    /// .sfd overlay (the character system is the one runtime-state owner) and raises no
+    /// notification (amendment A2(b): the events are node-lane only). Because the branch
+    /// lives HERE, both public mirrors inherit it and cannot diverge — same argument as
+    /// everything else in this class.
+    ///
     /// TYPED, where the character surface next door is not. GetCharacterVariable hands back a
     /// raw StoryFlowVariant and SetCharacterVariable takes one, which is a fine shape for a
     /// surface with no gate to enforce: a character variable coerces. A .sfd variable must not,
@@ -30,16 +40,21 @@ namespace StoryFlow.Data
     /// requires would be unreachable from game code. The typed pairs make the caller state it
     /// once, in the method name. <see cref="GetVariant"/> is the untyped door for callers who
     /// genuinely want whatever is there — it reads only, so no belief about the declared type is
-    /// needed and none is checked.
+    /// needed and none is checked. The character branch honors the same gate: a character
+    /// variable read through this surface refuses a type mismatch that GetCharacterVariable
+    /// would coerce, because the caller stated a belief here.
     ///
     /// READ ANY, WRITE SCALAR. Arrays and maps come out through <see cref="GetVariant"/> as a
     /// detached copy and have no setter: a container write from game code would have to rebuild
     /// the whole value with the right element typing to keep the save key stable, which is the
-    /// Set node's job and not something a caller can be expected to get right.
+    /// Set node's job and not something a caller can be expected to get right. The character
+    /// branch keeps the same asymmetry.
     ///
     /// WRITES DO NOT INVALIDATE ANYTHING HERE. Every setter reports whether the overlay changed
     /// and stops; the caller decides what that means for its own memos, because the two callers
-    /// have different answers (see StoryFlowComponent's setter and the manager's).
+    /// have different answers (see StoryFlowComponent's setter and the manager's). Character
+    /// writes report through the same bool, so the component's cache drop covers them with no
+    /// extra wiring — invalidation parity with seed writes by construction.
     /// </summary>
     internal static class StoryFlowDataAssetAccess
     {
@@ -77,37 +92,37 @@ namespace StoryFlow.Data
         // =====================================================================
 
         internal static bool GetBool(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, asset, variableName,
+            var value = ReadScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Boolean, out found);
             return found && value.GetBool();
         }
 
         internal static int GetInt(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, asset, variableName,
+            var value = ReadScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Integer, out found);
             return found ? value.GetInt() : 0;
         }
 
         internal static float GetFloat(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, asset, variableName,
+            var value = ReadScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Float, out found);
             return found ? value.GetFloat() : 0f;
         }
 
         internal static string GetEnum(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, asset, variableName,
+            var value = ReadScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Enum, out found);
             return found ? value.GetEnum() : "";
         }
@@ -120,11 +135,39 @@ namespace StoryFlow.Data
         /// enum keeps its own storage and its own type tag, and a string write onto an enum
         /// declaration would put a String-tagged value in the overlay where the save key expects
         /// an enum — the one place the asymmetry is observable.
+        ///
+        /// On the character branch this pair is ALSO where the builtin rows answer: Name and
+        /// Image (or their reserved cf_ ids, amendment A1) are plain strings, and this surface
+        /// never coerces, so a typed accessor other than the string family refuses them.
         /// </summary>
         internal static string GetString(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
+            if (TryBridgedCharacter(store, characters, asset, out var character))
+            {
+                if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
+                {
+                    found = true;
+                    return character.Name ?? "";
+                }
+                if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
+                {
+                    found = true;
+                    return character.ImageAssetKey ?? "";
+                }
+
+                var variable = FindCharacterVariable(latch, asset.Id, character, variableName);
+                if (variable == null || !IsStringFamilyScalar(variable))
+                {
+                    LogRefusal(latch, asset, variableName, variable, StringFamilyNames);
+                    found = false;
+                    return "";
+                }
+                found = true;
+                return variable.Value.GetString();
+            }
+
             var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
@@ -139,12 +182,35 @@ namespace StoryFlow.Data
         /// <summary>
         /// Reads ANY .sfd variable, including the arrays and maps the typed getters do not
         /// cover, as a DETACHED copy — mutating what comes back cannot reach the store. Returns
-        /// null (with <paramref name="found"/> false) when nothing resolves.
+        /// null (with <paramref name="found"/> false) when nothing resolves. On the character
+        /// branch this is likewise the array and map route, detached with the same promise.
         /// </summary>
         internal static StoryFlowVariant GetVariant(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
+            if (TryBridgedCharacter(store, characters, asset, out var character))
+            {
+                if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
+                {
+                    found = true;
+                    var name = new StoryFlowVariant();
+                    name.SetString(character.Name ?? "");
+                    return name;
+                }
+                if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
+                {
+                    found = true;
+                    var image = new StoryFlowVariant();
+                    image.SetString(character.ImageAssetKey ?? "");
+                    return image;
+                }
+
+                var variable = FindCharacterVariable(latch, asset.Id, character, variableName);
+                found = variable != null;
+                return found ? new StoryFlowVariant(variable.Value) : null;
+            }
+
             var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
             if (declaration == null)
             {
@@ -160,34 +226,34 @@ namespace StoryFlow.Data
         // =====================================================================
 
         internal static bool SetBool(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, bool value)
         {
-            return WriteScalar(store, latch, asset, variableName,
+            return WriteScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Boolean, StoryFlowVariant.Bool(value));
         }
 
         internal static bool SetInt(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, int value)
         {
-            return WriteScalar(store, latch, asset, variableName,
+            return WriteScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Integer, StoryFlowVariant.Int(value));
         }
 
         internal static bool SetFloat(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, float value)
         {
-            return WriteScalar(store, latch, asset, variableName,
+            return WriteScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Float, StoryFlowVariant.Float(value));
         }
 
         internal static bool SetEnum(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, string value)
         {
-            return WriteScalar(store, latch, asset, variableName,
+            return WriteScalar(store, latch, characters, asset, variableName,
                 StoryFlowVariableType.Enum, StoryFlowVariant.Enum(value));
         }
 
@@ -195,11 +261,52 @@ namespace StoryFlow.Data
         /// Writes a string-family value. It goes in String-TAGGED, which is what the Set node's
         /// own writer produces for the whole family, so the save key does not depend on which
         /// writer wrote it (a read answers GetString for either tag).
+        ///
+        /// The character branch instead mirrors the NODE lane's family write (the character
+        /// system owns its state and its save shape): the declared tag is kept, so an Image
+        /// character variable stays Image-tagged exactly as a SetCharacterVar node leaves it.
+        /// The builtin rows write the character's Name / image key fields — with NO events
+        /// (amendment A2(b)) and no portrait re-resolution (that is the node arm's job).
         /// </summary>
         internal static bool SetString(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, string value)
         {
+            if (TryBridgedCharacter(store, characters, asset, out var character))
+            {
+                if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
+                {
+                    character.Name = value ?? "";
+                    return true;
+                }
+                if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
+                {
+                    character.ImageAssetKey = value ?? "";
+                    return true;
+                }
+
+                // A3(b): a name the record does not declare is NEVER created.
+                var variable = FindCharacterVariable(latch, asset.Id, character, variableName);
+                if (variable == null || !IsStringFamilyScalar(variable))
+                {
+                    LogRefusal(latch, asset, variableName, variable, StringFamilyNames);
+                    return false;
+                }
+
+                // In place, exactly as the Set node mutates — the character's dictionary and
+                // list views share the variant object, so both stay in step (one state, §3).
+                if (variable.Type == StoryFlowVariableType.String)
+                {
+                    variable.Value.SetString(value ?? "");
+                }
+                else
+                {
+                    variable.Value.Type = variable.Type;
+                    variable.Value.StringValue = value ?? "";
+                }
+                return true;
+            }
+
             var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
             if (declaration == null || !IsStringFamilyScalar(declaration))
             {
@@ -207,6 +314,82 @@ namespace StoryFlow.Data
                 return false;
             }
             return CommitWrite(store, latch, assetId, declaration.Id, StoryFlowVariant.String(value));
+        }
+
+        // =====================================================================
+        // The character branch (contract §3)
+        // =====================================================================
+
+        /// <summary>
+        /// Answers the loaded character record a da_ id bridges to, when the SEED cannot
+        /// answer the id — characters never enter the data-asset store, and the pinned seed
+        /// disjointness makes the order unobservable, but the contract words it seed-first
+        /// so the seed keeps absolute priority even against a corrupted export. Works with
+        /// NO store at all (a project with characters but no .sfd files still gets its
+        /// branch). A bridge hit whose record is not loaded misses WHOLE, and the seed
+        /// path's own refusal then reports the id as any other unknown asset.
+        /// </summary>
+        private static bool TryBridgedCharacter(
+            StoryFlowDataAssetStoreRef store, StoryFlowCharacterStoreRef characters,
+            StoryFlowDataAssetAsset asset, out StoryFlowCharacterData character)
+        {
+            character = null;
+            if (characters == null || !characters.IsValid || asset == null || string.IsNullOrEmpty(asset.Id))
+                return false;
+            if (store != null && store.IsValid && store.Seed.ContainsKey(asset.Id))
+                return false;
+            if (!characters.Bridge.TryGetValue(asset.Id, out var recordKey))
+                return false;
+            return characters.Characters.TryGetValue(recordKey, out character);
+        }
+
+        /// <summary>
+        /// The character branch's declaration lookup: NAME-keyed (amendment A1), with the
+        /// same latched refusal shape the seed path's <see cref="FindDeclaration"/> makes.
+        /// Callers handle the builtin rows BEFORE this — they have no variable storage.
+        /// </summary>
+        private static StoryFlowVariable FindCharacterVariable(
+            RefusalLatch latch, string assetId, StoryFlowCharacterData character, string variableName)
+        {
+            var variable = character.FindVariableByName(variableName);
+            if (variable == null && ShouldLog(latch, assetId, variableName, "undeclared"))
+            {
+                Debug.Log($"[StoryFlow] Character variable \"{variableName}\" is not declared on " +
+                          $"the character \"{assetId}\" bridges to.");
+            }
+            return variable;
+        }
+
+        /// <summary>
+        /// The character branch's strict scalar gate, one shape for its read AND write half
+        /// (the same one-ladder argument the seed path makes): builtins refuse every typed
+        /// accessor but the string family, an undeclared name refuses (and a write never
+        /// creates it — A3(b)), and the declared type must match exactly.
+        /// </summary>
+        private static StoryFlowVariable FindCharacterScalarDeclaration(
+            RefusalLatch latch, StoryFlowDataAssetAsset asset, StoryFlowCharacterData character,
+            string variableName, StoryFlowVariableType type)
+        {
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName) ||
+                StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
+            {
+                if (ShouldLog(latch, asset.Id, variableName, "mismatch"))
+                {
+                    Debug.Log($"[StoryFlow] Character variable \"{asset.Id}.{variableName}\" " +
+                              $"is a builtin, which reads and writes as String, not {type}.");
+                }
+                return null;
+            }
+
+            var variable = FindCharacterVariable(latch, asset.Id, character, variableName);
+            if (variable == null) return null;
+
+            if (variable.IsArray || variable.Type != type)
+            {
+                LogRefusal(latch, asset, variableName, variable, type.ToString());
+                return null;
+            }
+            return variable;
         }
 
         // =====================================================================
@@ -271,10 +454,17 @@ namespace StoryFlow.Data
         /// for the same variable.
         /// </summary>
         private static StoryFlowVariant ReadScalar(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type,
             out bool found)
         {
+            if (TryBridgedCharacter(store, characters, asset, out var character))
+            {
+                var variable = FindCharacterScalarDeclaration(latch, asset, character, variableName, type);
+                found = variable != null;
+                return found ? variable.Value : null;
+            }
+
             var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
             if (declaration == null || declaration.IsArray || declaration.Type != type)
             {
@@ -287,10 +477,28 @@ namespace StoryFlow.Data
         }
 
         private static bool WriteScalar(
-            StoryFlowDataAssetStoreRef store, RefusalLatch latch,
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
             StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type,
             StoryFlowVariant value)
         {
+            if (TryBridgedCharacter(store, characters, asset, out var character))
+            {
+                var variable = FindCharacterScalarDeclaration(latch, asset, character, variableName, type);
+                if (variable == null) return false;
+
+                // In place, exactly as the Set node mutates the same storage — the
+                // character's dictionary and list views share the variant object, so both
+                // stay in step (one state, §3). No overlay touch, no event (A2(b)).
+                switch (type)
+                {
+                    case StoryFlowVariableType.Boolean: variable.Value.SetBool(value.GetBool()); break;
+                    case StoryFlowVariableType.Integer: variable.Value.SetInt(value.GetInt()); break;
+                    case StoryFlowVariableType.Float: variable.Value.SetFloat(value.GetFloat()); break;
+                    default: variable.Value.SetEnum(value.GetEnum()); break;
+                }
+                return true;
+            }
+
             var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
             if (declaration == null || declaration.IsArray || declaration.Type != type)
             {
@@ -334,7 +542,8 @@ namespace StoryFlow.Data
         /// with both sides named in DECLARED TYPE NAMES (the string pair passes
         /// <see cref="StringFamilyNames"/>, which is the same vocabulary, just four of them).
         /// Mixing type names on one accessor with prose on another makes two refusals of the same
-        /// kind read as two different problems.
+        /// kind read as two different problems. The character branch reports its mismatches
+        /// through this too, so a refusal reads the same on either side of the bridge.
         /// </summary>
         private static void LogRefusal(
             RefusalLatch latch, StoryFlowDataAssetAsset asset, string variableName,

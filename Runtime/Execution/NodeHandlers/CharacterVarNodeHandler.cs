@@ -44,8 +44,8 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Handle built-in "Name" field
-            if (string.Equals(variableName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Name" field (or its reserved cf_name id — amendment A1/A2(a))
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
             {
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
                 characterData.Name = val;
@@ -54,8 +54,9 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
-            // Handle built-in "Image" field (uses image-type handle, not string)
-            if (string.Equals(variableName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Image" field (uses image-type handle, not string; cf_image
+            // aliases it per amendment A1/A2(a))
+            if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
             {
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_Image);
                 characterData.ImageAssetKey = val;

@@ -666,8 +666,10 @@ namespace StoryFlow
         }
 
         /// <summary>
-        /// Finds a runtime character by path, falling back to the manager when
-        /// no dialogue is active.
+        /// Finds a runtime character by character file id or path, falling back to the
+        /// manager when no dialogue is active. BOTH lanes run through the context's one
+        /// resolution point (ResolveCharacterKeyIn), so this lane cannot drift from the
+        /// in-dialogue one.
         /// </summary>
         private StoryFlowCharacterData FindCharacter(string charPath)
         {
@@ -677,12 +679,16 @@ namespace StoryFlow
             if (_context != null)
                 return _context.FindCharacter(charPath);
 
-            // Outside dialogue: look up directly from the manager
+            // Outside dialogue: the same resolution point over the manager's copies. The
+            // null warn latch logs a degraded id on EVERY call (the DA access layer's
+            // null-latch precedent) — there is no context out here to own the
+            // once-per-run latch.
             var manager = StoryFlowManager.Instance;
             if (manager != null)
             {
-                var normalizedPath = StoryFlowPathNormalizer.NormalizeCharacterPath(charPath);
-                if (manager.RuntimeCharacters.TryGetValue(normalizedPath, out var character))
+                var recordKey = StoryFlowExecutionContext.ResolveCharacterKeyIn(
+                    manager.CharacterIdBridge, manager.RuntimeCharacters, charPath, null);
+                if (manager.RuntimeCharacters.TryGetValue(recordKey, out var character))
                     return character;
             }
 
@@ -839,8 +845,9 @@ namespace StoryFlow
                 return null;
             }
 
-            // Handle built-in "Name" field (stored as string table key — resolve it)
-            if (string.Equals(varName, "Name", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Name" field (stored as string table key — resolve it).
+            // cf_name aliases it per amendment A1/A2(a).
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(varName))
             {
                 var resolved = ResolveString(characterData.Name);
                 var result = new StoryFlowVariant();
@@ -848,8 +855,8 @@ namespace StoryFlow
                 return result;
             }
 
-            // Handle built-in "Image" field (current portrait asset key)
-            if (string.Equals(varName, "Image", System.StringComparison.OrdinalIgnoreCase))
+            // Handle built-in "Image" field (current portrait asset key; cf_image aliases it)
+            if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(varName))
             {
                 var result = new StoryFlowVariant();
                 result.SetString(characterData.ImageAssetKey ?? "");
@@ -876,6 +883,14 @@ namespace StoryFlow
                 Debug.LogWarning($"[StoryFlow] SetCharacterVariable: character at \"{charPath}\" not found.");
                 return;
             }
+
+            // A2(a): the reserved cf_ ids alias the builtin spellings on every
+            // name-accepting lane. THIS lane has no builtin write arms (pre-P4 posture,
+            // unchanged — "Name"/"Image" have never been writable here; the data-asset
+            // surface's character branch is the API route that writes them), so the alias
+            // guarantees only that cf_name/cf_image take exactly the "Name"/"Image" route.
+            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(varName)) varName = "Name";
+            else if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(varName)) varName = "Image";
 
             var v = characterData.FindVariableByName(varName);
             if (v != null)
@@ -959,21 +974,21 @@ namespace StoryFlow
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetBool(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads an integer .sfd variable.</summary>
         public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetInt(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads a float .sfd variable.</summary>
         public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetFloat(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>
@@ -983,14 +998,14 @@ namespace StoryFlow
         public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetString(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetEnum(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>
@@ -1001,28 +1016,28 @@ namespace StoryFlow
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetVariant(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
         public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
         {
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetBool(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value));
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
 
         /// <summary>Writes an integer .sfd variable.</summary>
         public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
         {
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetInt(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value));
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
 
         /// <summary>Writes a float .sfd variable.</summary>
         public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
         {
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetFloat(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value));
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
 
         /// <summary>
@@ -1032,14 +1047,14 @@ namespace StoryFlow
         public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetString(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value));
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
 
         /// <summary>Writes an enum .sfd variable by value name.</summary>
         public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetEnum(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value));
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
 
         /// <summary>
@@ -1060,6 +1075,34 @@ namespace StoryFlow
 
             var manager = StoryFlowManager.Instance;
             return manager != null ? manager.GetDataAssetStore() : null;
+        }
+
+        /// <summary>
+        /// The character tables the access layer's character branch (P4 contract §3) consults:
+        /// the LIVE dialogue's references if there is one, else the manager's — the same
+        /// prefer-the-context rule as <see cref="GetDataAssetStore"/>, and the same two
+        /// dictionaries either way, since the context holds the manager's by reference. Null
+        /// when neither exists, which the access layer reads as "no character branch".
+        /// </summary>
+        private StoryFlowCharacterStoreRef GetCharacterStore()
+        {
+            if (_context != null)
+            {
+                return new StoryFlowCharacterStoreRef
+                {
+                    Bridge = _context.CharacterIdBridge,
+                    Characters = _context.Characters
+                };
+            }
+
+            var manager = StoryFlowManager.Instance;
+            return manager != null
+                ? new StoryFlowCharacterStoreRef
+                {
+                    Bridge = manager.CharacterIdBridge,
+                    Characters = manager.RuntimeCharacters
+                }
+                : null;
         }
 
         /// <summary>

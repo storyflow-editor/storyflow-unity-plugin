@@ -22,6 +22,22 @@ namespace StoryFlow.Data
     }
 
     /// <summary>
+    /// The character system's two tables as one non-owning reference, for the data-asset
+    /// access layer's character branch (P4 characters contract §3): the id bridge and the
+    /// runtime character table, both manager-owned, minted per call exactly like
+    /// <see cref="StoryFlowDataAssetStoreRef"/> above so the pair can never come from two
+    /// different owners. A null ref, or one with a null half, means "no character branch"
+    /// and the access layer walks its ordinary seed path.
+    /// </summary>
+    public sealed class StoryFlowCharacterStoreRef
+    {
+        public Dictionary<string, string> Bridge;
+        public Dictionary<string, StoryFlowCharacterData> Characters;
+
+        public bool IsValid => Bridge != null && Characters != null;
+    }
+
+    /// <summary>
     /// What ONE chain walk found for an accessor's binding: either a usable value, or which
     /// rung of the degraded ladder (contract §6) the binding fell off.
     ///

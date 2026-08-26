@@ -270,6 +270,20 @@ namespace StoryFlow
             };
         }
 
+        /// <summary>
+        /// The character tables as one reference, for the access layer's character branch
+        /// (P4 contract §3). Minted per call for the same reason as
+        /// <see cref="GetDataAssetStore"/> above.
+        /// </summary>
+        internal StoryFlowCharacterStoreRef GetCharacterStore()
+        {
+            return new StoryFlowCharacterStoreRef
+            {
+                Bridge = CharacterIdBridge,
+                Characters = RuntimeCharacters
+            };
+        }
+
         // =====================================================================
         // Data Assets (.sfd) — the typed host API
         // =====================================================================
@@ -298,21 +312,21 @@ namespace StoryFlow
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetBool(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads an integer .sfd variable.</summary>
         public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetInt(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads a float .sfd variable.</summary>
         public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetFloat(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>
@@ -322,14 +336,14 @@ namespace StoryFlow
         public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetString(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetEnum(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>
@@ -340,28 +354,28 @@ namespace StoryFlow
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetVariant(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
         }
 
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
         public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
         {
             return StoryFlowDataAssetAccess.SetBool(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
 
         /// <summary>Writes an integer .sfd variable.</summary>
         public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
         {
             return StoryFlowDataAssetAccess.SetInt(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
 
         /// <summary>Writes a float .sfd variable.</summary>
         public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
         {
             return StoryFlowDataAssetAccess.SetFloat(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
 
         /// <summary>
@@ -371,14 +385,14 @@ namespace StoryFlow
         public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
             return StoryFlowDataAssetAccess.SetString(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
 
         /// <summary>Writes an enum .sfd variable by value name.</summary>
         public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
             return StoryFlowDataAssetAccess.SetEnum(
-                GetDataAssetStore(), DataAssetRefusals, asset, variableName, value);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
 
         // =====================================================================
