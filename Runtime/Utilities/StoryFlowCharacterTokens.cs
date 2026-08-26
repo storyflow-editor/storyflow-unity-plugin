@@ -27,6 +27,9 @@ namespace StoryFlow.Utilities
         /// unlike <see cref="IsCharacterIdRef"/> above: these are authored variable names,
         /// not stored ids, and the two vocabularies carry different case rules (the Unreal
         /// arc's F3 lesson — mixing them up is invisible until an authored spelling misses).
+        /// Use this on lanes whose builtin arm was already case-insensitive pre-P4; a lane
+        /// with a case-sensitive downstream lookup and no builtin arm uses
+        /// <see cref="RewriteCfTokensOnly"/> instead (see its two-tier note).
         /// </summary>
         public static bool IsCharacterNameBuiltin(string variableName)
         {
@@ -34,7 +37,11 @@ namespace StoryFlow.Utilities
                    string.Equals(variableName, "cf_name", System.StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Image twin of <see cref="IsCharacterNameBuiltin"/> (Image | cf_image, A1).</summary>
+        /// <summary>
+        /// Image twin of <see cref="IsCharacterNameBuiltin"/> (Image | cf_image, A1).
+        /// Same tier rule: case-insensitive-arm lanes only — case-sensitive or arm-less
+        /// lanes use <see cref="RewriteCfTokensOnly"/> instead.
+        /// </summary>
         public static bool IsCharacterImageBuiltin(string variableName)
         {
             return string.Equals(variableName, "Image", System.StringComparison.OrdinalIgnoreCase) ||
@@ -59,7 +66,7 @@ namespace StoryFlow.Utilities
         /// The cf_ match itself is safely case-insensitive: the editor reserves the cf_
         /// ids absolutely, so no custom variable can carry them in any casing.
         /// </summary>
-        public static string CanonicalizeCfToken(string variableName)
+        public static string RewriteCfTokensOnly(string variableName)
         {
             if (string.Equals(variableName, "cf_name", System.StringComparison.OrdinalIgnoreCase))
                 return "Name";

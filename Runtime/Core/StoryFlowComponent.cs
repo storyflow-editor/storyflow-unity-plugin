@@ -884,14 +884,11 @@ namespace StoryFlow
                 return;
             }
 
-            // A2(a): ONLY the reserved cf_ ids rewrite to the builtin spellings — the list
-            // search below is case-SENSITIVE and always was, so a native spelling must
-            // pass through byte-untouched (see CanonicalizeCfToken's two-tier design).
-            // THIS lane has no builtin write arms (pre-P4 posture, unchanged —
-            // "Name"/"Image" have never been writable here; the data-asset surface's
-            // character branch is the API route that writes them), so the rewrite
-            // guarantees only that cf_name/cf_image take exactly the "Name"/"Image" route.
-            varName = StoryFlowCharacterTokens.CanonicalizeCfToken(varName);
+            // A2(a): the list search below is case-sensitive, so this lane is second-tier —
+            // see RewriteCfTokensOnly for why only cf_ rewrites. No builtin write arms here
+            // (pre-P4 posture, unchanged; the data-asset surface's character branch is the
+            // API route that writes Name/Image).
+            varName = StoryFlowCharacterTokens.RewriteCfTokensOnly(varName);
 
             var v = characterData.FindVariableByName(varName);
             if (v != null)
@@ -1087,7 +1084,10 @@ namespace StoryFlow
         /// </summary>
         private StoryFlowCharacterStoreRef GetCharacterStore()
         {
-            if (_context != null)
+            // The same validity guard the GetDataAssetStore precedent carries: only a
+            // context actually holding both tables is preferred, so the manager fallback
+            // stays reachable (e.g. a Reset or never-initialized context).
+            if (_context != null && _context.Characters != null && _context.CharacterIdBridge != null)
             {
                 return new StoryFlowCharacterStoreRef
                 {

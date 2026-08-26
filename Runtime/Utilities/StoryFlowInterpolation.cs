@@ -31,14 +31,11 @@ namespace StoryFlow.Utilities
                     var character = context.CurrentDialogueState?.Character;
                     if (character == null) return match.Value;
 
-                    // A2(a): ONLY the reserved cf_ tokens rewrite to the builtin spellings.
-                    // The custom-variable lookup below is case-SENSITIVE and always was, so
-                    // a native spelling must pass through byte-untouched — a pre-P4 custom
-                    // variable named "image" is not "Image" here (see CanonicalizeCfToken).
-                    charField = StoryFlowCharacterTokens.CanonicalizeCfToken(charField);
+                    // A2(a): the dictionary lookup below is case-sensitive, so this lane is
+                    // second-tier — see RewriteCfTokensOnly for why only cf_ rewrites.
+                    charField = StoryFlowCharacterTokens.RewriteCfTokensOnly(charField);
 
-                    // The Name builtin arm (case-insensitive pre-P4, unchanged; cf_name
-                    // arrives here already canonicalized)
+                    // The Name builtin arm (case-insensitive pre-P4, unchanged)
                     if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(charField))
                         return character.Name ?? match.Value;
 
@@ -66,9 +63,9 @@ namespace StoryFlow.Utilities
                         var character = context.FindCharacter(charTypeVar.Value.GetString());
                         if (character == null) return match.Value;
 
-                        // Same two-tier alias rules as the {Character.X} arm above: cf_
-                        // tokens rewrite, native spellings stay byte-untouched (A1/A2(a)).
-                        innerField = StoryFlowCharacterTokens.CanonicalizeCfToken(innerField);
+                        // A2(a), second tier like the {Character.X} arm above — see
+                        // RewriteCfTokensOnly.
+                        innerField = StoryFlowCharacterTokens.RewriteCfTokensOnly(innerField);
 
                         if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(innerField))
                             return character.Name ?? match.Value;
