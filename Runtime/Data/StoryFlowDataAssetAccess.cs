@@ -462,6 +462,11 @@ namespace StoryFlow.Data
             {
                 var variable = FindCharacterScalarDeclaration(latch, asset, character, variableName, type);
                 found = variable != null;
+                // The LIVE variant, deliberately — a divergence from this class's
+                // copy-on-read promise, safe only because this method is private and all
+                // four typed callers extract a primitive immediately, so the reference
+                // never escapes. A future typed accessor built on this branch must copy
+                // (as GetVariant's character arm does) rather than inherit this shortcut.
                 return found ? variable.Value : null;
             }
 

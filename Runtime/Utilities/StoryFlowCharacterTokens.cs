@@ -40,5 +40,32 @@ namespace StoryFlow.Utilities
             return string.Equals(variableName, "Image", System.StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(variableName, "cf_image", System.StringComparison.OrdinalIgnoreCase);
         }
+
+        /// <summary>
+        /// Rewrites ONLY the reserved cf_ tokens to their builtin display spellings
+        /// (cf_name → Name, cf_image → Image); every other input passes through
+        /// BYTE-UNTOUCHED. This is the second tier of a deliberate two-tier design:
+        ///
+        ///  - Lanes that carried case-INSENSITIVE builtin arms before P4 (the evaluator,
+        ///    the node write arms, public GetCharacterVariable, interpolation's Name arm)
+        ///    use the full predicates above — nothing downstream of those arms sees the
+        ///    token again, so the wide match changes nothing pre-P4.
+        ///  - Lanes that were case-SENSITIVE or arm-less (interpolation's custom-variable
+        ///    dictionary lookup, public SetCharacterVariable's list search) use THIS
+        ///    rewrite instead: a pre-P4 custom variable named "image" (lowercase) is a
+        ///    different variable from "Image" on those lanes and has to stay one, so a
+        ///    native spelling must never be rewritten there.
+        ///
+        /// The cf_ match itself is safely case-insensitive: the editor reserves the cf_
+        /// ids absolutely, so no custom variable can carry them in any casing.
+        /// </summary>
+        public static string CanonicalizeCfToken(string variableName)
+        {
+            if (string.Equals(variableName, "cf_name", System.StringComparison.OrdinalIgnoreCase))
+                return "Name";
+            if (string.Equals(variableName, "cf_image", System.StringComparison.OrdinalIgnoreCase))
+                return "Image";
+            return variableName;
+        }
     }
 }

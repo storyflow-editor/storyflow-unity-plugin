@@ -31,16 +31,16 @@ namespace StoryFlow.Utilities
                     var character = context.CurrentDialogueState?.Character;
                     if (character == null) return match.Value;
 
-                    // The Name builtin (or its reserved cf_name id — amendment A1/A2(a))
+                    // A2(a): ONLY the reserved cf_ tokens rewrite to the builtin spellings.
+                    // The custom-variable lookup below is case-SENSITIVE and always was, so
+                    // a native spelling must pass through byte-untouched — a pre-P4 custom
+                    // variable named "image" is not "Image" here (see CanonicalizeCfToken).
+                    charField = StoryFlowCharacterTokens.CanonicalizeCfToken(charField);
+
+                    // The Name builtin arm (case-insensitive pre-P4, unchanged; cf_name
+                    // arrives here already canonicalized)
                     if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(charField))
                         return character.Name ?? match.Value;
-
-                    // cf_image aliases the Image spelling (A2(a)). Interpolation has no
-                    // Image builtin arm (pre-P4 posture): "Image" reads a custom variable
-                    // of that name if one exists, so the alias guarantees only that
-                    // cf_image takes the same route.
-                    if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(charField))
-                        charField = "Image";
 
                     // Check character variables
                     if (character.Variables != null &&
@@ -66,12 +66,12 @@ namespace StoryFlow.Utilities
                         var character = context.FindCharacter(charTypeVar.Value.GetString());
                         if (character == null) return match.Value;
 
-                        // Same alias rules as the {Character.X} arm above (A1/A2(a)).
+                        // Same two-tier alias rules as the {Character.X} arm above: cf_
+                        // tokens rewrite, native spellings stay byte-untouched (A1/A2(a)).
+                        innerField = StoryFlowCharacterTokens.CanonicalizeCfToken(innerField);
+
                         if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(innerField))
                             return character.Name ?? match.Value;
-
-                        if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(innerField))
-                            innerField = "Image";
 
                         if (character.Variables != null &&
                             character.Variables.TryGetValue(innerField, out var innerVar))

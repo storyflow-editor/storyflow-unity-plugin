@@ -884,13 +884,14 @@ namespace StoryFlow
                 return;
             }
 
-            // A2(a): the reserved cf_ ids alias the builtin spellings on every
-            // name-accepting lane. THIS lane has no builtin write arms (pre-P4 posture,
-            // unchanged — "Name"/"Image" have never been writable here; the data-asset
-            // surface's character branch is the API route that writes them), so the alias
+            // A2(a): ONLY the reserved cf_ ids rewrite to the builtin spellings — the list
+            // search below is case-SENSITIVE and always was, so a native spelling must
+            // pass through byte-untouched (see CanonicalizeCfToken's two-tier design).
+            // THIS lane has no builtin write arms (pre-P4 posture, unchanged —
+            // "Name"/"Image" have never been writable here; the data-asset surface's
+            // character branch is the API route that writes them), so the rewrite
             // guarantees only that cf_name/cf_image take exactly the "Name"/"Image" route.
-            if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(varName)) varName = "Name";
-            else if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(varName)) varName = "Image";
+            varName = StoryFlowCharacterTokens.CanonicalizeCfToken(varName);
 
             var v = characterData.FindVariableByName(varName);
             if (v != null)
