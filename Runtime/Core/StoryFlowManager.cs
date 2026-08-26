@@ -407,7 +407,12 @@ namespace StoryFlow
         // reference in a running game, so the two surfaces cannot come apart. Ids resolve
         // through THE resolution point (ResolveCharacterKeyIn) with the null warn latch:
         // there is no context out here to own the once-per-run latch, so a degraded id
-        // logs on every call (the established outside-dialogue posture — fail open).
+        // logs on every call (the established outside-dialogue posture — fail open). An
+        // unresolvable id through the variable pair therefore logs TWO unlatched lines
+        // per call — the resolution point's reason, then the accessor's not-found.
+        // Deliberate: the lines carry different information (why the id degraded; which
+        // call refused), and suppressing the second on the id lane would silence the
+        // only line that names the call.
         //
         // TWO deliberate asymmetries against the component's five, both this surface's
         // existing precedents rather than new rules:
@@ -471,6 +476,13 @@ namespace StoryFlow
         /// cf_name / cf_image alias the Name / Image builtins (amendment A2(a)); both
         /// answer their STORED value verbatim (see the section header). Null, with a
         /// warning, for an unresolvable id or an undeclared name.
+        ///
+        /// NOTE the pair's split for a custom variable literally named name/image (any
+        /// casing): this getter's case-insensitive builtin arms SHADOW it, while the
+        /// setter's cf_-only rewrite still writes it. That is INHERITED per lane from the
+        /// component's pre-P4 path APIs — GetCharacterVariable always had the
+        /// case-insensitive builtin arms, SetCharacterVariable never did — not an
+        /// accident of this mirror (see StoryFlowCharacterTokens' two-tier design).
         /// </summary>
         public StoryFlowVariant GetCharacterVariableById(string characterId, string variableName)
         {
