@@ -2243,10 +2243,9 @@ namespace StoryFlow.Editor
         /// bumps this rewrites every asset once, which under version control is one diff per
         /// asset. Sibling ports carry the same mechanism (Unreal's ImportHashSchemaVersion).
         ///
-        /// "2" -> "3" (P4 characters): the project asset gained the CharacterIdEntries
-        /// bridge — "the shape of anything written onto an imported asset" changed, which
-        /// is this doc's bump rule. Without the bump, a project imported by an older build
-        /// would hash-match forever and never receive its bridge.
+        /// "2" -> "3" (P4 characters): the project asset gained the serialized
+        /// CharacterIdEntries bridge — "the shape of anything written onto an imported
+        /// asset" changed, which is this doc's bump rule.
         /// </summary>
         private const string ParseSchemaVersion = "3";
 
