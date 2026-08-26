@@ -169,7 +169,7 @@ namespace StoryFlow.Data
             _characters = new Dictionary<string, StoryFlowCharacterAsset>(CharacterReferences.Count);
             foreach (var cr in CharacterReferences)
             {
-                if (cr.Asset != null)
+                if (cr.Asset != null && !string.IsNullOrEmpty(cr.Path))
                     _characters[cr.Path] = cr.Asset;
             }
         }
@@ -321,6 +321,30 @@ namespace StoryFlow.Data
         #endregion
 
         #region Helpers
+
+        /// <summary>
+        /// Replaces the character references and invalidates the runtime dictionary. The
+        /// importer assigns through this rather than the field because a re-import inside one
+        /// editor session gets no OnEnable — a directly assigned list would leave the
+        /// [NonSerialized] dictionary serving the previous import's characters.
+        /// </summary>
+        public void SetCharacterReferences(List<CharacterReference> references)
+        {
+            CharacterReferences = references ?? new List<CharacterReference>();
+            _characters = null;
+        }
+
+        /// <summary>
+        /// Replaces the data asset references and invalidates the runtime dictionary. The
+        /// importer assigns through this rather than the field because a re-import inside one
+        /// editor session gets no OnEnable — a directly assigned list would leave the
+        /// [NonSerialized] dictionary serving the previous import's data assets.
+        /// </summary>
+        public void SetDataAssetReferences(List<StoryFlowDataAssetAsset> references)
+        {
+            DataAssetReferences = references ?? new List<StoryFlowDataAssetAsset>();
+            _dataAssets = null;
+        }
 
         /// <summary>
         /// Replaces the character id entries and invalidates the runtime bridge. The importer

@@ -687,12 +687,12 @@ namespace StoryFlow.Editor
                     }
                 }
                 projectAsset.ScriptReferences = scriptReferences;
-                projectAsset.CharacterReferences = characterReferences;
+                projectAsset.SetCharacterReferences(characterReferences);
                 // Registration point 4 of 5 for data assets - see the five-point
                 // registration list at the data-assets.json read site above. This
                 // assignment is what the runtime seed (StoryFlowDataAssetStore.BuildSeed)
                 // reads.
-                projectAsset.DataAssetReferences = dataAssetReferences;
+                projectAsset.SetDataAssetReferences(dataAssetReferences);
                 // Registration point 4 of 5 for the character index - see the five-point
                 // registration list at the character-index.json read site above. The
                 // runtime bridge (StoryFlowProjectAsset.CharacterIdBridge) is built from
