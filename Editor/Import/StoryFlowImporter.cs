@@ -516,8 +516,9 @@ namespace StoryFlow.Editor
                 // string-table pass: .sfd values are literals, and running the character lookup
                 // over them would turn every literal into a failed lookup.
                 //
-                // See also — data assets touch FIVE places, and each one breaks SILENTLY on
-                // its own if it is missed when this format changes:
+                // The five-point registration list — data assets touch FIVE places, and
+                // each one breaks SILENTLY on its own if it is missed when this format
+                // changes:
                 //   1. here: read data-assets.json and build one .asset per entry.
                 //   2. FindJsonScriptFiles: data-assets.json is excluded from the script sweep,
                 //      or it imports a second time as a garbage script asset.
@@ -557,8 +558,9 @@ namespace StoryFlow.Editor
                 // that one existing normalizer does. Lookups use bridge values verbatim —
                 // never normalize at lookup time, never add a second normalizer.
                 //
-                // Like data-assets.json, this artifact touches FIVE places, each breaking
-                // SILENTLY on its own if missed when the format changes:
+                // The five-point registration list — like data-assets.json, this artifact
+                // touches FIVE places, each breaking SILENTLY on its own if missed when
+                // the format changes:
                 //   1. here: read character-index.json and build the id entries.
                 //   2. FindJsonScriptFiles: character-index.json is excluded from the script
                 //      sweep, or it imports a second time as a garbage script asset.
@@ -686,13 +688,15 @@ namespace StoryFlow.Editor
                 }
                 projectAsset.ScriptReferences = scriptReferences;
                 projectAsset.CharacterReferences = characterReferences;
-                // Registration point 4 of 5 for data assets - see the "See also" list at
-                // the data-assets.json read site above. This assignment is what the runtime
-                // seed (StoryFlowDataAssetStore.BuildSeed) reads.
+                // Registration point 4 of 5 for data assets - see the five-point
+                // registration list at the data-assets.json read site above. This
+                // assignment is what the runtime seed (StoryFlowDataAssetStore.BuildSeed)
+                // reads.
                 projectAsset.DataAssetReferences = dataAssetReferences;
                 // Registration point 4 of 5 for the character index - see the five-point
-                // list at the character-index.json read site above. The runtime bridge
-                // (StoryFlowProjectAsset.CharacterIdBridge) is built from this.
+                // registration list at the character-index.json read site above. The
+                // runtime bridge (StoryFlowProjectAsset.CharacterIdBridge) is built from
+                // this.
                 projectAsset.SetCharacterIdEntries(characterIdEntries);
                 projectAsset.GlobalVariableEntries = globalVariableEntries;
                 projectAsset.GlobalStringEntries = globalStringEntries;
@@ -1642,11 +1646,12 @@ namespace StoryFlow.Editor
                 "project.json",
                 "global-variables.json",
                 "characters.json",
-                // Registration point 2 of 5 for data assets - see the "See also" list at
-                // the data-assets.json read site in ImportProject.
+                // Registration point 2 of 5 for data assets - see the five-point
+                // registration list at the data-assets.json read site in ImportProject.
                 "data-assets.json",
                 // Registration point 2 of 5 for the character index - see the five-point
-                // list at the character-index.json read site in ImportProject.
+                // registration list at the character-index.json read site in
+                // ImportProject.
                 "character-index.json"
             };
 
@@ -2425,11 +2430,12 @@ namespace StoryFlow.Editor
               .Append(globalVariablesJson).Append('\n')
               .Append(charactersJson).Append('\n')
               // Registration point 3 of 5 for data assets (with the #dataAssets section
-              // below) - see the "See also" list at the data-assets.json read site.
+              // below) - see the five-point registration list at the data-assets.json
+              // read site.
               .Append(dataAssetsJson).Append('\n')
               // Registration point 3 of 5 for the character index (with the
-              // #characterIndex section below) - see the five-point list at the
-              // character-index.json read site. The condensed JSON is empty for an
+              // #characterIndex section below) - see the five-point registration list at
+              // the character-index.json read site. The condensed JSON is empty for an
               // ABSENT file and "{...}" for a present-but-empty one, which is what keeps
               // the two states hash-distinguishable.
               .Append(characterIndexJson);
@@ -2457,6 +2463,10 @@ namespace StoryFlow.Editor
                 sb.Append(CertifyReference(da, "<missing>"));
             }
 
+            // Unlike #dataAssets above, this membership carries no resolution outcome
+            // the JSON cannot express — it is a pure function of the condensed index
+            // already appended. What it adds is sensitivity to the one transform between
+            // the two: a NormalizeCharacterPath change re-certifies every project.
             sb.Append("\n#characterIndex");
             foreach (var entry in asset.CharacterIdEntries)
             {
