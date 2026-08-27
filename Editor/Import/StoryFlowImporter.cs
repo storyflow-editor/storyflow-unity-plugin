@@ -512,9 +512,15 @@ namespace StoryFlow.Editor
                 // A TRUSTED SEED (engine contract §2.1): the editor's collector already stripped
                 // orphan and stale overrides, collapsed duplicate map keys and removed its own
                 // fields before shipping it. Nothing here re-validates or de-duplicates — a plugin
-                // that "fixes" the seed diverges from the other three runtimes. There is also no
-                // string-table pass: .sfd values are literals, and running the character lookup
-                // over them would turn every literal into a failed lookup.
+                // that "fixes" the seed diverges from the other three runtimes.
+                //
+                // IT IS A KEYING ARTIFACT NOW. Localization spec §2's amendment of 2026-08-27
+                // SUPERSEDES engine-contract 2.1's literal-value posture: a Data Asset's DECLARED
+                // string values are player-facing prose and ship as stable table keys in
+                // data-assets.json's own "strings" block, merged below into the same project table
+                // characters.json's strings feed. What is read out of the seed is still stored
+                // verbatim — the lookup happens at the READ DOOR and only for values whose
+                // provenance says they are content (StoryFlowDataAssetStore.TryRead).
                 //
                 // The five-point registration list — data assets touch FIVE places, and
                 // each one breaks SILENTLY on its own if it is missed when this format
@@ -534,6 +540,21 @@ namespace StoryFlow.Editor
                 {
                     JObject dataAssetsJson = JObject.Parse(File.ReadAllText(dataAssetsJsonPath));
                     dataAssetsCondensed = dataAssetsJson.ToString(Newtonsoft.Json.Formatting.None);
+
+                    // data-assets.json's OWN strings table, merged into the project's global
+                    // table exactly as characters.json's is — same helper, same `<code>.<key>`
+                    // shape. It is the SOURCE TIER the .sfd read door falls through to when the
+                    // language being read carries no row for an id. ABSENT for a pre-amendment
+                    // export, and then every .sfd value is its own text again, with no branch for
+                    // it. No collision check, for the same reason the global-variables and
+                    // characters merges above make none: the ids are uuid-derived and disjoint by
+                    // surface, and singling out the third artifact for a guard the other two skip
+                    // would be asymmetric rather than safer.
+                    JObject dataAssetStrings = dataAssetsJson.Value<JObject>("strings");
+                    if (dataAssetStrings != null)
+                    {
+                        globalStringEntries.AddRange(FlattenStrings(dataAssetStrings));
+                    }
 
                     JObject dataAssetsObj = dataAssetsJson.Value<JObject>("dataAssets");
                     if (dataAssetsObj != null)
