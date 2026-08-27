@@ -2,6 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Newtonsoft.Json.Linq;
+// The string ladder lives on the execution context (StoryFlow.Execution) and is reached from
+// here for the .sfd read door's lookup. One assembly, and the precedent is StoryFlowComponent,
+// which calls the same shared LookUpLocalizedIn from outside that namespace — the alternative
+// would be a second, simpler lookup, which is exactly the drift the shared ladder prevents.
+using StoryFlow.Execution;
 using UnityEngine;
 
 namespace StoryFlow.Data
@@ -61,6 +66,37 @@ namespace StoryFlow.Data
     }
 
     /// <summary>
+    /// WHAT ANSWERED a resolve — the PROVENANCE of the value, which the localization gate reads
+    /// and nothing else does.
+    ///
+    /// THREE values and not two, because "not the declaration" has two different reasons and a
+    /// reader who cannot tell them apart re-derives the gate wrongly. Both an ancestor's
+    /// declaration and an ancestor's override look simply INHERITED from a descendant, and the
+    /// reference implementation learned what that costs: its origin token folded the two into one
+    /// `inherited` value, so its accessor door served the ancestor's translation for a text the
+    /// descendant had deliberately replaced (fixed editor-side at b18c4de0). The failure is not a
+    /// missing translation — it is a WRONG VALUE, and it is invisible in the source language.
+    ///
+    /// Recorded where the chain walk's branch already is, never re-derived afterwards: once an
+    /// overlay entry and an override are both just a variant reference, nothing downstream can
+    /// tell them apart.
+    /// </summary>
+    public enum StoryFlowDataAssetOrigin
+    {
+        /// <summary>
+        /// The root-most declaration's own authored value (contract §4.3). The ONLY tier that
+        /// localizes — see <see cref="StoryFlowDataAssetStore.TryRead"/>.
+        /// </summary>
+        Declaration,
+
+        /// <summary>An <c>overrides</c> entry at some chain level. Authored, but NOT keyed.</summary>
+        Override,
+
+        /// <summary>An overlay entry: a write this session made. Live data, never content.</summary>
+        SessionWrite,
+    }
+
+    /// <summary>
     /// The declared SHAPE an accessor node's pins were built from at spawn time: the four
     /// wire-type fields the exporter wrote onto the node, which travel together everywhere and
     /// mean nothing apart. §6.1 compares them against the seed's live declaration, and a
@@ -106,13 +142,19 @@ namespace StoryFlow.Data
     /// Both are owned by StoryFlowManager and passed in, so tests can drive the resolver
     /// against a seed built straight from the fixture JSON.
     ///
-    /// THREE DOORS IN, one walk behind all of them:
-    ///  - TryResolve  — value only, no pin shape to check: the public API (which gates on the
-    ///    declaration it looked the name up with) and any caller holding an id it trusts.
-    ///  - ReadBound   — value AND the §6.1 ladder answer: what a bound accessor NODE reads
+    /// FOUR DOORS IN, one walk behind all of them:
+    ///  - TryRead     — value with the LOCALIZATION GATE applied: the door every surface that
+    ///    hands a .sfd value to GAME CODE goes through (both host mirrors, via
+    ///    StoryFlowDataAssetAccess).
+    ///  - TryResolve  — the CHAIN RULE ALONE, no string lookup anywhere in it: saves, the
+    ///    fixture harnesses and any caller that wants the bytes the store actually holds.
+    ///  - ReadBound   — TryRead plus the §6.1 ladder answer: what a bound accessor NODE reads
     ///    through, since a node's pins can be stale in a way an id cannot.
     ///  - CheckBound  — the ladder answer alone, no overlay and no copy-out: the write path,
     ///    which needs to know the binding is sound and nothing else.
+    /// TryRead and ReadBound share ONE gate (see <see cref="ReadOut"/>) rather than carrying a
+    /// copy each: a rule that held on the host mirrors and not at the node arms would be a bug
+    /// no single-surface test could see.
     ///
     /// ONE HOLE IN "the seed is never mutated": FindDeclaration and FindDeclarationByName
     /// hand back a StoryFlowVariable BY REFERENCE into the seed, and C# has no const to stop
@@ -155,9 +197,15 @@ namespace StoryFlow.Data
         /// dictionary order and nothing orders them leaf-to-root.
         ///
         /// Deliberately does NOT resolve string-table keys the way character and global
-        /// variables do: data-assets.json carries no strings table (the exporter writes .sfd
-        /// values verbatim), so a .sfd string value is a literal, and running the lookup over
-        /// it would replace every literal with a failed lookup.
+        /// variables do, and the REASON CHANGED with localization spec §2's amendment of
+        /// 2026-08-27 (which supersedes engine-contract 2.1's literal-value posture):
+        /// data-assets.json now DOES carry a strings table, and a declared .sfd string value is
+        /// a table key like any other artifact's. It is still not resolved here, because the
+        /// seed is the store's read-only half and a bake would (a) freeze the authored text in
+        /// whatever language happened to be current at SetProject, and (b) destroy the one thing
+        /// the localization gate needs — the difference between a value that came from the seed
+        /// and one a script wrote. Resolution happens at the READ DOOR instead: see
+        /// <see cref="TryRead"/>.
         /// </summary>
         public static void BuildSeed(
             StoryFlowProjectAsset project, Dictionary<string, StoryFlowDataAssetDef> outSeed)
@@ -476,6 +524,12 @@ namespace StoryFlow.Data
         /// Returns false (leaving <paramref name="value"/> null) for an unknown asset or an id
         /// nothing declares. The value is COPIED OUT (contract §3: graph code must not be able
         /// to mutate the seed or the overlay through a read).
+        ///
+        /// THIS IS THE CHAIN RULE AND NOTHING MORE: it answers the value the contract says the
+        /// chain holds, with no string-table lookup anywhere in it. Game-facing reads go through
+        /// <see cref="TryRead"/>, which layers the localization gate on top. Saves and the
+        /// fixture harnesses want this one — a persisted overlay entry must be the bytes the
+        /// game wrote.
         /// </summary>
         public static bool TryResolve(
             Dictionary<string, StoryFlowDataAssetDef> seed,
@@ -485,10 +539,76 @@ namespace StoryFlow.Data
             value = null;
             if (string.IsNullOrEmpty(variableId)) return false;
 
-            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration);
+            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration, out _);
             if (declaration == null) return false;
 
             value = CopyOut(nearest, declaration);
+            return true;
+        }
+
+        /// <summary>
+        /// THE READ DOOR: <see cref="TryResolve"/> plus the localization gate, and the ONE
+        /// function every surface that hands a .sfd value to GAME CODE calls (both host mirrors,
+        /// through StoryFlowDataAssetAccess; the node arms reach the same gate through
+        /// <see cref="ReadBound"/>, which needs the §6.1 ladder answer as well).
+        ///
+        /// Localization spec §2's amendment of 2026-08-27 — which SUPERSEDES engine-contract
+        /// 2.1's "a .sfd value is a literal, never look it up" — makes a Data Asset's declared
+        /// string values player-facing prose that ships as stable table keys in
+        /// data-assets.json's own <c>strings.en</c>, resolving through the very ladder every
+        /// other artifact's strings already use (the importer merges that table into the project
+        /// globals characters.json's strings feed).
+        ///
+        /// WHAT LOCALIZES, and the three rules that are re-derivable wrongly (the vendored golden
+        /// package's manifest, localization.dataAssets, spells all of them out):
+        ///
+        ///  - ONLY A DECLARATION. <see cref="StoryFlowDataAssetOrigin.Override"/> and
+        ///    <see cref="StoryFlowDataAssetOrigin.SessionWrite"/> are handed back verbatim. An
+        ///    override is authored but UNKEYED: a .sfd id carries no per-asset segment, so a
+        ///    declaration and a descendant's override of it would collide on one
+        ///    <c>&lt;variableId&gt;.value</c>, and the exporter therefore keys declarations only.
+        ///    Localizing an override does not MISS — it serves the ancestor's translation for a
+        ///    text the descendant replaced.
+        ///  - A WRITTEN VALUE NEVER LOCALIZES, including after a save/load, because the save
+        ///    carries the overlay and a restored write was never content. The gate is WHERE THE
+        ///    VALUE CAME FROM and never whether it LOOKS like a key: a write that happened to
+        ///    equal a key would otherwise be translated into a string the game has since
+        ///    redefined, and that failure is invisible in the source language.
+        ///  - STRING-TYPED PROSE ONLY, decided by the DECLARED type — see
+        ///    <see cref="LocalizeDeclaredValue"/>.
+        ///
+        /// THE ID IS BUILT FROM THE VARIABLE ALONE — <c>&lt;variableId&gt;.value</c>,
+        /// <c>.value.&lt;index&gt;</c>, <c>.value.&lt;mapKey&gt;</c> — and it is the EXPORTER
+        /// that built it; nothing here re-derives one, it resolves the bytes the seed carries.
+        /// That is the deliberate CONTRAST with a character value's
+        /// <c>&lt;characterId&gt;.&lt;variableId&gt;.value</c>, and the reason a chain localizes
+        /// at every level that declares something: it is the VARIABLE that is unique, not the
+        /// asset.
+        ///
+        /// RESOLUTION IS AT THIS DOOR, not baked into the seed, so a mid-session SetLanguage
+        /// lands on the very next .sfd read. That is the same read-time posture this engine
+        /// already has for every other string it holds (StoryFlowManager.SetLanguage's "what
+        /// moves, and when"), and here it is forced rather than chosen: the seed is read-only
+        /// forever and a baked value could no longer be told apart from a write.
+        ///
+        /// <paramref name="project"/> may be null (a store with no project localizes nothing and
+        /// every value passes through), and an empty <paramref name="languageCode"/> reads as
+        /// the source language, since no language table is keyed by it and the artifact's own
+        /// source table answers.
+        /// </summary>
+        public static bool TryRead(
+            Dictionary<string, StoryFlowDataAssetDef> seed,
+            Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
+            StoryFlowProjectAsset project, string languageCode,
+            string assetId, string variableId, out StoryFlowVariant value)
+        {
+            value = null;
+            if (string.IsNullOrEmpty(variableId)) return false;
+
+            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration, out var origin);
+            if (declaration == null) return false;
+
+            value = ReadOut(nearest, declaration, origin, project, languageCode);
             return true;
         }
 
@@ -513,15 +633,22 @@ namespace StoryFlow.Data
         ///
         /// A NULL overlay skips the session lookups entirely — that is the write path, which
         /// needs the declaration and nothing else.
+        ///
+        /// <paramref name="origin"/> reports WHICH of the three tiers answered, recorded at the
+        /// branch that already knows rather than re-derived by a caller that no longer can (see
+        /// <see cref="StoryFlowDataAssetOrigin"/>). With no nearest hit the declaration answered,
+        /// which is the only tier the localization gate treats as content.
         /// </summary>
         private static void WalkForValue(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
             string assetId, string variableId,
-            out StoryFlowVariant nearest, out StoryFlowVariable declaration)
+            out StoryFlowVariant nearest, out StoryFlowVariable declaration,
+            out StoryFlowDataAssetOrigin origin)
         {
             StoryFlowVariant foundValue = null;
             StoryFlowVariable foundDecl = null;
+            var foundFrom = StoryFlowDataAssetOrigin.Override;
 
             WalkChain(seed, assetId, level =>
             {
@@ -532,10 +659,12 @@ namespace StoryFlow.Data
                         levelOverlay.TryGetValue(variableId, out var written))
                     {
                         foundValue = written;
+                        foundFrom = StoryFlowDataAssetOrigin.SessionWrite;
                     }
                     else if (level.Overrides.TryGetValue(variableId, out var overridden))
                     {
                         foundValue = overridden;
+                        foundFrom = StoryFlowDataAssetOrigin.Override;
                     }
                 }
 
@@ -546,6 +675,7 @@ namespace StoryFlow.Data
 
             nearest = foundValue;
             declaration = foundDecl;
+            origin = foundValue == null ? StoryFlowDataAssetOrigin.Declaration : foundFrom;
         }
 
         /// <summary>
@@ -566,6 +696,99 @@ namespace StoryFlow.Data
         }
 
         /// <summary>
+        /// THE ONE LOCALIZATION GATE this plugin has, and the tail of every game-facing read:
+        /// <see cref="CopyOut"/> plus the decision of whether the value is CONTENT.
+        /// <see cref="TryRead"/> (the host mirrors) and <see cref="ReadBound"/> (the node arms
+        /// and the degraded ladder) both end here, so the rule cannot hold at one surface and
+        /// not the other — which is the failure a single-surface test cannot see.
+        ///
+        /// GATED ON PROVENANCE, never on the value's shape. Every rule behind that sentence is
+        /// written out on <see cref="TryRead"/>; this is only where it is enforced.
+        ///
+        /// A null project is "no project to look anything up in", which is a hand-built store in
+        /// a test and the write path's own CheckBound — both of which want the bytes.
+        /// </summary>
+        private static StoryFlowVariant ReadOut(
+            StoryFlowVariant nearest, StoryFlowVariable declaration, StoryFlowDataAssetOrigin origin,
+            StoryFlowProjectAsset project, string languageCode)
+        {
+            var value = CopyOut(nearest, declaration);
+            if (origin == StoryFlowDataAssetOrigin.Declaration && project != null)
+            {
+                LocalizeDeclaredValue(declaration, project, languageCode, value);
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// A DECLARED value with its string-table keys resolved, IN PLACE on the copy the read
+        /// is about to hand out.
+        ///
+        /// THE TYPE GATE IS THE EXPORTER'S, transcribed (json-export-strategy.ts
+        /// keyDataAssetDeclaration): a string scalar, the elements of a string ARRAY, and the
+        /// values of a map whose ValueType is String. Everything else — enum, image, audio,
+        /// character, and every number and boolean — passes through untouched even when its
+        /// value is a string, and a map's KEYS are identifiers that never resolve whatever their
+        /// KeyType is. A gate that drifted from the exporter's would look up an id nothing keyed,
+        /// or hand back a key.
+        ///
+        /// "an absent valueType is a string map" arrives here already settled: the importer
+        /// defaults both map sides to "string" (ParseMapTypeInfo), which it must, because
+        /// default(StoryFlowVariableType) in this engine is Boolean rather than String.
+        /// </summary>
+        private static void LocalizeDeclaredValue(
+            StoryFlowVariable declaration, StoryFlowProjectAsset project, string languageCode,
+            StoryFlowVariant value)
+        {
+            if (declaration.Type == StoryFlowVariableType.Map)
+            {
+                if (declaration.ValueType != StoryFlowVariableType.String || value.MapValue == null) return;
+                foreach (var entry in value.MapValue)
+                {
+                    if (entry != null) LocalizeString(project, languageCode, entry.Value);
+                }
+                return;
+            }
+
+            if (declaration.Type != StoryFlowVariableType.String) return;
+
+            if (declaration.IsArray)
+            {
+                if (value.ArrayValue == null) return;
+                foreach (var element in value.ArrayValue) LocalizeString(project, languageCode, element);
+                return;
+            }
+
+            LocalizeString(project, languageCode, value);
+        }
+
+        /// <summary>
+        /// One string through the project's string ladder, left alone when it is not prose.
+        ///
+        /// THE SHARED LADDER, with NO current script: a .sfd id is keyed by data-assets.json,
+        /// which the importer merges into the project globals, so passing a script would only
+        /// let a script table shadow it. Reusing LookUpLocalizedIn rather than reaching into
+        /// GetGlobalString is what keeps the overlay tier and the source-language fall-through
+        /// the same here as everywhere else in the plugin — a second, simpler lookup would be
+        /// the fourth ladder and would drift.
+        ///
+        /// PROSE means non-blank after trimming, exactly as the editor's keying pass decides it:
+        /// a whitespace-only value keys nothing there, so looking one up here would probe an id
+        /// no translator can ever reach. A miss answers with the key itself, which is the raw
+        /// fallback tier and is why an unkeyed literal survives this untouched.
+        /// </summary>
+        private static void LocalizeString(
+            StoryFlowProjectAsset project, string languageCode, StoryFlowVariant value)
+        {
+            if (value == null) return;
+            string key = value.GetString();
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(key.Trim())) return;
+
+            string resolved = StoryFlowExecutionContext.LookUpLocalizedIn(project, null, key, languageCode);
+            if (resolved != null) value.SetString(resolved);
+        }
+
+        /// <summary>
         /// ONE WALK for a bound accessor's read: resolve the value AND settle which degraded
         /// rung (if any) the binding is on, without handing the declaration back.
         ///
@@ -579,6 +802,7 @@ namespace StoryFlow.Data
         /// own snapshot (variableType / isArray / keyType / valueType) IS the chain's declared
         /// shape, so it already holds everything a declaration would tell it — and a
         /// declaration is a live reference into the seed (see this class's header).
+        ///
         /// </summary>
         public static StoryFlowDataAssetBinding ReadBound(
             Dictionary<string, StoryFlowDataAssetDef> seed,
@@ -589,7 +813,7 @@ namespace StoryFlow.Data
             value = null;
 
             var status = CheckBoundInternal(
-                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration);
+                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration, out _);
             if (status != StoryFlowDataAssetBinding.Ok) return status;
 
             value = CopyOut(nearest, declaration);
@@ -604,17 +828,19 @@ namespace StoryFlow.Data
             Dictionary<string, StoryFlowDataAssetDef> seed,
             string assetId, string variableId, StoryFlowDataAssetPinShape pins)
         {
-            return CheckBoundInternal(seed, null, assetId, variableId, pins, out _, out _);
+            return CheckBoundInternal(seed, null, assetId, variableId, pins, out _, out _, out _);
         }
 
         private static StoryFlowDataAssetBinding CheckBoundInternal(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
             string assetId, string variableId, StoryFlowDataAssetPinShape pins,
-            out StoryFlowVariant nearest, out StoryFlowVariable declaration)
+            out StoryFlowVariant nearest, out StoryFlowVariable declaration,
+            out StoryFlowDataAssetOrigin origin)
         {
             nearest = null;
             declaration = null;
+            origin = StoryFlowDataAssetOrigin.Declaration;
 
             // Dead REFERENCE vs stale BINDING, told apart BEFORE the walk: FindDeclaration
             // answers "no" to both, and the two have different fixes (rebind the pill vs
@@ -622,7 +848,7 @@ namespace StoryFlow.Data
             if (!HasAsset(seed, assetId)) return StoryFlowDataAssetBinding.DeadRef;
             if (string.IsNullOrEmpty(variableId)) return StoryFlowDataAssetBinding.Missing;
 
-            WalkForValue(seed, overlay, assetId, variableId, out nearest, out declaration);
+            WalkForValue(seed, overlay, assetId, variableId, out nearest, out declaration, out origin);
             if (declaration == null) return StoryFlowDataAssetBinding.Missing;
 
             // §6.1: the declaration moved under a live node. Treated as MISSING by every
