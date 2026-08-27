@@ -1089,26 +1089,38 @@ namespace StoryFlow
         //    parents until its next rebuild. Global variables have always behaved that way here,
         //    and the blast radius is small because the accessors are cache-exempt — only a
         //    memoized parent ABOVE one goes stale, never the read itself.
+        //
+        //  - WHICH LANGUAGE A READ RUNS IN. ResolutionProject() + ActiveLanguageCode(), the same
+        //    pair ResolveString already uses, so a .sfd string and a dialogue line on this
+        //    component can never be read in two different languages. For a localized project
+        //    both answer the manager's; for a pre-localization one the component's own
+        //    LanguageCode keeps its old meaning, which is the whole point of that helper. What
+        //    the language does to a read is StoryFlowDataAssetStore.TryRead's business —
+        //    declarations localize, overrides and session writes never do (localization spec §2's
+        //    amendment of 2026-08-27).
 
         /// <summary>Reads a boolean .sfd variable. <paramref name="found"/> is false for every refusal.</summary>
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetBool(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads an integer .sfd variable.</summary>
         public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetInt(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads a float .sfd variable.</summary>
         public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetFloat(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>
@@ -1118,14 +1130,16 @@ namespace StoryFlow
         public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetString(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetEnum(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>
@@ -1136,7 +1150,8 @@ namespace StoryFlow
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetVariant(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), ResolutionProject(), ActiveLanguageCode(),
+                asset, variableName, out found);
         }
 
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>

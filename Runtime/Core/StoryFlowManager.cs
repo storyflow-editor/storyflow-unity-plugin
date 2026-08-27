@@ -312,9 +312,18 @@ namespace StoryFlow
         // own a dialogue — would otherwise have to find a StoryFlowComponent just to use it as
         // a proxy for state that was never the component's. Both surfaces route through
         // StoryFlowDataAssetAccess, so neither can answer differently from the other; what each
-        // owns is only what genuinely differs (which store, and what to invalidate after a
-        // write). See that class for the binding rule, the type gate and the read-any /
-        // write-scalar asymmetry.
+        // owns is only what genuinely differs (which store, what to invalidate after a write,
+        // and which language a read runs in). See that class for the binding rule, the type
+        // gate and the read-any / write-scalar asymmetry.
+        //
+        // THE LANGUAGE A READ RUNS IN is GetLanguage() here, with no ActiveLanguageCodeFor
+        // indirection: that helper exists to decide between the MANAGER'S choice and a
+        // component's pre-localization field, and this is the manager. InitializeProject already
+        // guarantees the value is a code the loaded project carries (it snaps to the project's
+        // source language otherwise), so a project with no sidecar asks in its source language
+        // and every .sfd value answers with its own text. What the language does to a read is
+        // StoryFlowDataAssetStore.TryRead's business — declarations localize, overrides and
+        // session writes never do (localization spec §2's amendment of 2026-08-27).
         //
         // THE SETTERS HERE INVALIDATE NO EVALUATION CACHES, and cannot: a manager has no
         // execution context. If a dialogue is running on some component when one of these
@@ -331,21 +340,24 @@ namespace StoryFlow
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetBool(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads an integer .sfd variable.</summary>
         public int GetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetInt(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads a float .sfd variable.</summary>
         public float GetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetFloat(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>
@@ -355,14 +367,16 @@ namespace StoryFlow
         public string GetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetString(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetEnum(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>
@@ -373,7 +387,8 @@ namespace StoryFlow
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             return StoryFlowDataAssetAccess.GetVariant(
-                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, out found);
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
+                asset, variableName, out found);
         }
 
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>

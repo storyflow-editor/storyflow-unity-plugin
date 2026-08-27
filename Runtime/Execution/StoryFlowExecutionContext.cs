@@ -562,6 +562,19 @@ namespace StoryFlow.Execution
         /// The READ half of the ladder: the same five reasons, and on success the resolved
         /// value, taken from the SAME chain walk that settled the ladder rather than from a
         /// second one behind it.
+        ///
+        /// THE VALUE COMES OUT OF THE LOCALIZATION GATE, the same one the host mirrors read
+        /// through (StoryFlowDataAssetStore.ReadOut, reached from here via ReadBound and from
+        /// them via TryRead): a .sfd value read by graph code is read by a PLAYER, so a DECLARED
+        /// string one resolves through the string tables while an override and a session write
+        /// are handed back verbatim (localization spec §2's amendment of 2026-08-27). The
+        /// language is <see cref="ActiveLanguageCode"/> — the LIVE one, so a mid-session
+        /// SetLanguage lands on the very next .sfd read rather than the next dialogue.
+        ///
+        /// The store consults the PROJECT's ladder directly, not this context's
+        /// <see cref="LookUpLocalized"/>: that one probes the current SCRIPT's table first, and
+        /// a .sfd id is keyed by data-assets.json, which the importer merges into the project
+        /// globals. So a .sfd value reads the same inside a dialogue and outside one.
         /// </summary>
         internal bool TryReadDataAssetBinding(
             StoryFlowNode accessor, out string assetId, out StoryFlowVariant value)
@@ -571,8 +584,8 @@ namespace StoryFlow.Execution
             if (!TryBindDataAssetAccessor(accessor, out var resolvedId, out var variableId)) return false;
 
             var status = StoryFlowDataAssetStore.ReadBound(
-                DataAssetStore.Seed, DataAssetStore.Overlay, resolvedId, variableId,
-                PinShapeOf(accessor), out var resolved);
+                DataAssetStore.Seed, DataAssetStore.Overlay, Project, ActiveLanguageCode,
+                resolvedId, variableId, PinShapeOf(accessor), out var resolved);
 
             if (!ReportDataAssetBinding(accessor, resolvedId, variableId, status)) return false;
 

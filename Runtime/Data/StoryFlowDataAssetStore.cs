@@ -803,20 +803,25 @@ namespace StoryFlow.Data
         /// shape, so it already holds everything a declaration would tell it — and a
         /// declaration is a live reference into the seed (see this class's header).
         ///
+        /// THE VALUE COMES OUT OF THE SAME GATE <see cref="TryRead"/> uses (<see cref="ReadOut"/>):
+        /// a node arm is game code reading a .sfd value exactly as a host API call is, so a
+        /// declared string resolves on both surfaces and a written one stays verbatim on both.
+        /// Every localization rule lives on TryRead.
         /// </summary>
         public static StoryFlowDataAssetBinding ReadBound(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
+            StoryFlowProjectAsset project, string languageCode,
             string assetId, string variableId, StoryFlowDataAssetPinShape pins,
             out StoryFlowVariant value)
         {
             value = null;
 
             var status = CheckBoundInternal(
-                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration, out _);
+                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration, out var origin);
             if (status != StoryFlowDataAssetBinding.Ok) return status;
 
-            value = CopyOut(nearest, declaration);
+            value = ReadOut(nearest, declaration, origin, project, languageCode);
             return StoryFlowDataAssetBinding.Ok;
         }
 

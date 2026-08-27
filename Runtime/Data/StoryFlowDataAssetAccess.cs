@@ -50,6 +50,16 @@ namespace StoryFlow.Data
     /// Set node's job and not something a caller can be expected to get right. The character
     /// branch keeps the same asymmetry.
     ///
+    /// THE LOCALIZATION PAIR IS A PER-CALL ARGUMENT (project + language code), on the READ half
+    /// only, and it is deliberately NOT folded into <see cref="StoryFlowDataAssetStoreRef"/>
+    /// beside the seed and the overlay. That ref is HELD — a StoryFlowComponent mid-dialogue
+    /// hands back the execution context's, minted once at Initialize — so a language riding it
+    /// would be the language the dialogue STARTED in, and a mid-session SetLanguage would reach
+    /// nothing until the next one. Passed per call, each mirror supplies its own live answer
+    /// (the manager's GetLanguage, the component's ActiveLanguageCode) and there is one read
+    /// path rather than a localizing one and a raw one. Localization spec §2's amendment of
+    /// 2026-08-27 owns the rules; StoryFlowDataAssetStore.TryRead writes them down.
+    ///
     /// WRITES DO NOT INVALIDATE ANYTHING HERE. Every setter reports whether the overlay changed
     /// and stops; the caller decides what that means for its own memos, because the two callers
     /// have different answers (see StoryFlowComponent's setter and the manager's). Character
@@ -93,36 +103,40 @@ namespace StoryFlow.Data
 
         internal static bool GetBool(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, characters, asset, variableName,
+            var value = ReadScalar(store, latch, characters, project, languageCode, asset, variableName,
                 StoryFlowVariableType.Boolean, out found);
             return found && value.GetBool();
         }
 
         internal static int GetInt(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, characters, asset, variableName,
+            var value = ReadScalar(store, latch, characters, project, languageCode, asset, variableName,
                 StoryFlowVariableType.Integer, out found);
             return found ? value.GetInt() : 0;
         }
 
         internal static float GetFloat(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, characters, asset, variableName,
+            var value = ReadScalar(store, latch, characters, project, languageCode, asset, variableName,
                 StoryFlowVariableType.Float, out found);
             return found ? value.GetFloat() : 0f;
         }
 
         internal static string GetEnum(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
-            var value = ReadScalar(store, latch, characters, asset, variableName,
+            var value = ReadScalar(store, latch, characters, project, languageCode, asset, variableName,
                 StoryFlowVariableType.Enum, out found);
             return found ? value.GetEnum() : "";
         }
@@ -142,6 +156,7 @@ namespace StoryFlow.Data
         /// </summary>
         internal static string GetString(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             if (TryBridgedCharacter(store, characters, asset, out var character))
@@ -175,7 +190,7 @@ namespace StoryFlow.Data
                 found = false;
                 return "";
             }
-            found = TryResolveValue(store, assetId, declaration, out var value);
+            found = TryResolveValue(store, project, languageCode, assetId, declaration, out var value);
             return found ? value.GetString() : "";
         }
 
@@ -187,6 +202,7 @@ namespace StoryFlow.Data
         /// </summary>
         internal static StoryFlowVariant GetVariant(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
             if (TryBridgedCharacter(store, characters, asset, out var character))
@@ -217,7 +233,7 @@ namespace StoryFlow.Data
                 found = false;
                 return null;
             }
-            found = TryResolveValue(store, assetId, declaration, out var value);
+            found = TryResolveValue(store, project, languageCode, assetId, declaration, out var value);
             return found ? value : null;
         }
 
@@ -455,6 +471,7 @@ namespace StoryFlow.Data
         /// </summary>
         private static StoryFlowVariant ReadScalar(
             StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowProjectAsset project, string languageCode,
             StoryFlowDataAssetAsset asset, string variableName, StoryFlowVariableType type,
             out bool found)
         {
@@ -477,7 +494,7 @@ namespace StoryFlow.Data
                 found = false;
                 return null;
             }
-            found = TryResolveValue(store, assetId, declaration, out var value);
+            found = TryResolveValue(store, project, languageCode, assetId, declaration, out var value);
             return value;
         }
 
@@ -513,13 +530,23 @@ namespace StoryFlow.Data
             return CommitWrite(store, latch, assetId, declaration.Id, value);
         }
 
-        /// <summary>The read behind every getter, on the store the declaration lookup settled.</summary>
+        /// <summary>
+        /// The read behind every getter on the seed path, on the store the declaration lookup
+        /// settled — and THE localization gate's door, so both public mirrors inherit it and
+        /// neither can answer a .sfd string differently from the other.
+        ///
+        /// TryRead rather than TryResolve: a .sfd value read through this surface is read by a
+        /// PLAYER, so a DECLARED string one resolves through the string tables in the language
+        /// being read, while an override and a session write are handed back verbatim
+        /// (localization spec §2's amendment of 2026-08-27; every rule lives on TryRead). The
+        /// node arms reach the same gate through the store's ReadBound.
+        /// </summary>
         private static bool TryResolveValue(
-            StoryFlowDataAssetStoreRef store, string assetId, StoryFlowVariable declaration,
-            out StoryFlowVariant value)
+            StoryFlowDataAssetStoreRef store, StoryFlowProjectAsset project, string languageCode,
+            string assetId, StoryFlowVariable declaration, out StoryFlowVariant value)
         {
-            return StoryFlowDataAssetStore.TryResolve(
-                store.Seed, store.Overlay, assetId, declaration.Id, out value);
+            return StoryFlowDataAssetStore.TryRead(
+                store.Seed, store.Overlay, project, languageCode, assetId, declaration.Id, out value);
         }
 
         /// <summary>

@@ -63,6 +63,24 @@ namespace StoryFlow.Execution
                     Debug.Log($"[SF-TRACE] EVAL {node.Id} {typeName} result={result}");
                 }
 
+                // THE .sfd ACCESSORS ANSWER FINISHED TEXT and must not re-enter this ladder.
+                // Every other node here hands back a value whose string IS a table key, which is
+                // why this wrap exists at all; a .sfd accessor's read already went through the
+                // store's own door, which resolved it or deliberately did not, GATED ON
+                // PROVENANCE (StoryFlowDataAssetStore.TryRead — declarations localize, overrides
+                // and session writes never do). Running this ladder over the answer would be a
+                // second door gated on SHAPE, and it would undo exactly the case the gate exists
+                // for: a session write whose value happens to be a real key would come back as
+                // somebody else's prose, invisibly in the source language. Pre-amendment this
+                // wrap was a harmless no-op over a .sfd literal, which is why it was here.
+                //
+                // Only the SCALAR path needs saying. The cached branch above cannot reach a .sfd
+                // accessor at all (they are cache-exempt), and a value read out of a .sfd ARRAY
+                // or MAP by a downstream node re-enters this ladder as that node's result — a
+                // known limit of container reads in this engine, harmless for declared prose
+                // (which keys nothing once translated) and recorded for the divergence register.
+                if (EvaluatorHelpers.IsDataAssetAccessor(node.Type)) return result;
+
                 return ctx.ResolveStringKey(result);
             }
             finally
