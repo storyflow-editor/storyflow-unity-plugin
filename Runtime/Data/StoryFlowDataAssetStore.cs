@@ -368,6 +368,37 @@ namespace StoryFlow.Data
         // =====================================================================
 
         /// <summary>
+        /// ONE resolution's three answers, which are one answer: the nearest hit, the root-most
+        /// declaration, and WHICH tier the nearest came from. <see cref="WalkForValue"/> produces
+        /// all three together and every consumer needs all three, so they travel together rather
+        /// than as a positional list a later door could assemble by hand from a different walk —
+        /// and an Origin paired with somebody else's Declaration is exactly the mis-gate
+        /// <see cref="StoryFlowDataAssetOrigin"/> exists to prevent.
+        ///
+        /// <c>Declaration == null</c> is the "nothing on the chain declares this id" answer every
+        /// caller tests first; the other two mean nothing until it is non-null.
+        /// </summary>
+        private readonly struct Resolution
+        {
+            /// <summary>The FIRST overlay-or-override hit leaf -> root (§4.1/§4.2), or null.</summary>
+            public readonly StoryFlowVariant Nearest;
+
+            /// <summary>The ROOT-MOST declaration (§4.3), or null when nothing declares the id.</summary>
+            public readonly StoryFlowVariable Declaration;
+
+            /// <summary>Which tier <see cref="Nearest"/> came from — Declaration when it is null.</summary>
+            public readonly StoryFlowDataAssetOrigin Origin;
+
+            public Resolution(
+                StoryFlowVariant nearest, StoryFlowVariable declaration, StoryFlowDataAssetOrigin origin)
+            {
+                Nearest = nearest;
+                Declaration = declaration;
+                Origin = origin;
+            }
+        }
+
+        /// <summary>
         /// THE chain walk, leaf -> root, shared by every function in this file so none of
         /// them can disagree about chain order, the depth cap or the cycle guard. Calls
         /// <paramref name="visit"/> per level and stops early when it returns false.
@@ -539,10 +570,10 @@ namespace StoryFlow.Data
             value = null;
             if (string.IsNullOrEmpty(variableId)) return false;
 
-            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration, out _);
-            if (declaration == null) return false;
+            var walk = WalkForValue(seed, overlay, assetId, variableId);
+            if (walk.Declaration == null) return false;
 
-            value = CopyOut(nearest, declaration);
+            value = CopyOut(walk);
             return true;
         }
 
@@ -605,10 +636,10 @@ namespace StoryFlow.Data
             value = null;
             if (string.IsNullOrEmpty(variableId)) return false;
 
-            WalkForValue(seed, overlay, assetId, variableId, out var nearest, out var declaration, out var origin);
-            if (declaration == null) return false;
+            var walk = WalkForValue(seed, overlay, assetId, variableId);
+            if (walk.Declaration == null) return false;
 
-            value = ReadOut(nearest, declaration, origin, project, languageCode);
+            value = ReadOut(walk, project, languageCode);
             return true;
         }
 
@@ -634,17 +665,18 @@ namespace StoryFlow.Data
         /// A NULL overlay skips the session lookups entirely — that is the write path, which
         /// needs the declaration and nothing else.
         ///
-        /// <paramref name="origin"/> reports WHICH of the three tiers answered, recorded at the
-        /// branch that already knows rather than re-derived by a caller that no longer can (see
-        /// <see cref="StoryFlowDataAssetOrigin"/>). With no nearest hit the declaration answered,
-        /// which is the only tier the localization gate treats as content.
+        /// <see cref="Resolution.Origin"/> reports WHICH of the three tiers answered, recorded
+        /// at the branch that already knows rather than re-derived by a caller that no longer can
+        /// (see <see cref="StoryFlowDataAssetOrigin"/>). With no nearest hit the declaration
+        /// answered, which is the only tier the localization gate treats as content.
+        ///
+        /// The three travel back as ONE <see cref="Resolution"/> because they are one answer:
+        /// they mean nothing apart, and every consumer below needs all three of THIS walk's.
         /// </summary>
-        private static void WalkForValue(
+        private static Resolution WalkForValue(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
-            string assetId, string variableId,
-            out StoryFlowVariant nearest, out StoryFlowVariable declaration,
-            out StoryFlowDataAssetOrigin origin)
+            string assetId, string variableId)
         {
             StoryFlowVariant foundValue = null;
             StoryFlowVariable foundDecl = null;
@@ -673,9 +705,8 @@ namespace StoryFlow.Data
                 return true;
             });
 
-            nearest = foundValue;
-            declaration = foundDecl;
-            origin = foundValue == null ? StoryFlowDataAssetOrigin.Declaration : foundFrom;
+            return new Resolution(foundValue, foundDecl,
+                foundValue == null ? StoryFlowDataAssetOrigin.Declaration : foundFrom);
         }
 
         /// <summary>
@@ -689,10 +720,11 @@ namespace StoryFlow.Data
         /// keeps "resolved" meaning the same thing in a language where the caller gets a typed
         /// object instead of undefined.
         /// </summary>
-        private static StoryFlowVariant CopyOut(StoryFlowVariant nearest, StoryFlowVariable declaration)
+        private static StoryFlowVariant CopyOut(Resolution walk)
         {
             return new StoryFlowVariant(
-                nearest ?? declaration.Value ?? new StoryFlowVariant { Type = declaration.Type });
+                walk.Nearest ?? walk.Declaration.Value
+                    ?? new StoryFlowVariant { Type = walk.Declaration.Type });
         }
 
         /// <summary>
@@ -709,13 +741,12 @@ namespace StoryFlow.Data
         /// a test and the write path's own CheckBound — both of which want the bytes.
         /// </summary>
         private static StoryFlowVariant ReadOut(
-            StoryFlowVariant nearest, StoryFlowVariable declaration, StoryFlowDataAssetOrigin origin,
-            StoryFlowProjectAsset project, string languageCode)
+            Resolution walk, StoryFlowProjectAsset project, string languageCode)
         {
-            var value = CopyOut(nearest, declaration);
-            if (origin == StoryFlowDataAssetOrigin.Declaration && project != null)
+            var value = CopyOut(walk);
+            if (walk.Origin == StoryFlowDataAssetOrigin.Declaration && project != null)
             {
-                LocalizeDeclaredValue(declaration, project, languageCode, value);
+                LocalizeDeclaredValue(walk.Declaration, project, languageCode, value);
             }
             return value;
         }
@@ -818,10 +849,10 @@ namespace StoryFlow.Data
             value = null;
 
             var status = CheckBoundInternal(
-                seed, overlay, assetId, variableId, pins, out var nearest, out var declaration, out var origin);
+                seed, overlay, assetId, variableId, pins, out var walk);
             if (status != StoryFlowDataAssetBinding.Ok) return status;
 
-            value = ReadOut(nearest, declaration, origin, project, languageCode);
+            value = ReadOut(walk, project, languageCode);
             return StoryFlowDataAssetBinding.Ok;
         }
 
@@ -833,19 +864,16 @@ namespace StoryFlow.Data
             Dictionary<string, StoryFlowDataAssetDef> seed,
             string assetId, string variableId, StoryFlowDataAssetPinShape pins)
         {
-            return CheckBoundInternal(seed, null, assetId, variableId, pins, out _, out _, out _);
+            return CheckBoundInternal(seed, null, assetId, variableId, pins, out _);
         }
 
         private static StoryFlowDataAssetBinding CheckBoundInternal(
             Dictionary<string, StoryFlowDataAssetDef> seed,
             Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay,
             string assetId, string variableId, StoryFlowDataAssetPinShape pins,
-            out StoryFlowVariant nearest, out StoryFlowVariable declaration,
-            out StoryFlowDataAssetOrigin origin)
+            out Resolution walk)
         {
-            nearest = null;
-            declaration = null;
-            origin = StoryFlowDataAssetOrigin.Declaration;
+            walk = default;
 
             // Dead REFERENCE vs stale BINDING, told apart BEFORE the walk: FindDeclaration
             // answers "no" to both, and the two have different fixes (rebind the pill vs
@@ -853,13 +881,13 @@ namespace StoryFlow.Data
             if (!HasAsset(seed, assetId)) return StoryFlowDataAssetBinding.DeadRef;
             if (string.IsNullOrEmpty(variableId)) return StoryFlowDataAssetBinding.Missing;
 
-            WalkForValue(seed, overlay, assetId, variableId, out nearest, out declaration, out origin);
-            if (declaration == null) return StoryFlowDataAssetBinding.Missing;
+            walk = WalkForValue(seed, overlay, assetId, variableId);
+            if (walk.Declaration == null) return StoryFlowDataAssetBinding.Missing;
 
             // §6.1: the declaration moved under a live node. Treated as MISSING by every
             // caller, never coerced — within the string family a value carries no evidence of
             // its declared type, which is exactly why the check is on the DECLARATION.
-            return DeclMatches(declaration, pins)
+            return DeclMatches(walk.Declaration, pins)
                 ? StoryFlowDataAssetBinding.Ok
                 : StoryFlowDataAssetBinding.Changed;
         }
