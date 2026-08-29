@@ -92,6 +92,13 @@ namespace StoryFlow.Execution
                 return dataAssetVar?.ArrayValue ?? new List<StoryFlowVariant>();
             }
 
+            // Get Variable Names (contract §11.1): the names the wired asset's chain
+            // declares, as a fresh String-tagged array.
+            if (sourceNode.Type == StoryFlowNodeType.GetDataAssetVariableNames)
+            {
+                return ProjectDataAssetVariableNames(ctx, sourceNode);
+            }
+
             // Handle array modify nodes (add/remove/clear) that output their result array.
             // These nodes don't have a 'variable' field — their output is stored in CachedOutput.
             if (IsArrayModifyNode(sourceNode.Type))
@@ -186,6 +193,13 @@ namespace StoryFlow.Execution
                     return dataAssetVar?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
+                // Get Variable Names (contract §11.1): the names the wired asset's chain
+                // declares, as a fresh String-tagged array.
+                if (node.Type == StoryFlowNodeType.GetDataAssetVariableNames)
+                {
+                    return ProjectDataAssetVariableNames(ctx, node);
+                }
+
                 // Handle array modify nodes (add/remove/clear) that output their result array
                 if (IsArrayModifyNode(node.Type))
                 {
@@ -234,6 +248,27 @@ namespace StoryFlow.Execution
             {
                 var element = keys ? entry.Key : entry.Value;
                 result.Add(element != null ? new StoryFlowVariant(element) : new StoryFlowVariant());
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The Get Variable Names node's output (contract §11.1), projected into
+        /// String-tagged elements. The list itself is the STORE's — derived from the same
+        /// chain walk the resolver owns, reached through the context's names door — so a
+        /// list can never disagree with what an accessor then reads by any of these names.
+        /// FRESH per pull, elements and all: the names are strings the store built for
+        /// this call, so a mutating consumer (an array op) gets its own storage. Every
+        /// degraded path is an empty array with no warning.
+        /// </summary>
+        private static List<StoryFlowVariant> ProjectDataAssetVariableNames(
+            StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            var names = ctx.ReadDataAssetVariableNames(node);
+            var result = new List<StoryFlowVariant>(names.Count);
+            foreach (var name in names)
+            {
+                result.Add(StoryFlowVariant.String(name));
             }
             return result;
         }

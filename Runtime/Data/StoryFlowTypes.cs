@@ -222,6 +222,10 @@ namespace StoryFlow.Data
         GetDataAsset,
         GetDataAssetVariable,
         SetDataAssetVariable,
+
+        // Get Variable Names (contract §11.1): the pure enumeration over a .sfd chain's
+        // declarations. Appended, same serialized-integer rule.
+        GetDataAssetVariableNames,
     }
 
     public enum StoryFlowVariableType

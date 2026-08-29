@@ -893,6 +893,70 @@ namespace StoryFlow.Data
         }
 
         /// <summary>
+        /// The NAMES of every variable the asset's chain DECLARES (contract §11.1) — the
+        /// Get Variable Names node's whole answer, mirroring runtime-data-assets.js
+        /// variableNames (a consumer of the same eachDeclaration walk its debugger table
+        /// uses; here the walk is <see cref="WalkChain"/>, THE walk every resolver door
+        /// shares, not a second one).
+        ///
+        /// ORDER is the editor's: chain ROOT-FIRST, each level's variables in file order.
+        /// WalkChain enumerates leaf -> root, so the levels are collected and then
+        /// enumerated backwards — that reversal is the only thing making first-wins below
+        /// mean root-most-wins, exactly as the reference implementation's own loop notes.
+        ///
+        /// DECLARATIONS ONLY. Overrides are never visited: an override re-states a value
+        /// for a variable the chain already declares, so it can neither add a name nor
+        /// duplicate one — and an ORPHAN override, whose id nothing on the chain declares,
+        /// adds nothing either. BuildSeed drops orphans on the way in, but the walk does
+        /// not lean on that repair: a seed assembled by hand carries them and the list
+        /// must not change.
+        ///
+        /// SHADOWING is the resolver's: where two levels declare the same ID, the
+        /// root-most declaration keeps its slot (§4.3's rule, the one FindDeclaration
+        /// reaches by walking to the end of the chain). Where two levels declare the same
+        /// NAME under different ids, the name is stated once, at the root-most position —
+        /// a by-name reader (<see cref="FindDeclarationByName"/>) can only ever reach one
+        /// of them. Empty names are skipped.
+        ///
+        /// CATEGORY rows never appear, because they never enter this seed at all: the
+        /// importer drops them (the §2.1 category-drop ruling — the reference
+        /// implementation instead skips them mid-walk while letting them claim their id
+        /// slot, a skew the drop already sanctioned for the resolver).
+        ///
+        /// An unknown asset — which is every degraded shape the node can meet — answers an
+        /// EMPTY list, never null and never a throw.
+        /// </summary>
+        public static List<string> VariableNames(
+            Dictionary<string, StoryFlowDataAssetDef> seed, string assetId)
+        {
+            var names = new List<string>();
+            if (!HasAsset(seed, assetId)) return names;
+
+            var chain = new List<StoryFlowDataAssetDef>();
+            WalkChain(seed, assetId, level =>
+            {
+                chain.Add(level);
+                return true;
+            });
+
+            var claimedIds = new HashSet<string>();
+            var claimedNames = new HashSet<string>();
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                foreach (var decl in chain[i].Variables)
+                {
+                    // FIRST-WINS on the id — root-most-wins, per the reverse enumeration.
+                    if (decl == null || !claimedIds.Add(decl.Id ?? "")) continue;
+
+                    string name = decl.Name ?? "";
+                    if (name.Length == 0 || !claimedNames.Add(name)) continue;
+                    names.Add(name);
+                }
+            }
+            return names;
+        }
+
+        /// <summary>
         /// TryResolve's convenience twin: the resolved value, or null when nothing resolves
         /// (contract §4.5 / §9.1 — the fixtures' "resolved": false). Callers that must tell
         /// "unset" apart from a legitimately empty value want TryResolve instead.

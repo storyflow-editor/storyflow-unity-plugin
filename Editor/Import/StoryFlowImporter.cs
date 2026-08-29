@@ -236,6 +236,9 @@ namespace StoryFlow.Editor
             { "getDataAsset", StoryFlowNodeType.GetDataAsset },
             { "getDataAssetVariable", StoryFlowNodeType.GetDataAssetVariable },
             { "setDataAssetVariable", StoryFlowNodeType.SetDataAssetVariable },
+            // Get Variable Names (contract §11.1) carries NO payload fields at all —
+            // id, type, position only. The asset arrives over its dataAsset wire.
+            { "getDataAssetVariableNames", StoryFlowNodeType.GetDataAssetVariableNames },
 
             // Map Variables
             { "getMap", StoryFlowNodeType.GetMap },
@@ -2437,8 +2440,12 @@ namespace StoryFlow.Editor
         /// block — the presence marker, the source language, the language registry and the
         /// per-language tables — so a project asset written under 3 must re-parse to pick its
         /// translations up.
+        ///
+        /// "4" -> "5" (contract §11.1): NodeTypeMap gained getDataAssetVariableNames. A
+        /// script imported under 4 would keep that node serialized as Unknown forever
+        /// without the re-parse.
         /// </summary>
-        private const string ParseSchemaVersion = "4";
+        private const string ParseSchemaVersion = "5";
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser

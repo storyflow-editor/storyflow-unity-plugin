@@ -595,6 +595,27 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
+        /// The variable NAMES the asset wired into a Get Variable Names node's dataAsset
+        /// pin declares (contract §11.1): the store's chain enumeration, root-first,
+        /// declarations only, reached over the same single-hop pill walk the accessor
+        /// ladder uses (<see cref="ResolveDataAssetId"/> — the wire is the binding, §2.2).
+        ///
+        /// Every degraded path — an unwired pin, a non-pill source, a dead ref, an asset
+        /// the seed does not carry, an absent store — answers an EMPTY list with NO
+        /// warning, latched or otherwise: unlike the bound accessors this node has no
+        /// per-variable binding to be wrong about, an empty list IS the family's degraded
+        /// answer, and §11.1 adds no warning tokens.
+        /// </summary>
+        internal List<string> ReadDataAssetVariableNames(StoryFlowNode node)
+        {
+            if (node == null || DataAssetStore == null || !DataAssetStore.IsValid)
+                return new List<string>();
+
+            return StoryFlowDataAssetStore.VariableNames(
+                DataAssetStore.Seed, ResolveDataAssetId(node));
+        }
+
+        /// <summary>
         /// The spawn-time declared shape an accessor's pins were built from, read off the node
         /// in ONE place so the read and write halves of the ladder cannot come to hold different
         /// field names for the same four values.
