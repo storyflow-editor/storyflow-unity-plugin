@@ -14,6 +14,17 @@ namespace StoryFlow.Lipsync
     /// face. Lipsync is presentational, so it lives where the face lives, and a project with no 3D faces pays
     /// nothing for it.
     ///
+    /// ANY ARKIT-NAMED RIG, not just Synty. The 52 ARKit face blendshape names are the de facto interchange
+    /// format for facial animation — MetaHumans take them through the Live Link Face path, and VRM, Ready
+    /// Player Me, Character Creator and Audio2Face all speak them. Synty's Sidekick rigs adopted the set and
+    /// extended it. The built-in table is tuned on Sidekick, but nothing here is Sidekick-specific: point this
+    /// at a MetaHuman or a VRM avatar and it drives the same names.
+    ///
+    /// The two exceptions are the TH and L poses, which use `tongueUp` and `tongueRaise` — Synty extensions,
+    /// since ARKit itself has only `tongueOut`. A rig without them drops those two with a warning and keeps
+    /// the jaw and lip half of the pose, which is the usual tongue-less approximation and is invisible at
+    /// game camera distance.
+    ///
     /// Tier 1 (this): live amplitude analysis, works on ANY audio with zero preparation, reads convincingly but
     /// will not hit a specific consonant. Tier 2 replaces the analysis with baked viseme tracks and reuses
     /// everything else. See LIPSYNC_DESIGN.md for both, and for the normative constants the driver implements.
@@ -29,10 +40,10 @@ namespace StoryFlow.Lipsync
         public string CharacterId;
 
         [Header("The face")]
-        [Tooltip("Root of the face meshes. Empty: this GameObject. Every SkinnedMeshRenderer beneath it is driven.")]
+        [Tooltip("Root of the face meshes. Empty: this GameObject. Every SkinnedMeshRenderer beneath it with ARKit-named blendshapes is driven.")]
         public Transform FaceRoot;
 
-        [Tooltip("Optional per-rig mapping. Empty: the built-in Sidekick table.")]
+        [Tooltip("Optional per-rig mapping. Empty: the built-in ARKit table, tuned on Synty Sidekick.")]
         public StoryFlowVisemeMap VisemeMap;
 
         [Header("Feel")]

@@ -3,7 +3,9 @@ using System.Collections.Generic;
 namespace StoryFlow.Lipsync
 {
     /// <summary>
-    /// The ten mouth poses, as ARKit morph weights in 0..1. Pure data and pure math — no Unity types — so
+    /// The ten mouth poses, as ARKit morph weights in 0..1. ARKit's face blendshape names are the de facto
+    /// interchange format for facial animation, so this table drives MetaHumans, VRM and Ready Player Me
+    /// avatars as readily as the Synty rigs it was tuned on. Pure data and pure math — no Unity types — so
     /// the numbers that decide whether a mouth reads as speech are testable without an engine.
     ///
     /// These weights are NOT guesses. They are the tuned table from the three.js build that already runs
@@ -20,7 +22,10 @@ namespace StoryFlow.Lipsync
         public static readonly string[] PoseNames = { "rest", "AA", "EE", "IH", "OH", "OO", "MM", "FF", "TH", "L" };
 
         /// <summary>
-        /// The default table. A rig can override it with a mapping asset, but this is what ships, and it is
+        /// The default table. TH and L reach for `tongueUp` and `tongueRaise`, which are Synty EXTENSIONS —
+        /// ARKit itself has only `tongueOut` — so a plain ARKit rig drops those two and keeps the jaw and lip
+        /// half of the pose. That is the usual tongue-less approximation, and it is invisible at game camera
+        /// distance. A rig can override it with a mapping asset, but this is what ships, and it is
         /// what an arm falls back to when no asset is assigned — a component with nothing configured still
         /// moves a mouth rather than doing nothing and looking broken.
         /// </summary>

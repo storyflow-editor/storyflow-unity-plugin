@@ -32,8 +32,11 @@ namespace StoryFlow.Lipsync
     }
 
     /// <summary>
-    /// A rig's viseme mapping. OPTIONAL: a component with none uses the built-in table, which is tuned for
-    /// Synty Sidekick and is what most projects want. Make one only to retarget onto a different face.
+    /// A rig's viseme mapping. OPTIONAL: a component with none uses the built-in table, which is ARKit-named
+    /// and tuned on Synty Sidekick, and is what most projects want. ARKit's 52 face blendshape names are the
+    /// de facto interchange format — MetaHumans (via Live Link Face), VRM, Ready Player Me and Character
+    /// Creator all use them — so the built-in table already fits far more rigs than Synty's. Make an asset
+    /// only to retarget onto a face that names its shapes differently.
     ///
     /// The schema is deliberately flat — one morph and one weight per entry, no per-shape attack/decay curves.
     /// The driver's global smoothing is what sells the motion; per-shape curves would be four more numbers per
