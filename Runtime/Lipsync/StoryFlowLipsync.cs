@@ -79,6 +79,9 @@ namespace StoryFlow.Lipsync
         private AudioSource _speaking;
         private bool _lineIsMine;
 
+        /// <summary>The LINE has audio, whether or not its source was found — see HandleDialogueUpdated.</summary>
+        private bool _lineHasAudio;
+
         private sealed class FaceTarget
         {
             public SkinnedMeshRenderer Renderer;
@@ -160,8 +163,11 @@ namespace StoryFlow.Lipsync
                 _speaking.GetSpectrumData(_spectrum, 0, FFTWindow.BlackmanHarris);
                 _driver.AdvanceFromSpectrum(_spectrum, AudioSettings.outputSampleRate, dt);
             }
-            else if (_lineIsMine && IdleMouthWithoutAudio)
+            else if (_lineIsMine && !_lineHasAudio && IdleMouthWithoutAudio)
             {
+                // The idle mouth is for a line that HAS no audio — a subtitled game, where a still face
+                // reads as broken. A line that has audio we could not find is the opposite case: flapping
+                // at random over real speech looks worse than not moving, so that one holds still.
                 _driver.AdvanceIdle(dt);
             }
             else
@@ -187,6 +193,7 @@ namespace StoryFlow.Lipsync
         {
             _speaking = null;
             _lineIsMine = false;
+            _lineHasAudio = false;
         }
 
         private void HandleDialogueUpdated(StoryFlowDialogueState state)
@@ -198,10 +205,17 @@ namespace StoryFlow.Lipsync
                 return;
             }
 
-            // The line's AudioSource is the one on the dialogue component already playing this clip. Asking the
-            // scene rather than reaching into StoryFlowComponent's private field keeps this to the public
-            // surface, and it works the same when a game overrides playback with its own source.
-            _speaking = state.Audio != null ? FindSourcePlaying(state.Audio) : null;
+            // The AudioSource playing this line, wherever it lives. `_lineHasAudio` records that the LINE
+            // has audio at all, which is a different question from whether we found its source: it is what
+            // stops the idle mouth flapping over speech that is playing somewhere we could not see.
+            _lineHasAudio = state.Audio != null;
+            _speaking = _lineHasAudio ? FindSourcePlaying(state.Audio) : null;
+            if (_lineHasAudio && _speaking == null)
+            {
+                Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
+                                 $"'{state.Audio.name}'. The mouth will stay closed for this line. " +
+                                 "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
+            }
             _driver?.ResetLevel();
         }
 
@@ -231,11 +245,25 @@ namespace StoryFlow.Lipsync
             return manager.RuntimeCharacters.TryGetValue(path, out var mine) && ReferenceEquals(mine, state.Character);
         }
 
+        /// <summary>
+        /// The AudioSource actually playing this line.
+        ///
+        /// The plugin's own playback puts it on the StoryFlow component's GameObject, so that is looked at
+        /// first and is the answer almost always. A game that overrides PlayDialogueAudio can play the clip
+        /// anywhere, though, and a scene sweep is cheap when it happens at most once per line — far cheaper
+        /// than the alternative, which is a mouth flapping at random over speech it never found.
+        /// </summary>
         private AudioSource FindSourcePlaying(AudioClip clip)
         {
-            if (Source == null) return null;
-            var sources = Source.GetComponents<AudioSource>();
-            foreach (var source in sources)
+            if (Source != null)
+            {
+                foreach (var source in Source.GetComponents<AudioSource>())
+                {
+                    if (source != null && source.clip == clip) return source;
+                }
+            }
+
+            foreach (var source in FindObjectsOfType<AudioSource>())
             {
                 if (source != null && source.clip == clip) return source;
             }
