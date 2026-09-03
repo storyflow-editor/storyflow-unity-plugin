@@ -58,6 +58,9 @@ namespace StoryFlow.Lipsync
         /// <summary>Unity's spectrum size must be a power of two. 512 bins over 90–4200 Hz is ample for a mouth.</summary>
         private const int SpectrumBins = 512;
 
+        /// <summary>How often to look again when no face was found at all — see RefreshFaceIfStale.</summary>
+        private const float FaceRecheckSeconds = 1f;
+
         private StoryFlowLipsyncDriver _driver;
         private readonly float[] _spectrum = new float[SpectrumBins];
 
@@ -65,6 +68,13 @@ namespace StoryFlow.Lipsync
         // assembled from parts, `jawOpen` lives on head AND teeth AND tongue, and a driver that writes only the
         // head opens a jaw while the teeth stay put. A baked single-mesh character simply yields one entry.
         private readonly List<FaceTarget> _targets = new List<FaceTarget>();
+
+        /// <summary>Kept so a re-resolve costs nothing but the hierarchy walk.</summary>
+        private Dictionary<string, Dictionary<string, float>> _resolvedTable;
+
+        /// <summary>Throttles the "still no face" retry, and keeps its warning to one.</summary>
+        private float _sinceFaceCheck;
+        private bool _warnedNoFace;
 
         private AudioSource _speaking;
         private bool _lineIsMine;
@@ -78,9 +88,9 @@ namespace StoryFlow.Lipsync
 
         private void OnEnable()
         {
-            var table = VisemeMap != null ? VisemeMap.ToTable() : StoryFlowVisemeTable.Default();
-            _driver = new StoryFlowLipsyncDriver(table);
-            ResolveFace(table);
+            _resolvedTable = VisemeMap != null ? VisemeMap.ToTable() : StoryFlowVisemeTable.Default();
+            _driver = new StoryFlowLipsyncDriver(_resolvedTable);
+            ResolveFace(_resolvedTable);
 
             if (Source == null) Source = FindObjectOfType<StoryFlowComponent>();
             if (Source != null)
@@ -100,6 +110,40 @@ namespace StoryFlow.Lipsync
             StopLipsync();
         }
 
+
+        /// <summary>
+        /// Re-resolve the face when what was cached has gone.
+        ///
+        /// The case that forced this is Unreal's: Synty's Sidekick tool rebuilds a character's part meshes
+        /// whenever the outfit changes at runtime, so targets resolved once point at destroyed objects and
+        /// the mouth quietly stops moving. Unity's baked characters do not do that, but swapping a face mesh
+        /// at runtime has the same effect, and the two arms should not behave differently here.
+        ///
+        /// A stale target is free to detect. Having found NOTHING is different: re-walking the hierarchy every
+        /// frame would cost something on every character that legitimately has no face, so that retry is
+        /// throttled and its warning kept to one.
+        /// </summary>
+        private void RefreshFaceIfStale(float dt)
+        {
+            var anyStale = false;
+            foreach (var target in _targets)
+            {
+                if (target.Renderer == null) anyStale = true;
+            }
+
+            if (!anyStale && _targets.Count > 0)
+            {
+                _sinceFaceCheck = 0f;
+                return;
+            }
+
+            _sinceFaceCheck += dt;
+            if (!anyStale && _sinceFaceCheck < FaceRecheckSeconds) return;
+
+            _sinceFaceCheck = 0f;
+            ResolveFace(_resolvedTable);
+        }
+
         private void Update()
         {
             if (_driver == null) return;
@@ -109,6 +153,8 @@ namespace StoryFlow.Lipsync
             _driver.Smooth = Smoothing;
 
             var dt = Time.deltaTime;
+            RefreshFaceIfStale(dt);
+
             if (_speaking != null && _speaking.isPlaying)
             {
                 _speaking.GetSpectrumData(_spectrum, 0, FFTWindow.BlackmanHarris);
@@ -230,10 +276,18 @@ namespace StoryFlow.Lipsync
                 if (indices.Count > 0) _targets.Add(new FaceTarget { Renderer = renderer, Indices = indices });
             }
 
+            // A face was found, so the next disappearance is worth reporting again.
+            _warnedNoFace = _warnedNoFace && _targets.Count == 0;
+
             if (_targets.Count == 0)
             {
-                Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' found no blendshapes under '{root.name}'. " +
-                                 "Point FaceRoot at the character's face meshes.", this);
+                // Once, not once per retry: RefreshFaceIfStale comes back every second while a face is missing.
+                if (!_warnedNoFace)
+                {
+                    _warnedNoFace = true;
+                    Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' found no blendshapes under '{root.name}'. " +
+                                     "Point FaceRoot at the character's face meshes.", this);
+                }
             }
             else if (missing.Count > 0)
             {
