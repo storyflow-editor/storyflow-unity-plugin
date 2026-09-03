@@ -188,6 +188,14 @@ namespace StoryFlow.Lipsync
             _driver?.ResetLevel();
         }
 
+
+        /// <summary>
+        /// Loudness 0..1 the driver is currently seeing, after the peak follower. For a debug meter while
+        /// tuning Sensitivity — the three.js studio this table came from had one, and picking a sensitivity
+        /// by watching a number beats picking it by watching a mouth.
+        /// </summary>
+        public float Level => _driver?.Level ?? 0f;
+
         /// <summary>Let the mouth close. Safe to call when nothing is playing.</summary>
         public void StopLipsync()
         {
