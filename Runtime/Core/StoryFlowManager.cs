@@ -392,6 +392,17 @@ namespace StoryFlow
                 asset, variableName, out found);
         }
 
+        /// <summary>
+        /// Every variable name the asset's chain DECLARES, root-most ancestor first (contract
+        /// §11.1). The manager half of the pair — see StoryFlowComponent.GetDataAssetVariableNames
+        /// for why callers should use this rather than walking ParentId themselves.
+        /// </summary>
+        public List<string> GetDataAssetVariableNames(StoryFlowDataAssetAsset asset)
+        {
+            if (asset == null) return new List<string>();
+            return StoryFlowDataAssetStore.VariableNames(DataAssetSeed, asset.Id);
+        }
+
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {

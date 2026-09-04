@@ -1355,6 +1355,159 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Every variable name the asset's chain DECLARES, root-most ancestor first (contract
+        /// §11.1).
+        ///
+        /// The .sfd accessors all need a name the caller already knew. This is how code learns the
+        /// names — an inventory row per variable, a debug readout, a data-driven UI — and it is the
+        /// SAME answer the Get Variable Names graph node gives, because both forward to
+        /// StoryFlowDataAssetStore.VariableNames, which owns every rule: root-first order,
+        /// declarations only (overrides shadow a name, they never add one), dedupe by id then name.
+        ///
+        /// Walking ParentId yourself is the thing this exists to prevent: that walk re-implements
+        /// those rules, and a re-implementation that disagrees produces a plausible list nobody
+        /// notices is wrong. Empty when the asset is null, there is no manager, or the seed does
+        /// not carry it.
+        /// </summary>
+        public List<string> GetDataAssetVariableNames(StoryFlowDataAssetAsset asset)
+        {
+            // GetDataAssetStore(), not StoryFlowManager.Instance: every sibling accessor prefers a
+            // live dialogue's store and falls back to the manager's, and a door that reached past
+            // that rule would be the one surface reading a different store.
+            var store = GetDataAssetStore();
+            if (asset == null || store == null || !store.IsValid) return new List<string>();
+            return StoryFlowDataAssetStore.VariableNames(store.Seed, asset.Id);
+        }
+
+        /// <summary>
+        /// THE GATE THE TYPED ARRAY GETTERS SHARE: <see cref="GetArrayVariable"/>'s list, but only
+        /// for a variable whose DECLARED element type is one this caller asked for.
+        ///
+        /// The typed getters exist because every typed SETTER already did, so a game could write a
+        /// List&lt;bool&gt; and then had to read it back as variants and unpack by hand. Unpacking
+        /// is the whole job, so the gate is what makes them more than a loop: a missing, non-array
+        /// or wrong-typed variable warns and answers empty rather than coercing, matching the
+        /// Unreal plugin's Get*ArrayVariable contract.
+        ///
+        /// Named like FindMapVariableForAccess, and warns in the same shape, because it is the
+        /// same idea one family over.
+        /// </summary>
+        private List<StoryFlowVariant> FindArrayElementsForAccess(
+            string accessor, string variableName, StoryFlowVariableType expected, bool global)
+        {
+            var variable = FindVariableByName(variableName, global);
+            if (variable == null)
+            {
+                Debug.LogWarning($"[StoryFlow] {accessor}: variable \"{variableName}\" not found.");
+                return new List<StoryFlowVariant>();
+            }
+            if (!variable.IsArray)
+            {
+                Debug.LogWarning($"[StoryFlow] {accessor}: variable \"{variableName}\" is not an array.");
+                return new List<StoryFlowVariant>();
+            }
+            if (variable.Type != expected)
+            {
+                Debug.LogWarning($"[StoryFlow] {accessor}: variable \"{variableName}\" is not a " +
+                                 $"{expected.ToString().ToLowerInvariant()} array.");
+                return new List<StoryFlowVariant>();
+            }
+            // The gate passed, so GetArrayVariable's own empty-on-miss arms cannot fire and its
+            // warning cannot double this one. It owns element copying and string resolution.
+            return GetArrayVariable(variableName, global);
+        }
+
+        /// <summary>
+        /// Reads a boolean array variable by display name as a native List&lt;bool&gt;.
+        ///
+        /// Mirrors <see cref="GetArrayVariable"/>'s scoping (locals during dialogue, then globals)
+        /// but unpacks each element, so a caller never handles a variant. A missing, non-array or
+        /// wrong-typed variable warns and returns an empty list. Counterpart to
+        /// <see cref="SetBoolArrayVariable"/>.
+        /// </summary>
+        public List<bool> GetBoolArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<bool>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetBoolArrayVariable), variableName, StoryFlowVariableType.Boolean, global))
+                result.Add(e.GetBool());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an integer array variable as a native list. See <see cref="GetBoolArrayVariable"/>
+        /// for the shared rules.
+        /// </summary>
+        public List<int> GetIntArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<int>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetIntArrayVariable), variableName, StoryFlowVariableType.Integer, global))
+                result.Add(e.GetInt());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a float array variable as a native list. See <see cref="GetBoolArrayVariable"/>
+        /// for the shared rules.
+        /// </summary>
+        public List<float> GetFloatArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<float>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetFloatArrayVariable), variableName, StoryFlowVariableType.Float, global))
+                result.Add(e.GetFloat());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a string array variable as a native list. Elements are resolved through the string
+        /// table, so callers receive LOCALIZED text — <see cref="GetArrayVariable"/> does that
+        /// resolution and this inherits it. See <see cref="GetBoolArrayVariable"/> for the shared
+        /// rules.
+        /// </summary>
+        public List<string> GetStringArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<string>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetStringArrayVariable), variableName, StoryFlowVariableType.String, global))
+                result.Add(e.GetString());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an enum array variable as native option strings, resolved through the string table
+        /// like the string array above. See <see cref="GetBoolArrayVariable"/> for the shared rules.
+        /// </summary>
+        public List<string> GetEnumArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<string>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetEnumArrayVariable), variableName, StoryFlowVariableType.Enum, global))
+                result.Add(e.GetEnum());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an image array variable as native asset-key strings. See
+        /// <see cref="GetBoolArrayVariable"/> for the shared rules.
+        /// </summary>
+        public List<string> GetImageArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<string>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetImageArrayVariable), variableName, StoryFlowVariableType.Image, global))
+                result.Add(e.GetString());
+            return result;
+        }
+
+        /// <summary>
+        /// Reads an audio array variable as native asset-key strings. See
+        /// <see cref="GetBoolArrayVariable"/> for the shared rules.
+        /// </summary>
+        public List<string> GetAudioArrayVariable(string variableName, bool global = false)
+        {
+            var result = new List<string>();
+            foreach (var e in FindArrayElementsForAccess(nameof(GetAudioArrayVariable), variableName, StoryFlowVariableType.Audio, global))
+                result.Add(e.GetString());
+            return result;
+        }
+
+        /// <summary>
         /// Gets a map variable by its display name.
         /// Returns the entries as a list of <see cref="StoryFlowMapEntry"/> in insertion
         /// order (entry order is contractual — it matches the editor and mapKeys/mapValues
