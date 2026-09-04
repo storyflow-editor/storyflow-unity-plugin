@@ -372,9 +372,24 @@ namespace StoryFlow.Lipsync
             _driver?.ResetLevel();
         }
 
+        /// <summary>
+        /// The line is over, but the audio may not be: with StopAudioOnDialogueEnd off the tail keeps playing,
+        /// and a mouth that snaps shut over audible speech reads worse than one that closes when the sound
+        /// does. So the source is kept while it is still playing this line's clip and the silent path closes
+        /// the mouth the frame it stops; only the line bookkeeping is cleared, so nothing idles and the next
+        /// line is a fresh start. The Unreal arm follows the same rule.
+        /// </summary>
         private void HandleDialogueEnded()
         {
-            StopLipsync();
+            if (!IsAnalysable())
+            {
+                StopLipsync();
+                return;
+            }
+
+            _lineIsMine = false;
+            _lineHasAudio = false;
+            _lineNodeId = null;
         }
 
         /// <summary>
