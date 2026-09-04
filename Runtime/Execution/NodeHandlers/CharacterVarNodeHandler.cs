@@ -49,6 +49,10 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 string val = StoryFlowEvaluator.EvaluateString(context, node.Id, StoryFlowHandles.In_String);
                 characterData.Name = val;
+                // A WRITTEN NAME IS LIVE DATA, not content: clearing the key is what stops a later
+                // SetLanguage re-resolving over it, the same provenance rule the .sfd read door
+                // applies to session writes.
+                characterData.NameKey = null;
                 component.BroadcastCharacterVariableChanged(characterPath, variableName, StoryFlowVariant.String(val));
                 FollowFlowOrFallthrough(component, context, node);
                 return;

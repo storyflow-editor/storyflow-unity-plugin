@@ -11,6 +11,24 @@ namespace StoryFlow.Data
     public class StoryFlowCharacterData
     {
         public string Name;
+
+        /// <summary>
+        /// The string-table KEY <see cref="Name"/> was resolved from, or empty once a script has
+        /// written a literal name over it.
+        ///
+        /// Unity cannot follow the sibling engines here. Unreal and Godot keep the key on the
+        /// runtime record and resolve into a per-line dialogue-state SNAPSHOT; this plugin hands
+        /// the LIVE record out as StoryFlowDialogueState.Character — pinned by reference in four
+        /// tests, and what makes a mid-dialogue SetCharacterVar visible without rebuilding a
+        /// state. So the record carries BOTH: the resolved text games read, and the key to
+        /// re-resolve it from when the language moves.
+        ///
+        /// EMPTY MEANS AUTHORED. A name a script wrote is live data, not content, so clearing the
+        /// key is what stops a later SetLanguage overwriting it — the same provenance rule the
+        /// .sfd read door applies to session writes.
+        /// </summary>
+        public string NameKey;
+
         public Sprite Image;
         public string ImageAssetKey;
         public Dictionary<string, StoryFlowVariant> Variables;
@@ -29,6 +47,7 @@ namespace StoryFlow.Data
         public StoryFlowCharacterData(StoryFlowCharacterData other)
         {
             Name = other.Name;
+            NameKey = other.NameKey;
             Image = other.Image;
             ImageAssetKey = other.ImageAssetKey;
             Variables = new Dictionary<string, StoryFlowVariant>();

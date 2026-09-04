@@ -293,6 +293,8 @@ namespace StoryFlow.Data
                 if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(variableName))
                 {
                     character.Name = value ?? "";
+                    // Written names are live data - see CharacterVarNodeHandler for the rule.
+                    character.NameKey = null;
                     return true;
                 }
                 if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))

@@ -92,7 +92,12 @@ namespace StoryFlow.Data
         {
             var data = new StoryFlowCharacterData
             {
+                // CharacterName is the string-table KEY since the importer stopped resolving it at
+                // import time. Seeded into both fields: Name is resolved by the manager right after
+                // this (RefreshRuntimeCharacterNames), and NameKey is what a later SetLanguage
+                // re-resolves from.
                 Name = CharacterName,
+                NameKey = CharacterName,
                 Image = ResolvedImage,
                 ImageAssetKey = ImageAssetKey,
                 Variables = new Dictionary<string, StoryFlowVariant>(),

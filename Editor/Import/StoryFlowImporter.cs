@@ -1124,9 +1124,18 @@ namespace StoryFlow.Editor
 
             charAsset.CharacterPath = normalizedPath;
 
-            // Resolve name from string table
-            string nameKey = charObj.Value<string>("name") ?? "";
-            charAsset.CharacterName = stringLookup.TryGetValue(nameKey, out var resolvedName) ? resolvedName : nameKey;
+            // THE KEY, NOT THE TEXT. Resolving here baked the name in the language the project was
+            // imported in, so a mid-session SetLanguage flipped the dialogue text and left the
+            // speaker label behind, with only a re-import to fix it. The runtime resolves it now
+            // (StoryFlowManager.RefreshRuntimeCharacterNames), which is what the sibling engines
+            // have always done and what the component's cf_name read already assumed - its comment
+            // says "stored as string table key - resolve it".
+            //
+            // stringLookup stays a parameter: the portrait lookup below still needs it, and an
+            // unkeyed name (a value that shipped literally) is its own text, so storing the key
+            // unresolved is correct for that case too - the runtime lookup simply misses and
+            // answers the literal.
+            charAsset.CharacterName = charObj.Value<string>("name") ?? "";
 
             // Resolve image
             string imageAssetKey = charObj.Value<string>("image") ?? "";

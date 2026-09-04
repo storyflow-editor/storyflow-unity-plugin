@@ -225,6 +225,9 @@ namespace StoryFlow
 
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
+            // The records were just seeded with their string-table keys in both name fields; this
+            // is what turns Name into text for the language settled above.
+            RefreshRuntimeCharacterNames();
             BuildDataAssetSeed();
             UsedOnceOnlyOptions.Clear();
 
@@ -390,6 +393,35 @@ namespace StoryFlow
             return StoryFlowDataAssetAccess.GetString(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), Project, GetLanguage(),
                 asset, variableName, out found);
+        }
+
+        /// <summary>
+        /// Re-resolves every runtime character's display name from the string-table key it was
+        /// seeded with, for the language being read now.
+        ///
+        /// THE PRICE OF HANDING OUT THE LIVE RECORD. Unreal and Godot keep the key on the record
+        /// and resolve into a per-line dialogue-state snapshot, so a switch reaches names for free
+        /// at the next line. This plugin hands StoryFlowDialogueState.Character out BY REFERENCE -
+        /// pinned in four tests, and what makes a mid-dialogue SetCharacterVar visible without
+        /// rebuilding a state - so the resolved text lives on that record and something has to
+        /// refresh it. This is that something, and it runs at exactly the two moments the answer
+        /// can change: a project install and a language switch.
+        ///
+        /// A RECORD WITH NO KEY IS SKIPPED, which is the provenance rule the .sfd read door
+        /// applies to session writes: a name a script has written is live data, not content, and
+        /// must survive a switch verbatim rather than being overwritten by the authored one.
+        /// </summary>
+        private void RefreshRuntimeCharacterNames()
+        {
+            foreach (var character in RuntimeCharacters.Values)
+            {
+                if (character == null || string.IsNullOrEmpty(character.NameKey)) continue;
+                // The one shared ladder every resolve door in this plugin runs, with no script
+                // tier: a character's name is project-scoped, and the manager has no current
+                // script to consult.
+                character.Name = StoryFlowExecutionContext.LookUpLocalizedIn(
+                    Project, null, character.NameKey, _currentLanguage) ?? character.NameKey;
+            }
         }
 
         /// <summary>
@@ -746,6 +778,9 @@ namespace StoryFlow
                 // re-enters SetLanguage has to be measured against the new value so it no-ops
                 // instead of recursing.
                 _currentLanguage = next;
+                // BEFORE the event, for the same reason the assignment is: a handler must see the
+                // new state, and a speaker label is part of it.
+                RefreshRuntimeCharacterNames();
                 Debug.Log($"[StoryFlow] Language set to \"{_currentLanguage}\".");
                 OnLanguageChanged?.Invoke(_currentLanguage);
             }
