@@ -393,6 +393,48 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// The .sfd Data Asset with this id, or with this display NAME when the string is not an
+        /// id.
+        ///
+        /// Every Data Asset accessor takes an asset REFERENCE, which code gets by wiring the asset
+        /// into a field. That is the right shape when the asset is known at design time and no
+        /// shape at all when it is not — a save-slot screen, a data-driven inventory, or anything
+        /// picking an asset from a string.
+        ///
+        /// AN AMBIGUOUS NAME RESOLVES TO NULL, deliberately, and warns: two assets can share a
+        /// display name, and picking one would be picking silently and differently per import
+        /// order. Ids are unique, which is what the warning tells the caller to use. A plain miss
+        /// is null with no warning — asking whether an asset exists is a legitimate question.
+        ///
+        /// Matches the Godot plugin, whose accessors have always taken an id-or-name string.
+        /// </summary>
+        public StoryFlowDataAssetAsset FindDataAsset(string idOrName)
+        {
+            if (Project == null || string.IsNullOrEmpty(idOrName)) return null;
+
+            // The id is the key, so try it first and answer without scanning.
+            var byId = Project.GetDataAsset(idOrName);
+            if (byId != null) return byId;
+
+            // Then the display name, which is NOT unique — so the whole scan runs rather than
+            // stopping at the first hit. Stopping early would make the answer depend on list
+            // order, which is the silent pick this exists to refuse.
+            StoryFlowDataAssetAsset matched = null;
+            foreach (var asset in Project.DataAssetReferences)
+            {
+                if (asset == null || asset.DisplayName != idOrName) continue;
+                if (matched != null)
+                {
+                    Debug.LogWarning($"[StoryFlow] Data Asset name \"{idOrName}\" is ambiguous - it " +
+                                     $"matches at least \"{matched.Id}\" and \"{asset.Id}\". Use the asset id.");
+                    return null;
+                }
+                matched = asset;
+            }
+            return matched;
+        }
+
+        /// <summary>
         /// Every variable name the asset's chain DECLARES, root-most ancestor first (contract
         /// §11.1). The manager half of the pair — see StoryFlowComponent.GetDataAssetVariableNames
         /// for why callers should use this rather than walking ParentId themselves.
