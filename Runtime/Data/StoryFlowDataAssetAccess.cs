@@ -455,6 +455,25 @@ namespace StoryFlow.Data
         }
 
         /// <summary>True for the four types that share <c>StringValue</c>. Enum is NOT one.</summary>
+        /// <summary>
+        /// The ELEMENT-level twin of <see cref="IsStringFamilyScalar"/>'s tolerance: a value stored
+        /// as a string satisfies a String, Image, Audio or Character declaration, because all four
+        /// store in the same field. Enum is excluded for the same reason the scalar gate excludes
+        /// it — it carries its own type tag, and folding it in would land an enum-declared element
+        /// typed String.
+        /// </summary>
+        private static bool ElementTypeMatches(StoryFlowVariableType declared, StoryFlowVariableType offered)
+        {
+            if (offered == StoryFlowVariableType.String)
+            {
+                return declared == StoryFlowVariableType.String
+                    || declared == StoryFlowVariableType.Image
+                    || declared == StoryFlowVariableType.Audio
+                    || declared == StoryFlowVariableType.Character;
+            }
+            return declared == offered;
+        }
+
         private static bool IsStringFamilyScalar(StoryFlowVariable declaration)
         {
             if (declaration.IsArray) return false;
@@ -529,6 +548,101 @@ namespace StoryFlow.Data
                 LogRefusal(latch, asset, variableName, declaration, type.ToString());
                 return false;
             }
+            return CommitWrite(store, latch, assetId, declaration.Id, value);
+        }
+
+        /// <summary>
+        /// Replace an ARRAY declaration's elements. True when the write landed.
+        ///
+        /// TYPED CONTAINER WRITERS, NOT A VARIANT ONE, and that is the design rather than a
+        /// detail: a StoryFlowVariant cannot say whether it IS an array, so a variant setter could
+        /// not tell "write an empty array" from "the caller passed a scalar", and writing the
+        /// second over an array declaration leaves a value nothing can read. That is why V2 left
+        /// the container half out rather than half-building it. Here the shape is in the
+        /// SIGNATURE, so there is nothing to infer and an empty write is unambiguous.
+        ///
+        /// THE SHAPE GATE runs before anything is written: the declaration must be an array (never
+        /// a map, never a scalar) and every element must match its declared type. A single
+        /// mismatch refuses the whole write — a partial list is a shape no author declared.
+        ///
+        /// No character branch: a character's builtins are scalars and its variables are reached
+        /// through the same gate the scalar writers use, so an array write against a bridged
+        /// character has nothing to land on and is refused with the others.
+        /// </summary>
+        internal static bool SetArray(
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowDataAssetAsset asset, string variableName, List<StoryFlowVariant> elements)
+        {
+            var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
+            if (declaration == null || !declaration.IsArray || declaration.Type == StoryFlowVariableType.Map)
+            {
+                LogRefusal(latch, asset, variableName, declaration, "array");
+                return false;
+            }
+
+            foreach (var element in elements ?? new List<StoryFlowVariant>())
+            {
+                if (!ElementTypeMatches(declaration.Type, element.Type))
+                {
+                    LogRefusal(latch, asset, variableName, declaration, "array");
+                    return false;
+                }
+            }
+
+            // Built field-wise, the way every array write in this plugin is (there is no SetArray
+            // twin of SetMap): Type carries the DECLARED element type, so an empty write still
+            // lands as an array of that type rather than as a type-less variant.
+            var value = new StoryFlowVariant
+            {
+                Type = declaration.Type,
+                ArrayValue = new List<StoryFlowVariant>(elements ?? new List<StoryFlowVariant>()),
+            };
+            return CommitWrite(store, latch, assetId, declaration.Id, value);
+        }
+
+        /// <summary>
+        /// Replace a MAP declaration's entries. The map twin of <see cref="SetArray"/> — see it for
+        /// why the shape lives in the signature.
+        ///
+        /// The gate is one step wider: every KEY must match the declared key type and every VALUE
+        /// the declared value type. Parallel lists mirror the map getters' shape; a length mismatch
+        /// refuses rather than truncating to the shorter, which would silently drop entries the
+        /// caller listed. Entry ORDER is the caller's and is preserved.
+        /// </summary>
+        internal static bool SetMap(
+            StoryFlowDataAssetStoreRef store, RefusalLatch latch, StoryFlowCharacterStoreRef characters,
+            StoryFlowDataAssetAsset asset, string variableName,
+            List<StoryFlowVariant> keys, List<StoryFlowVariant> values)
+        {
+            var declaration = FindDeclaration(store, latch, asset, variableName, out var assetId);
+            if (declaration == null || declaration.Type != StoryFlowVariableType.Map)
+            {
+                LogRefusal(latch, asset, variableName, declaration, "map");
+                return false;
+            }
+
+            keys ??= new List<StoryFlowVariant>();
+            values ??= new List<StoryFlowVariant>();
+            if (keys.Count != values.Count)
+            {
+                LogRefusal(latch, asset, variableName, declaration, "map");
+                return false;
+            }
+
+            var entries = new List<StoryFlowMapEntry>(keys.Count);
+            for (int i = 0; i < keys.Count; i++)
+            {
+                if (!ElementTypeMatches(declaration.KeyType, keys[i].Type)
+                    || !ElementTypeMatches(declaration.ValueType, values[i].Type))
+                {
+                    LogRefusal(latch, asset, variableName, declaration, "map");
+                    return false;
+                }
+                entries.Add(new StoryFlowMapEntry { Key = keys[i], Value = values[i] });
+            }
+
+            var value = new StoryFlowVariant();
+            value.SetMap(entries);
             return CommitWrite(store, latch, assetId, declaration.Id, value);
         }
 

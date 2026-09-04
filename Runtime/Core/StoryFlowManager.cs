@@ -477,6 +477,37 @@ namespace StoryFlow
             return StoryFlowDataAssetStore.VariableNames(DataAssetSeed, asset.Id);
         }
 
+        /// <summary>
+        /// Replaces a Data Asset's ARRAY variable with these elements. True when the write landed.
+        ///
+        /// The container half of the surface, which used to be read-only: every type could be READ
+        /// and only scalars written, so a Data Asset holding a list was a list host code could not
+        /// edit. TYPED CONTAINER SETTERS, NOT A VARIANT ONE — a StoryFlowVariant cannot say whether
+        /// it is an array, so a variant setter could not tell an empty-array write from a scalar
+        /// passed by mistake, and the second leaves a value nothing can read. The shape is in the
+        /// SIGNATURE here, so there is nothing to infer.
+        ///
+        /// A mismatched element refuses the WHOLE write rather than landing a partial list. An
+        /// empty list is a legitimate write and clears the variable.
+        /// </summary>
+        public bool SetDataAssetArrayVariable(StoryFlowDataAssetAsset asset, string variableName, List<StoryFlowVariant> elements)
+        {
+            return StoryFlowDataAssetAccess.SetArray(
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, elements);
+        }
+
+        /// <summary>
+        /// Replaces a Data Asset's MAP variable with these entries. The map twin of
+        /// <see cref="SetDataAssetArrayVariable"/> — parallel lists mirror the map getters' shape,
+        /// and a length mismatch refuses rather than truncating to the shorter.
+        /// </summary>
+        public bool SetDataAssetMapVariable(StoryFlowDataAssetAsset asset, string variableName,
+            List<StoryFlowVariant> keys, List<StoryFlowVariant> values)
+        {
+            return StoryFlowDataAssetAccess.SetMap(
+                GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, keys, values);
+        }
+
         /// <summary>Reads an enum .sfd variable as its value name.</summary>
         public string GetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, out bool found)
         {
