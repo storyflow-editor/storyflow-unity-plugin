@@ -225,9 +225,6 @@ namespace StoryFlow
 
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
-            // The records were just seeded with their string-table keys in both name fields; this
-            // is what turns Name into text for the language settled above.
-            RefreshRuntimeCharacterNames();
             BuildDataAssetSeed();
             UsedOnceOnlyOptions.Clear();
 
@@ -279,6 +276,15 @@ namespace StoryFlow
             {
                 CharacterIdBridge[kvp.Key] = kvp.Value;
             }
+
+            // HERE, at the one place records are rebuilt, and not at any caller: CreateRuntimeData
+            // seeds Name with the string-table KEY, so every rebuild path - InitializeProject,
+            // ResetRuntimeCharacters, ResetAllState and whatever comes next - has to resolve it or
+            // a speaker label reads "char_name_1". The first cut refreshed only in
+            // InitializeProject and both resets shipped keys. _currentLanguage is settled before
+            // every caller reaches this: InitializeProject sets it first, and the resets
+            // deliberately leave it alone.
+            RefreshRuntimeCharacterNames();
         }
 
         /// <summary>
