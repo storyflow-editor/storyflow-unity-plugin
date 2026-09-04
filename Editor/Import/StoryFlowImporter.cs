@@ -860,7 +860,7 @@ namespace StoryFlow.Editor
                         }
                     }
                 }
-                projectAsset.ScriptReferences = scriptReferences;
+                projectAsset.SetScriptReferences(scriptReferences);
                 projectAsset.SetCharacterReferences(characterReferences);
                 // Registration point 4 of 5 for data assets - see the five-point
                 // registration list at the data-assets.json read site above. This
@@ -878,8 +878,8 @@ namespace StoryFlow.Editor
                 // same-session re-import cannot serve the previous import's translations.
                 projectAsset.SetLocalization(
                     hasLocalization, sourceLanguage, languageEntries, languageStringEntries);
-                projectAsset.GlobalVariableEntries = globalVariableEntries;
-                projectAsset.GlobalStringEntries = globalStringEntries;
+                projectAsset.SetGlobalVariableEntries(globalVariableEntries);
+                projectAsset.SetGlobalStringEntries(globalStringEntries);
 
                 // Import and resolve project-scoped media into the project's resolved-asset pool so
                 // runtime ResolveAsset<T> can find keys that appear only in global-variables.json or

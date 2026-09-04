@@ -474,6 +474,42 @@ namespace StoryFlow.Data
         #region Helpers
 
         /// <summary>
+        /// Replaces the script references and invalidates the runtime dictionary. Same rule as
+        /// <see cref="SetCharacterReferences"/>: a re-import inside one editor session gets no
+        /// OnEnable, so a directly assigned list would leave the [NonSerialized] dictionary
+        /// serving the previous import's script assets.
+        /// </summary>
+        public void SetScriptReferences(List<ScriptReference> references)
+        {
+            ScriptReferences = references ?? new List<ScriptReference>();
+            _scripts = null;
+        }
+
+        /// <summary>
+        /// Replaces the global variable declarations and invalidates the runtime dictionary.
+        /// Same rule as <see cref="SetCharacterReferences"/> — a same-session re-import would
+        /// otherwise keep answering with the previous import's globals.
+        /// </summary>
+        public void SetGlobalVariableEntries(List<GlobalVariableEntry> entries)
+        {
+            GlobalVariableEntries = entries ?? new List<GlobalVariableEntry>();
+            _globalVariables = null;
+        }
+
+        /// <summary>
+        /// Replaces the project's global string table and invalidates the runtime dictionary.
+        /// Same rule as <see cref="SetCharacterReferences"/>, and the one with the most visible
+        /// failure: this table is the SOURCE text every un-translated lookup falls through to, so
+        /// a stale copy makes a same-session re-import keep rendering the previous import's lines
+        /// while the editor shows the new ones.
+        /// </summary>
+        public void SetGlobalStringEntries(List<GlobalStringEntry> entries)
+        {
+            GlobalStringEntries = entries ?? new List<GlobalStringEntry>();
+            _globalStrings = null;
+        }
+
+        /// <summary>
         /// Replaces the character references and invalidates the runtime dictionary. The
         /// importer assigns through this rather than the field because a re-import inside one
         /// editor session gets no OnEnable — a directly assigned list would leave the
