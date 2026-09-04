@@ -25,6 +25,16 @@ namespace StoryFlow.Lipsync
     /// the jaw and lip half of the pose, which is the usual tongue-less approximation and is invisible at
     /// game camera distance.
     ///
+    /// WRITES IN LateUpdate, on purpose: Unity's Animator evaluates after Update, so a facial clip touching a
+    /// driven blendshape would overwrite everything this wrote and the lipsync would read as broken.
+    ///
+    /// IF THE MOUTH DOES NOT MOVE, read `Level` first. It is the analysed loudness the driver is seeing, and
+    /// two settings on StoryFlowComponent can take it to zero without anything else looking wrong:
+    /// `DialogueAudioMixerGroup` routes dialogue through a mixer, and on some Unity versions
+    /// `GetSpectrumData` then reads silence from that source; `DialogueVolumeMultiplier` scales the audio and
+    /// therefore scales the spectrum this analyses. Clear the mixer group and watch `Level` before suspecting
+    /// the rig. There is no workaround in here for either, because both are the game's own settings.
+    ///
     /// Tier 1 (this): live amplitude analysis, works on ANY audio with zero preparation, reads convincingly but
     /// will not hit a specific consonant. Tier 2 replaces the analysis with baked viseme tracks and reuses
     /// everything else. See LIPSYNC_DESIGN.md for both, and for the normative constants the driver implements.
@@ -58,8 +68,11 @@ namespace StoryFlow.Lipsync
         /// <summary>Unity's spectrum size must be a power of two. 512 bins over 90–4200 Hz is ample for a mouth.</summary>
         private const int SpectrumBins = 512;
 
-        /// <summary>How often to look again when no face was found at all — see RefreshFaceIfStale.</summary>
+        /// <summary>How often to look again for a face, or for a dialogue component, that was not found.</summary>
         private const float FaceRecheckSeconds = 1f;
+
+        /// <summary>Below this the mouth is shut for every practical purpose — Unity's scale makes it 0.01 of 100.</summary>
+        private const float RestWeight = 1e-4f;
 
         private StoryFlowLipsyncDriver _driver;
         private readonly float[] _spectrum = new float[SpectrumBins];
@@ -69,69 +82,133 @@ namespace StoryFlow.Lipsync
         // head opens a jaw while the teeth stay put. A baked single-mesh character simply yields one entry.
         private readonly List<FaceTarget> _targets = new List<FaceTarget>();
 
-        /// <summary>Kept so a re-resolve costs nothing but the hierarchy walk.</summary>
-        private Dictionary<string, Dictionary<string, float>> _resolvedTable;
-
-        /// <summary>Throttles the "still no face" retry, and keeps its warning to one.</summary>
+        /// <summary>Throttles the retries for a missing face and a missing dialogue component.</summary>
         private float _sinceFaceCheck;
+        private float _sinceSourceCheck;
+
+        // Every diagnostic here fires ONCE. A per-frame retry that warns per attempt buries the console, and a
+        // per-line one buries it more slowly.
         private bool _warnedNoFace;
+        private bool _warnedNoDialogueComponent;
+        private bool _warnedNoAudioSource;
+        private bool _warnedUnknownCharacter;
+        private bool _saidEveryLine;
+
+        private bool _subscribed;
 
         private AudioSource _speaking;
+        private AudioClip _lineClip;
         private bool _lineIsMine;
 
         /// <summary>The LINE has audio, whether or not its source was found — see HandleDialogueUpdated.</summary>
         private bool _lineHasAudio;
 
+        /// <summary>The node this face is already speaking. A repeat of it is a re-render, not a new line.</summary>
+        private string _lineNodeId;
+
+        /// <summary>True once the mouth is shut AND being asked to stay shut, so the write can stop.</summary>
+        private bool _atRest;
+
+        /// <summary>
+        /// A renderer and the blendshapes on it this face drives, flattened: `Slots[i]` is an index into the
+        /// driver's key array and `Shapes[i]` the blendshape it writes, so Apply is two array reads per morph
+        /// and never a string lookup.
+        /// </summary>
         private sealed class FaceTarget
         {
             public SkinnedMeshRenderer Renderer;
-            /// <summary>Morph name to blendshape index, resolved ONCE. Never look a name up per frame.</summary>
-            public Dictionary<string, int> Indices;
+
+            /// <summary>The mesh the indices below were resolved against. A different one invalidates them.</summary>
+            public Mesh Mesh;
+
+            public int[] Slots;
+            public int[] Shapes;
         }
 
         private void OnEnable()
         {
-            _resolvedTable = VisemeMap != null ? VisemeMap.ToTable() : StoryFlowVisemeTable.Default();
-            _driver = new StoryFlowLipsyncDriver(_resolvedTable);
-            ResolveFace(_resolvedTable);
+            var table = VisemeMap != null ? VisemeMap.ToTable() : StoryFlowVisemeTable.Default();
 
-            if (Source == null) Source = FindObjectOfType<StoryFlowComponent>();
-            if (Source != null)
-            {
-                Source.OnDialogueUpdated += HandleDialogueUpdated;
-                Source.OnDialogueEnded += HandleDialogueEnded;
-            }
+            // Seeded per component: Unity's Mono seeds a bare `new Random()` from TickCount, so a crowd built
+            // in one frame would idle in lockstep.
+            _driver = new StoryFlowLipsyncDriver(table, GetInstanceID());
+            ResolveFace();
+            BindSource();
         }
 
         private void OnDisable()
         {
-            if (Source != null)
+            if (_subscribed && Source != null)
             {
                 Source.OnDialogueUpdated -= HandleDialogueUpdated;
                 Source.OnDialogueEnded -= HandleDialogueEnded;
             }
+            _subscribed = false;
             StopLipsync();
+
+            // Nothing else will run to ease this face shut, so a component disabled mid-vowel would leave the
+            // mouth hanging open for as long as it stays disabled.
+            ZeroOwnedShapes();
         }
 
+        /// <summary>
+        /// Find the dialogue component and subscribe, retried while it is missing.
+        ///
+        /// One-shot discovery on enable is wrong for the ordinary case of a character spawned before the
+        /// dialogue component exists, or a scene where StoryFlow is created by the manager's own bootstrap:
+        /// the face then never hears a line and nothing says why.
+        /// </summary>
+        private void BindSource()
+        {
+            if (_subscribed) return;
+
+            if (Source == null)
+            {
+                Source = FindFirstObjectByType<StoryFlowComponent>(FindObjectsInactive.Include);
+                if (Source == null)
+                {
+                    if (!_warnedNoDialogueComponent)
+                    {
+                        _warnedNoDialogueComponent = true;
+                        Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' found no StoryFlowComponent in the scene. " +
+                                         "It will keep looking; assign Source to point at one directly.", this);
+                    }
+                    return;
+                }
+            }
+
+            Source.OnDialogueUpdated += HandleDialogueUpdated;
+            Source.OnDialogueEnded += HandleDialogueEnded;
+            _subscribed = true;
+
+            // A line may already be on screen — this component was enabled mid-dialogue, or its actor was
+            // spawned by the line itself. Without this it waits for the next one with a dead face.
+            if (Source.IsDialogueActive())
+            {
+                var showing = Source.GetCurrentDialogue();
+                if (showing != null) HandleDialogueUpdated(showing);
+            }
+        }
 
         /// <summary>
-        /// Re-resolve the face when what was cached has gone.
+        /// Re-resolve the face when what was cached has gone, or when the mesh under it changed.
         ///
         /// The case that forced this is Unreal's: Synty's Sidekick tool rebuilds a character's part meshes
         /// whenever the outfit changes at runtime, so targets resolved once point at destroyed objects and
-        /// the mouth quietly stops moving. Unity's baked characters do not do that, but swapping a face mesh
-        /// at runtime has the same effect, and the two arms should not behave differently here.
+        /// the mouth quietly stops moving. Unity's equivalent is worse than a null: an outfit or LOD swap
+        /// assigns a new `sharedMesh` to the SAME renderer, and the cached blendshape indices then address a
+        /// different shape list — fewer shapes errors every frame, a different order moves the wrong shapes.
+        /// So the mesh asset is cached per target and a change counts as stale.
         ///
-        /// A stale target is free to detect. Having found NOTHING is different: re-walking the hierarchy every
-        /// frame would cost something on every character that legitimately has no face, so that retry is
-        /// throttled and its warning kept to one.
+        /// Having found NOTHING is different: re-walking the hierarchy every frame would cost something on
+        /// every character that legitimately has no face, so that retry is throttled and its warning kept to one.
         /// </summary>
         private void RefreshFaceIfStale(float dt)
         {
             var anyStale = false;
             foreach (var target in _targets)
             {
-                if (target.Renderer == null) anyStale = true;
+                if (!IsLive(target)) anyStale = true;
             }
 
             if (!anyStale && _targets.Count > 0)
@@ -144,10 +221,14 @@ namespace StoryFlow.Lipsync
             if (!anyStale && _sinceFaceCheck < FaceRecheckSeconds) return;
 
             _sinceFaceCheck = 0f;
-            ResolveFace(_resolvedTable);
+            ResolveFace();
         }
 
-        private void Update()
+        /// <summary>
+        /// The Animator writes blendshapes after Update, so anything written there is overwritten before it is
+        /// ever drawn. Everything this component does happens here instead.
+        /// </summary>
+        private void LateUpdate()
         {
             if (_driver == null) return;
             _driver.Strength = Strength;
@@ -155,10 +236,24 @@ namespace StoryFlow.Lipsync
             _driver.JawBias = JawBias;
             _driver.Smooth = Smoothing;
 
-            var dt = Time.deltaTime;
+            // The audio clock is not dilated, so the mouth must not be either: at timeScale 0.2 a scaled delta
+            // would ease the face at a fifth of the speech it is following.
+            var dt = Time.unscaledDeltaTime;
+
+            if (!_subscribed)
+            {
+                _sinceSourceCheck += dt;
+                if (_sinceSourceCheck >= FaceRecheckSeconds)
+                {
+                    _sinceSourceCheck = 0f;
+                    BindSource();
+                }
+            }
+
             RefreshFaceIfStale(dt);
 
-            if (_speaking != null && _speaking.isPlaying)
+            var silent = false;
+            if (IsAnalysable())
             {
                 _speaking.GetSpectrumData(_spectrum, 0, FFTWindow.BlackmanHarris);
                 _driver.AdvanceFromSpectrum(_spectrum, AudioSettings.outputSampleRate, dt);
@@ -173,9 +268,22 @@ namespace StoryFlow.Lipsync
             else
             {
                 _driver.AdvanceSilent(dt);
+                silent = true;
             }
 
-            Apply();
+            Apply(silent);
+        }
+
+        /// <summary>
+        /// A line with audio drives the mouth only while THAT audio is playing.
+        ///
+        /// The clip check is not belt and braces: the plugin plays dialogue through one AudioSource on the
+        /// StoryFlowComponent, and MediaNodeHandler plays through the same one. Without it, the next thing the
+        /// story plays through that source — music, a sound effect — drives this character's mouth.
+        /// </summary>
+        private bool IsAnalysable()
+        {
+            return _speaking != null && _speaking.isPlaying && _speaking.clip == _lineClip;
         }
 
         /// <summary>
@@ -185,41 +293,78 @@ namespace StoryFlow.Lipsync
         public void StartLipsyncFor(AudioSource source)
         {
             _speaking = source;
+            _lineClip = source != null ? source.clip : null;
             _driver?.ResetLevel();
         }
-
 
         /// <summary>
         /// Loudness 0..1 the driver is currently seeing, after the peak follower. For a debug meter while
         /// tuning Sensitivity — the three.js studio this table came from had one, and picking a sensitivity
         /// by watching a number beats picking it by watching a mouth.
+        ///
+        /// It is also the first thing to read when a mouth will not move. A line that is audible but reads 0
+        /// here is not reaching the analyser: `DialogueAudioMixerGroup` on StoryFlowComponent can make
+        /// `GetSpectrumData` return silence on some Unity versions, and `DialogueVolumeMultiplier` scales what
+        /// this sees along with what the player hears.
         /// </summary>
         public float Level => _driver?.Level ?? 0f;
+
+        /// <summary>
+        /// The loudest RAW spectrum magnitude seen since this line started, before the driver's conversion to
+        /// the reference domain. Unity's `GetSpectrumData` is already normalised so nothing needs calibrating
+        /// here; this is the readout that says so.
+        /// </summary>
+        public float RawPeak => _driver?.RawPeak ?? 0f;
 
         /// <summary>Let the mouth close. Safe to call when nothing is playing.</summary>
         public void StopLipsync()
         {
             _speaking = null;
+            _lineClip = null;
             _lineIsMine = false;
             _lineHasAudio = false;
+            _lineNodeId = null;
         }
 
         private void HandleDialogueUpdated(StoryFlowDialogueState state)
         {
-            _lineIsMine = state != null && SpeakerIsMine(state);
-            if (!_lineIsMine)
+            if (state == null)
             {
                 StopLipsync();
                 return;
             }
 
+            if (string.IsNullOrEmpty(CharacterId) && !_saidEveryLine)
+            {
+                _saidEveryLine = true;
+                Debug.Log($"[StoryFlow] Lipsync on '{name}' has no CharacterId, so this face moves on every " +
+                          "line. Set CharacterId if more than one character speaks in this scene.", this);
+            }
+
+            if (!SpeakerIsMine(state))
+            {
+                StopLipsync();
+                return;
+            }
+
+            // A RE-RENDER, not a new line. The same node is broadcast again on a variable change, on
+            // ResumeDialogue and on a dead-end redraw; treating those as line starts resets the peak
+            // follower, searches for the AudioSource again and repeats every warning — and a per-frame
+            // variable write would then pin the follower at its initial value and hold the mouth wide open.
+            if (_lineIsMine && state.NodeId == _lineNodeId) return;
+
+            _lineNodeId = state.NodeId;
+            _lineIsMine = true;
+
             // The AudioSource playing this line, wherever it lives. `_lineHasAudio` records that the LINE
             // has audio at all, which is a different question from whether we found its source: it is what
             // stops the idle mouth flapping over speech that is playing somewhere we could not see.
             _lineHasAudio = state.Audio != null;
+            _lineClip = state.Audio;
             _speaking = _lineHasAudio ? FindSourcePlaying(state.Audio) : null;
-            if (_lineHasAudio && _speaking == null)
+            if (_lineHasAudio && _speaking == null && !_warnedNoAudioSource)
             {
+                _warnedNoAudioSource = true;
                 Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
                                  $"'{state.Audio.name}'. The mouth will stay closed for this line. " +
                                  "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
@@ -243,11 +388,24 @@ namespace StoryFlow.Lipsync
         private bool SpeakerIsMine(StoryFlowDialogueState state)
         {
             if (string.IsNullOrEmpty(CharacterId)) return true;
-            if (state.Character == null || Source == null) return false;
+            if (Source == null) return false;
 
             var path = Source.GetCharacterPathById(CharacterId, out var found);
-            if (!found || string.IsNullOrEmpty(path)) return false;
+            if (!found || string.IsNullOrEmpty(path))
+            {
+                // A typo, a wrong case, or a project imported before character ids existed. Without this the
+                // face is simply never anyone's and says nothing about it, while a missing morph warns.
+                if (!_warnedUnknownCharacter)
+                {
+                    _warnedUnknownCharacter = true;
+                    Debug.LogWarning($"[StoryFlow] Lipsync on '{name}': no character with id '{CharacterId}' in " +
+                                     "this project, so this face will never speak. Check the id in the editor's " +
+                                     "character list, or clear it to move on every line.", this);
+                }
+                return false;
+            }
 
+            if (state.Character == null) return false;
             var manager = StoryFlowManager.Instance;
             if (manager == null) return false;
             return manager.RuntimeCharacters.TryGetValue(path, out var mine) && ReferenceEquals(mine, state.Character);
@@ -259,7 +417,8 @@ namespace StoryFlow.Lipsync
         /// The plugin's own playback puts it on the StoryFlow component's GameObject, so that is looked at
         /// first and is the answer almost always. A game that overrides PlayDialogueAudio can play the clip
         /// anywhere, though, and a scene sweep is cheap when it happens at most once per line — far cheaper
-        /// than the alternative, which is a mouth flapping at random over speech it never found.
+        /// than the alternative, which is a mouth flapping at random over speech it never found. The sweep
+        /// prefers a source that is actually PLAYING the clip: several may hold it, and only one is the line.
         /// </summary>
         private AudioSource FindSourcePlaying(AudioClip clip)
         {
@@ -271,11 +430,14 @@ namespace StoryFlow.Lipsync
                 }
             }
 
-            foreach (var source in FindObjectsOfType<AudioSource>())
+            AudioSource holding = null;
+            foreach (var source in FindObjectsByType<AudioSource>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
-                if (source != null && source.clip == clip) return source;
+                if (source == null || source.clip != clip) continue;
+                if (source.isPlaying) return source;
+                if (holding == null) holding = source;
             }
-            return null;
+            return holding;
         }
 
         /// <summary>
@@ -284,14 +446,17 @@ namespace StoryFlow.Lipsync
         /// the source rig and Unreal call it `jawOpen`. A name no renderer owns is simply absent, and the rest of
         /// the pose still plays — a missing `tongueOut` must not take the jaw down with it.
         /// </summary>
-        private void ResolveFace(Dictionary<string, Dictionary<string, float>> table)
+        private void ResolveFace()
         {
             _targets.Clear();
+            _atRest = false;
             var root = FaceRoot != null ? FaceRoot : transform;
-            var owned = StoryFlowVisemeTable.OwnedMorphs(table);
+            var keys = _driver.Keys;
             var style = VisemeMap != null ? VisemeMap.NameStyle : StoryFlowMorphNameStyle.UnityMeshBlendsPrefix;
 
-            var missing = new HashSet<string>(owned);
+            var missing = new HashSet<string>();
+            for (var k = 0; k < keys.Count; k++) missing.Add(keys[k]);
+
             foreach (var renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 var mesh = renderer != null ? renderer.sharedMesh : null;
@@ -300,16 +465,25 @@ namespace StoryFlow.Lipsync
                 var byName = new Dictionary<string, int>();
                 for (var i = 0; i < mesh.blendShapeCount; i++) byName[mesh.GetBlendShapeName(i)] = i;
 
-                var indices = new Dictionary<string, int>();
-                foreach (var morph in owned)
+                var slots = new List<int>();
+                var shapes = new List<int>();
+                for (var k = 0; k < keys.Count; k++)
                 {
-                    if (TryResolve(byName, morph, style, out var index))
-                    {
-                        indices[morph] = index;
-                        missing.Remove(morph);
-                    }
+                    if (!TryResolve(byName, keys[k], style, out var index)) continue;
+                    slots.Add(k);
+                    shapes.Add(index);
+                    missing.Remove(keys[k]);
                 }
-                if (indices.Count > 0) _targets.Add(new FaceTarget { Renderer = renderer, Indices = indices });
+                if (slots.Count > 0)
+                {
+                    _targets.Add(new FaceTarget
+                    {
+                        Renderer = renderer,
+                        Mesh = mesh,
+                        Slots = slots.ToArray(),
+                        Shapes = shapes.ToArray(),
+                    });
+                }
             }
 
             // A face was found, so the next disappearance is worth reporting again.
@@ -353,16 +527,60 @@ namespace StoryFlow.Lipsync
             return false;
         }
 
-        /// <summary>Write the driver's weights. Unity's blendshape range is 0..100, the driver's is 0..1.</summary>
-        private void Apply()
+        /// <summary>A target still addressable: its renderer alive and still wearing the mesh we resolved against.</summary>
+        private static bool IsLive(FaceTarget target)
+        {
+            return target.Renderer != null && target.Renderer.sharedMesh == target.Mesh;
+        }
+
+        /// <summary>
+        /// Write the driver's weights. Unity's blendshape range is 0..100, the driver's is 0..1.
+        ///
+        /// A face doing nothing must STOP writing. `SetBlendShapeWeight` is an assignment, not a contribution,
+        /// so an idle component stamping ~0 into eighteen shapes every frame flattens anything else that poses
+        /// this mouth — an expression, a chew cycle, a hand-authored clip on shapes the driver happens to own.
+        /// The zeros land once as the mouth settles, and then this stands aside until it has something to say.
+        /// </summary>
+        private void Apply(bool silent)
+        {
+            if (silent && MouthIsShut())
+            {
+                if (_atRest) return;
+
+                // The last frame before the write stops: leave the face exactly closed rather than at the
+                // sliver of weight the ease was still on.
+                _atRest = true;
+                ZeroOwnedShapes();
+                return;
+            }
+
+            _atRest = false;
+            foreach (var target in _targets)
+            {
+                var slots = target.Slots;
+                var shapes = target.Shapes;
+                for (var i = 0; i < slots.Length; i++)
+                {
+                    target.Renderer.SetBlendShapeWeight(shapes[i], _driver.GetWeight(slots[i]) * 100f);
+                }
+            }
+        }
+
+        private bool MouthIsShut()
+        {
+            for (var i = 0; i < _driver.Keys.Count; i++)
+            {
+                if (_driver.GetWeight(i) >= RestWeight) return false;
+            }
+            return true;
+        }
+
+        private void ZeroOwnedShapes()
         {
             foreach (var target in _targets)
             {
-                foreach (var kvp in target.Indices)
-                {
-                    if (!_driver.Current.TryGetValue(kvp.Key, out var weight)) continue;
-                    target.Renderer.SetBlendShapeWeight(kvp.Value, weight * 100f);
-                }
+                if (!IsLive(target)) continue;
+                for (var i = 0; i < target.Shapes.Length; i++) target.Renderer.SetBlendShapeWeight(target.Shapes[i], 0f);
             }
         }
     }
