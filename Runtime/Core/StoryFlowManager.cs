@@ -203,6 +203,11 @@ namespace StoryFlow
         /// </summary>
         private void InitializeProject()
         {
+            // The language can MOVE here (the snap branch below), and a game that swapped
+            // projects mid-session needs telling. Captured before anything changes; compared at
+            // the very end.
+            var languageOnEntry = _currentLanguage;
+
             // THE LANGUAGE FIRST, because everything seeded below is read in it. The player's
             // choice SURVIVES a re-set of a project that still carries it (the HTML runtime's
             // first-wins posture: re-installing content mid-game must not undo a choice); a
@@ -210,6 +215,11 @@ namespace StoryFlow
             // language, so a game can never be left reading a language nothing ships. For a
             // project with no localization sidecar the only code that resolves is its source
             // language, so this is "en" -> "en" and changes nothing.
+            //
+            // THE SNAP EVENT IS NOT RAISED HERE, deliberately — see the end of this method.
+            // Everything below is read in the language this line just set, so a handler running
+            // at this point would see the OUTGOING project's globals, characters and .sfd seed
+            // under the INCOMING project's language.
             var carried = Project.ResolveLanguageCode(_currentLanguage);
             _currentLanguage = string.IsNullOrEmpty(carried) ? Project.SourceLanguage : carried;
 
@@ -221,6 +231,17 @@ namespace StoryFlow
             Debug.Log($"[StoryFlow] Project initialized: \"{Project.Title}\" " +
                       $"({GlobalVariables.Count} global variables, {RuntimeCharacters.Count} characters, " +
                       $"{DataAssetSeed.Count} data assets)");
+
+            // EVERYTHING IS SEEDED, so a handler can read the project it was told about. An
+            // install that carried the player's choice forward moves nothing and is silent; one
+            // that SNAPPED because this project cannot carry the old code raises, because that is
+            // a real change to what the player is reading. At boot this usually reaches nobody,
+            // which is fine — the case it exists for is a mid-session swap, and GetLanguage is
+            // how a handler learns the language it started in.
+            if (_currentLanguage != languageOnEntry)
+            {
+                OnLanguageChanged?.Invoke(_currentLanguage);
+            }
         }
 
         private void DeepCopyGlobalVariables()
@@ -598,6 +619,31 @@ namespace StoryFlow
         // pre-localization LanguageCode, which a localized project ignores.
 
         /// <summary>
+        /// Raised when the language MOVES, with the code it moved to. The one signal a game's own
+        /// language menu needs: nothing in this plugin repaints text that is already on screen,
+        /// so a switch reaches a read at the next read and everything else is the game's to
+        /// refresh.
+        ///
+        /// IT FIRES WHEN THE LANGUAGE ACTUALLY MOVES, AND NEVER OTHERWISE. A refused code raises
+        /// nothing (it changed nothing) and neither does re-setting the language already active.
+        /// A project install raises it only when the install MOVED the language — which happens
+        /// when the incoming project cannot carry the code the player was on, so it snaps to that
+        /// project's source language.
+        ///
+        /// ORDERING: whatever a handler can observe is already the new state. The language is
+        /// assigned before the event, so <see cref="GetLanguage"/> answers the new code; and from
+        /// an install the WHOLE project has been seeded first, so a handler reading a .sfd value,
+        /// a global or a character sees the project it was just told about. A handler that
+        /// re-enters <see cref="SetLanguage"/> is measured against the new value, so it either
+        /// no-ops or changes again and raises again.
+        ///
+        /// There is no UnityEvent twin. Every StoryFlowComponent event has one; the manager has
+        /// none, and adding the first to hang a single event off it buys less than it costs.
+        /// Bind this in code.
+        /// </summary>
+        public event Action<string> OnLanguageChanged;
+
+        /// <summary>
         /// Switches the language every StoryFlow string is read in. True when the game is now
         /// reading <paramref name="languageCode"/>.
         ///
@@ -642,8 +688,13 @@ namespace StoryFlow
 
             if (next != _currentLanguage)
             {
+                // ASSIGN, THEN RAISE. A handler must never observe a half-applied switch:
+                // GetLanguage has to answer the new code inside the handler, and a handler that
+                // re-enters SetLanguage has to be measured against the new value so it no-ops
+                // instead of recursing.
                 _currentLanguage = next;
                 Debug.Log($"[StoryFlow] Language set to \"{_currentLanguage}\".");
+                OnLanguageChanged?.Invoke(_currentLanguage);
             }
             return true;
         }
