@@ -538,6 +538,12 @@ namespace StoryFlow.Editor
                 //   5. StoryFlowAssetPostprocessor.IsStoryFlowJson: the "dataAssets" root-key
                 //      sniff, or dropping the file into the project triggers no re-import.
                 var dataAssetReferences = new List<StoryFlowDataAssetAsset>();
+                // .sfd media (contract §2.1's 2026-09-04 amendment): image and audio values ship as
+                // asset KEYS with the files beside them, so this artifact carries an "assets"
+                // registry of its own exactly as characters.json does. Imported into the PROJECT
+                // pool below, which is what makes ResolveAsset<Sprite>(GetDataAssetString(...))
+                // work without the .sfd surface learning anything about assets.
+                var dataAssetMediaEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
                 string dataAssetsJsonPath = Path.Combine(buildDirectory, "data-assets.json");
                 if (File.Exists(dataAssetsJsonPath))
                 {
@@ -557,6 +563,15 @@ namespace StoryFlow.Editor
                     if (dataAssetStrings != null)
                     {
                         globalStringEntries.AddRange(FlattenStrings(dataAssetStrings));
+                    }
+
+                    // ABSENT for a pre-amendment export, and then .sfd media is a bare path again
+                    // with no branch for it — the same additive-and-degradable posture the strings
+                    // block above ships under.
+                    JObject dataAssetAssets = dataAssetsJson.Value<JObject>("assets");
+                    if (dataAssetAssets != null)
+                    {
+                        dataAssetMediaEntries = ParseAssets(dataAssetAssets);
                     }
 
                     JObject dataAssetsObj = dataAssetsJson.Value<JObject>("dataAssets");
@@ -895,6 +910,7 @@ namespace StoryFlow.Editor
                 // if they ever diverged this would simply fall back to re-importing the portrait (no break).
                 characterAssetEntries.RemoveAll(a => characterPortraitAssets.ContainsKey(a.Id));
                 ImportMediaAssets(characterAssetEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
+                ImportMediaAssets(dataAssetMediaEntries, buildDirectory, mediaImagesDir, mediaAudioDir, projectAsset.SetResolvedAsset, report);
                 foreach (var portrait in characterPortraitAssets)
                     projectAsset.SetResolvedAsset(portrait.Key, portrait.Value);
 
