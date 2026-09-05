@@ -121,8 +121,19 @@ namespace StoryFlow.Lipsync
             _idleHasMM = _table.ContainsKey("MM");
         }
 
-        /// <summary>The weights to write this frame. The same instance every call — do not hold on to it.</summary>
-        public IReadOnlyDictionary<string, float> Current => _current;
+        /// <summary>
+        /// The weights to write this frame, by name. Built on demand for tests and tooling; the per-frame
+        /// path reads by index through <see cref="Keys"/> and <see cref="GetWeight"/> and never touches this.
+        /// The same instance every call — do not hold on to it.
+        /// </summary>
+        public IReadOnlyDictionary<string, float> Current
+        {
+            get
+            {
+                for (var i = 0; i < _keys.Length; i++) _current[_keys[i]] = _weights[i];
+                return _current;
+            }
+        }
 
         /// <summary>Every morph this driver writes, in a fixed order. Resolve these to engine handles ONCE.</summary>
         public IReadOnlyList<string> Keys => _keys;
@@ -135,6 +146,12 @@ namespace StoryFlow.Lipsync
 
         /// <summary>Loudness 0..1 after the peak follower, for a level meter. Not part of the pose.</summary>
         public float Level { get; private set; }
+
+        /// <summary>
+        /// Where the last analysed frame sat on the vowel axis, 0 (OO) to 1 (EE). The second meter: a mouth
+        /// that opens but looks wrong is usually a centroid pinned at one end, and this says which.
+        /// </summary>
+        public float Centroid { get; private set; }
 
         /// <summary>
         /// The loudest RAW magnitude seen in the band since ResetLevel, before step 1's transform. This is the
@@ -169,15 +186,22 @@ namespace StoryFlow.Lipsync
             var n = hi - lo;
             if (_smoothed == null || _smoothed.Length != n) _smoothed = new float[n];
 
+            // 2's coefficient, PER SECOND at the reference's ~60 Hz like the peak follower below, so the
+            // analyser's lag does not double at 30 fps and halve at 120. A zero delta keeps every bin as it was.
+            var keep = dt > 0f ? (float)Math.Pow(SpectralKeep, dt * 60f) : 1f;
+
             float sum = 0f, weighted = 0f, raw = 0f;
             for (var j = 0; j < n; j++)
             {
+                // A NaN or infinite sample would sit in the smoothing state and in the peak and turn every
+                // weight after it into NaN for the rest of the line. Read it as silence instead.
                 var m = spectrum[lo + j];
+                if (!(m > 0f) || float.IsInfinity(m)) m = 0f;
                 if (m > raw) raw = m;
 
                 // 1. reference domain, per bin, and 2. the reference analyser's smoothing.
                 var a = Clamp01((20f * (float)Math.Log10(Math.Max(m, 1e-9f) / FullScale) + 100f) / 70f);
-                var s = SpectralKeep * _smoothed[j] + SpectralTake * a;
+                var s = keep * _smoothed[j] + (1f - keep) * a;
                 _smoothed[j] = s;
 
                 sum += s;
@@ -192,6 +216,7 @@ namespace StoryFlow.Lipsync
             {
                 centroid = Clamp01((weighted / sum) / (n - 1) * CentroidScale);
             }
+            Centroid = centroid;
 
             // 4. peak follower, per second.
             _peak = Math.Max(energy, _peak * (float)Math.Pow(PeakDecayPer60Hz, dt * 60f));
@@ -212,8 +237,9 @@ namespace StoryFlow.Lipsync
         /// </summary>
         public void AdvanceIdle(float dt)
         {
-            // The meter reports ANALYSED loudness and nothing else; an idle mouth is not loudness.
+            // The meters report ANALYSED audio and nothing else; an idle mouth is not loudness.
             Level = 0f;
+            Centroid = 0f;
 
             _idleHold -= dt;
             if (_idleHold <= 0f)
@@ -248,6 +274,7 @@ namespace StoryFlow.Lipsync
         public void AdvanceSilent(float dt)
         {
             Level = 0f;
+            Centroid = 0f;
             ClearTarget();
             Ease(dt);
         }
@@ -319,13 +346,13 @@ namespace StoryFlow.Lipsync
                 // The clamp is not decoration: JawBias 2 asks for 1.7 on an AA, and both engines extrapolate
                 // a shape past 1 rather than ignoring it.
                 _weights[i] = Clamp01(_weights[i] + (_target[i] - _weights[i]) * k);
-                _current[_keys[i]] = _weights[i];
             }
         }
 
+        /// <summary>NaN-safe: a NaN fails both comparisons in the naive form and would pass through as NaN.</summary>
         private static float Clamp01(float v)
         {
-            if (v < 0f) return 0f;
+            if (!(v > 0f)) return 0f;
             return v > 1f ? 1f : v;
         }
     }

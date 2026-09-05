@@ -65,6 +65,12 @@ namespace StoryFlow.Lipsync
         [Tooltip("Move the mouth on lines whose audio cannot be analysed, instead of leaving a dead face.")]
         public bool IdleMouthWithoutAudio = true;
 
+        [Tooltip("The spectrum magnitude a full-scale sine produces at its own bin: the 0 dB reference the driver " +
+                 "converts against. GetSpectrumData is normalised, so 1 is right on paper. If Level sits near 1 on " +
+                 "every line and the mouth never closes between words, raise this; if quiet lines never open it, " +
+                 "lower it. RawPeak shows what a loud line actually measures.")]
+        [Min(0.001f)] public float AnalysisFullScale = 1f;
+
         /// <summary>Unity's spectrum size must be a power of two. 512 bins over 90–4200 Hz is ample for a mouth.</summary>
         private const int SpectrumBins = 512;
 
@@ -91,6 +97,7 @@ namespace StoryFlow.Lipsync
         private bool _warnedNoFace;
         private bool _warnedNoDialogueComponent;
         private bool _warnedNoAudioSource;
+        private bool _warnedMissingMorphs;
         private bool _warnedUnknownCharacter;
         private bool _saidEveryLine;
 
@@ -100,8 +107,14 @@ namespace StoryFlow.Lipsync
         private AudioClip _lineClip;
         private bool _lineIsMine;
 
-        /// <summary>The LINE has audio, whether or not its source was found — see HandleDialogueUpdated.</summary>
+        /// <summary>StartLipsyncFor was called by game code: it runs until StopLipsync, whatever the dialogue does.</summary>
+        private bool _manual;
+
+        /// <summary>The LINE has audio of its own, whether or not its source was found — see HandleDialogueUpdated.</summary>
         private bool _lineHasAudio;
+
+        /// <summary>How long this line's AudioSource has been looked for. The search retries for a second before warning.</summary>
+        private float _sinceAudioSearch;
 
         /// <summary>The node this face is already speaking. A repeat of it is a re-render, not a new line.</summary>
         private string _lineNodeId;
@@ -160,7 +173,7 @@ namespace StoryFlow.Lipsync
         /// </summary>
         private void BindSource()
         {
-            if (_subscribed) return;
+            if (_subscribed && Source != null) return;
 
             if (Source == null)
             {
@@ -235,10 +248,15 @@ namespace StoryFlow.Lipsync
             _driver.Sensitivity = Sensitivity;
             _driver.JawBias = JawBias;
             _driver.Smooth = Smoothing;
+            _driver.FullScale = Mathf.Max(AnalysisFullScale, 0.001f);
 
             // The audio clock is not dilated, so the mouth must not be either: at timeScale 0.2 a scaled delta
             // would ease the face at a fifth of the speech it is following.
             var dt = Time.unscaledDeltaTime;
+
+            // The dialogue component can go away and come back (a scene load under a persistent character). Its
+            // events died with it, so discovery has to be re-armed or this face is deaf with nothing said.
+            if (_subscribed && Source == null) _subscribed = false;
 
             if (!_subscribed)
             {
@@ -251,6 +269,7 @@ namespace StoryFlow.Lipsync
             }
 
             RefreshFaceIfStale(dt);
+            RetryAudioSource(dt);
 
             var silent = false;
             if (IsAnalysable())
@@ -269,6 +288,15 @@ namespace StoryFlow.Lipsync
             {
                 _driver.AdvanceSilent(dt);
                 silent = true;
+
+                // A tail the mouth was following has ended and no line owns the source any more: let go of
+                // it, or the same clip replayed later through that source (a media node) would move this
+                // mouth with no line on screen.
+                if (!_lineIsMine && !_manual && _speaking != null)
+                {
+                    _speaking = null;
+                    _lineClip = null;
+                }
             }
 
             Apply(silent);
@@ -279,23 +307,57 @@ namespace StoryFlow.Lipsync
         ///
         /// The clip check is not belt and braces: the plugin plays dialogue through one AudioSource on the
         /// StoryFlowComponent, and MediaNodeHandler plays through the same one. Without it, the next thing the
-        /// story plays through that source — music, a sound effect — drives this character's mouth.
+        /// story plays through that source — music, a sound effect — drives this character's mouth. Game code
+        /// that handed over a source explicitly is trusted with whatever that source plays.
         /// </summary>
         private bool IsAnalysable()
         {
-            return _speaking != null && _speaking.isPlaying && _speaking.clip == _lineClip;
+            return _speaking != null && _speaking.isPlaying && (_manual || _speaking.clip == _lineClip);
+        }
+
+        /// <summary>
+        /// A game that starts dialogue audio inside its OWN OnDialogueUpdated handler, registered after this
+        /// one, has not started it yet when this component looks. So the search keeps looking for a second
+        /// before it gives up and says so, the way the face and the dialogue component searches do.
+        /// </summary>
+        private void RetryAudioSource(float dt)
+        {
+            if (!_lineIsMine || !_lineHasAudio || _speaking != null) return;
+
+            _sinceAudioSearch += dt;
+            if (_sinceAudioSearch < FaceRecheckSeconds)
+            {
+                _speaking = FindSourcePlaying(_lineClip);
+                if (_speaking != null) _driver.ResetLevel();
+            }
+            else if (!_warnedNoAudioSource)
+            {
+                _warnedNoAudioSource = true;
+                Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
+                                 $"'{_lineClip.name}'. The mouth will stay closed for this line. " +
+                                 "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
+            }
         }
 
         /// <summary>
         /// Drive the mouth from any AudioSource: a cutscene line, a bark, a radio. Nothing to bake and nothing
         /// to author — the same quality the automatic path gives, on audio StoryFlow knows nothing about.
+        /// It runs until StopLipsync: other characters' lines and the dialogue ending do not touch it, and a
+        /// line of THIS face's takes over from it.
         /// </summary>
         public void StartLipsyncFor(AudioSource source)
         {
+            _manual = source != null;
+            _lineIsMine = false;
+            _lineHasAudio = false;
+            _lineNodeId = null;
             _speaking = source;
             _lineClip = source != null ? source.clip : null;
             _driver?.ResetLevel();
         }
+
+        /// <summary>Is this face being driven right now — by a line of its own, or by StartLipsyncFor from game code?</summary>
+        public bool IsLipsyncActive => _manual || _lineIsMine;
 
         /// <summary>
         /// Loudness 0..1 the driver is currently seeing, after the peak follower. For a debug meter while
@@ -316,9 +378,16 @@ namespace StoryFlow.Lipsync
         /// </summary>
         public float RawPeak => _driver?.RawPeak ?? 0f;
 
+        /// <summary>
+        /// Where the analysed audio sits on the vowel axis, 0 (OO) to 1 (EE). Read it with Level when a mouth
+        /// opens but looks wrong: pinned at 1 is a stretched grin, pinned at 0 a permanent pucker.
+        /// </summary>
+        public float Centroid => _driver?.Centroid ?? 0f;
+
         /// <summary>Let the mouth close. Safe to call when nothing is playing.</summary>
         public void StopLipsync()
         {
+            _manual = false;
             _speaking = null;
             _lineClip = null;
             _lineIsMine = false;
@@ -343,7 +412,9 @@ namespace StoryFlow.Lipsync
 
             if (!SpeakerIsMine(state))
             {
-                StopLipsync();
+                // Someone else's line. Game-code lipsync (StartLipsyncFor) promised to run until StopLipsync,
+                // and another character talking is not that.
+                if (!_manual) StopLipsync();
                 return;
             }
 
@@ -355,21 +426,31 @@ namespace StoryFlow.Lipsync
 
             _lineNodeId = state.NodeId;
             _lineIsMine = true;
-
-            // The AudioSource playing this line, wherever it lives. `_lineHasAudio` records that the LINE
-            // has audio at all, which is a different question from whether we found its source: it is what
-            // stops the idle mouth flapping over speech that is playing somewhere we could not see.
+            _manual = false;
             _lineHasAudio = state.Audio != null;
-            _lineClip = state.Audio;
-            _speaking = _lineHasAudio ? FindSourcePlaying(state.Audio) : null;
-            if (_lineHasAudio && _speaking == null && !_warnedNoAudioSource)
+
+            if (_lineHasAudio)
             {
-                _warnedNoAudioSource = true;
-                Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
-                                 $"'{state.Audio.name}'. The mouth will stay closed for this line. " +
-                                 "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
+                // The AudioSource playing this line, wherever it lives. `_lineHasAudio` records that the LINE
+                // has audio at all, which is a different question from whether we found its source: it is
+                // what stops the idle mouth flapping over speech that is playing somewhere we could not see.
+                // Not found yet is not a failure: RetryAudioSource keeps looking for a second.
+                _lineClip = state.Audio;
+                _speaking = FindSourcePlaying(state.Audio);
+                _sinceAudioSearch = 0f;
+                _driver?.ResetLevel();
             }
-            _driver?.ResetLevel();
+            else if (IsAnalysable())
+            {
+                // A text-only line, but the previous line's sound is still playing (audioReset is off by
+                // default): keep following it, and idle only once it stops. Idling over audible speech is the
+                // one thing the idle mouth must never do.
+            }
+            else
+            {
+                _speaking = null;
+                _lineClip = null;
+            }
         }
 
         /// <summary>
@@ -377,10 +458,13 @@ namespace StoryFlow.Lipsync
         /// and a mouth that snaps shut over audible speech reads worse than one that closes when the sound
         /// does. So the source is kept while it is still playing this line's clip and the silent path closes
         /// the mouth the frame it stops; only the line bookkeeping is cleared, so nothing idles and the next
-        /// line is a fresh start. The Unreal arm follows the same rule.
+        /// line is a fresh start. Game-code lipsync is not the dialogue's to end. The Unreal arm follows the
+        /// same rule.
         /// </summary>
         private void HandleDialogueEnded()
         {
+            if (_manual) return;
+
             if (!IsAnalysable())
             {
                 StopLipsync();
@@ -503,6 +587,7 @@ namespace StoryFlow.Lipsync
 
             // A face was found, so the next disappearance is worth reporting again.
             _warnedNoFace = _warnedNoFace && _targets.Count == 0;
+            _warnedMissingMorphs = _warnedMissingMorphs && _targets.Count > 0;
 
             if (_targets.Count == 0)
             {
@@ -514,8 +599,11 @@ namespace StoryFlow.Lipsync
                                      "Point FaceRoot at the character's face meshes.", this);
                 }
             }
-            else if (missing.Count > 0)
+            else if (missing.Count > 0 && !_warnedMissingMorphs)
             {
+                // Once: on a plain ARKit rig this names the tongue shapes, and a re-resolve happens on every
+                // mesh swap, which is the ordinary outfit-change case rather than a reason to say it again.
+                _warnedMissingMorphs = true;
                 Debug.LogWarning($"[StoryFlow] Lipsync on '{name}': the rig has no {string.Join(", ", missing)}. " +
                                  "Those parts of each pose are skipped; the rest still plays.", this);
             }

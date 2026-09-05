@@ -116,8 +116,8 @@ namespace StoryFlow.Lipsync
             }
             if (unknown.Count > 0)
             {
-                Debug.LogWarning($"[StoryFlow] Viseme map '{name}' has poses the driver never asks for: " +
-                                 $"{string.Join(", ", unknown)}. The pose names are " +
+                Debug.LogWarning($"[StoryFlow] Viseme map '{name}' has poses speech never reaches: " +
+                                 $"{string.Join(", ", unknown)}. Only the idle mouth uses them. The pose names are " +
                                  $"{string.Join(", ", StoryFlowVisemeTable.PoseNames)}.", this);
             }
 
