@@ -120,6 +120,16 @@ namespace StoryFlow.Execution.NodeHandlers
                         ? new List<StoryFlowVariant>(evaluated.ArrayValue)
                         : new List<StoryFlowVariant>(),
                 };
+                if (variableType == "string")
+                {
+                    // Session writes capture display text without changing the source array.
+                    for (int i = 0; i < value.ArrayValue.Count; i++)
+                    {
+                        var element = StoryFlowVariant.String(context.ResolveArrayString(value.ArrayValue[i]));
+                        element.IsLiteralString = true;
+                        value.ArrayValue[i] = element;
+                    }
+                }
                 RetagEnumElements(value, variableType);
                 return true;
             }

@@ -28,6 +28,8 @@ namespace StoryFlow.Data
         public int IntValue;
         public float FloatValue;
         public string StringValue = "";
+        // Array reads must distinguish authored table keys from runtime-written text.
+        public bool IsLiteralString;
         public string EnumValue = "";
         [NonSerialized] public List<StoryFlowVariant> ArrayValue;
         [NonSerialized] public List<StoryFlowMapEntry> MapValue;
@@ -44,6 +46,7 @@ namespace StoryFlow.Data
             IntValue = other.IntValue;
             FloatValue = other.FloatValue;
             StringValue = other.StringValue ?? "";
+            IsLiteralString = other.IsLiteralString;
             EnumValue = other.EnumValue ?? "";
             if (other.ArrayValue != null)
             {
@@ -164,6 +167,7 @@ namespace StoryFlow.Data
             IntValue = 0;
             FloatValue = 0f;
             StringValue = "";
+            IsLiteralString = false;
             EnumValue = "";
             ArrayValue = null;
             MapValue = null;

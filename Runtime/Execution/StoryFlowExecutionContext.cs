@@ -1031,6 +1031,11 @@ namespace StoryFlow.Execution
                 if (fromSource != null) return fromSource;
             }
 
+            // Older localized exports always put source text in strings.en, even when
+            // sourceLanguage named another language. New artifacts use the actual code.
+            if (project != null && project.HasLocalization && languageCode != "en" && sourceLanguage != "en")
+                return LookUpExactIn(project, script, "en." + key);
+
             return null;
         }
 
@@ -1100,6 +1105,13 @@ namespace StoryFlow.Execution
             if (string.IsNullOrEmpty(key)) return key;
 
             return LookUpLocalized(key) ?? key;
+        }
+
+        internal string ResolveArrayString(StoryFlowVariant value)
+        {
+            if (value == null) return "";
+            var text = value.GetString();
+            return value.IsLiteralString ? text : ResolveStringKey(text);
         }
 
         // =====================================================================

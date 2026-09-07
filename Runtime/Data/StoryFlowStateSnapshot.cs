@@ -28,6 +28,9 @@ namespace StoryFlow.Data
         /// </summary>
         public Dictionary<string, string> CharacterNames = new();
 
+        /// <summary>Authored name keys. Absent for literal names and legacy saves.</summary>
+        public Dictionary<string, string> CharacterNameKeys = new();
+
         /// <summary>
         /// Character portrait asset keys, keyed by normalized character path. Absence keeps
         /// the current key, same as <see cref="CharacterNames"/>.

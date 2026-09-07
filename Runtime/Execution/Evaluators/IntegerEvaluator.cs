@@ -229,7 +229,7 @@ namespace StoryFlow.Execution
                     if (arr == null) return -1;
                     for (int i = 0; i < arr.Count; i++)
                     {
-                        if (arr[i].GetString() == val) return i;
+                        if (ctx.ResolveArrayString(arr[i]) == val) return i;
                     }
                     return -1;
                 }

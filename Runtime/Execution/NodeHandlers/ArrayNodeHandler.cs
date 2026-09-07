@@ -395,7 +395,10 @@ namespace StoryFlow.Execution.NodeHandlers
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
                         context, node.Id, "string-" + handleIndex, node.GetData(inlineValueKey));
-                    return StoryFlowVariant.String(val);
+                    return new StoryFlowVariant
+                    {
+                        Type = StoryFlowVariableType.String, StringValue = val, IsLiteralString = true
+                    };
                 }
                 case StoryFlowVariableType.Image:
                 {

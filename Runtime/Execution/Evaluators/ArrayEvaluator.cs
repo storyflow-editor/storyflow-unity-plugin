@@ -247,7 +247,10 @@ namespace StoryFlow.Execution
             foreach (var entry in map)
             {
                 var element = keys ? entry.Key : entry.Value;
-                result.Add(element != null ? new StoryFlowVariant(element) : new StoryFlowVariant());
+                var copy = element != null ? new StoryFlowVariant(element) : new StoryFlowVariant();
+                // Map keys are identifiers, even when their bytes match a localization key.
+                if (keys && copy.Type == StoryFlowVariableType.String) copy.IsLiteralString = true;
+                result.Add(copy);
             }
             return result;
         }
@@ -268,7 +271,9 @@ namespace StoryFlow.Execution
             var result = new List<StoryFlowVariant>(names.Count);
             foreach (var name in names)
             {
-                result.Add(StoryFlowVariant.String(name));
+                var element = StoryFlowVariant.String(name);
+                element.IsLiteralString = true;
+                result.Add(element);
             }
             return result;
         }

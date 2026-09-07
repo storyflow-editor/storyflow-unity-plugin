@@ -63,6 +63,8 @@ namespace StoryFlow.Utilities
                     ["name"] = kvp.Value.Name ?? "",
                     ["image"] = kvp.Value.ImageAssetKey ?? ""
                 };
+                if (!string.IsNullOrEmpty(kvp.Value.NameKey))
+                    charObj["nameKey"] = kvp.Value.NameKey;
 
                 var vars = new JObject();
                 if (kvp.Value.VariablesList != null)
@@ -273,15 +275,19 @@ namespace StoryFlow.Utilities
             else if (variable.IsArray)
             {
                 var arr = new JArray();
+                var literalIndices = new JArray();
                 var list = variable.Value?.GetArray();
                 if (list != null)
                 {
                     foreach (var element in list)
                     {
+                        if (element?.Type == StoryFlowVariableType.String && element.IsLiteralString)
+                            literalIndices.Add(arr.Count);
                         arr.Add(VariantToJson(element));
                     }
                 }
                 obj["value"] = arr;
+                if (literalIndices.Count > 0) obj["literalStringIndices"] = literalIndices;
             }
             else
             {
@@ -367,6 +373,8 @@ namespace StoryFlow.Utilities
                     if (charObj["name"] != null && charObj["name"].Type == JTokenType.String)
                     {
                         snapshot.CharacterNames[charProperty.Name] = (string)charObj["name"];
+                        if (charObj["nameKey"]?.Type == JTokenType.String)
+                            snapshot.CharacterNameKeys[charProperty.Name] = (string)charObj["nameKey"];
                     }
                     if (charObj["image"] != null && charObj["image"].Type == JTokenType.String)
                     {
@@ -482,6 +490,15 @@ namespace StoryFlow.Utilities
                     }
                 }
                 value = new StoryFlowVariant { Type = type, ArrayValue = list };
+                if (type == StoryFlowVariableType.String && record["literalStringIndices"] is JArray literalIndices)
+                {
+                    foreach (var index in literalIndices)
+                    {
+                        if (index.Type != JTokenType.Integer) continue;
+                        var position = (long)index;
+                        if (position >= 0 && position < list.Count) list[(int)position].IsLiteralString = true;
+                    }
+                }
                 return true;
             }
 

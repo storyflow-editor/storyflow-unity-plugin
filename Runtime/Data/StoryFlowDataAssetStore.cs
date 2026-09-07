@@ -748,6 +748,11 @@ namespace StoryFlow.Data
             {
                 LocalizeDeclaredValue(walk.Declaration, project, languageCode, value);
             }
+            // This door returns finished text (including deliberately literal overrides).
+            // Downstream array consumers must not reinterpret it as a fresh authored key.
+            if (walk.Declaration.IsArray && walk.Declaration.Type == StoryFlowVariableType.String && value.ArrayValue != null)
+                foreach (var element in value.ArrayValue)
+                    if (element != null) element.IsLiteralString = true;
             return value;
         }
 

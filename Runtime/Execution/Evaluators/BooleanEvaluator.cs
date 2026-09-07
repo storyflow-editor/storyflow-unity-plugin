@@ -284,7 +284,7 @@ namespace StoryFlow.Execution
                     if (arr == null) return false;
                     foreach (var item in arr)
                     {
-                        if (item.GetString() == val) return true;
+                        if (ctx.ResolveArrayString(item) == val) return true;
                     }
                     return false;
                 }

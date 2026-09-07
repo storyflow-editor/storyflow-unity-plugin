@@ -45,6 +45,7 @@ namespace StoryFlow
         // selects, this is not project content but the player's CHOICE, so it lives here rather
         // than on the project asset and no mirror of it exists anywhere else.
         [NonSerialized] private string _currentLanguage = "en";
+        [NonSerialized] private bool _hasEstablishedLanguage;
 
         // The .sfd Data Asset store (engine contract §3). The SEED is rebuilt from the
         // project and never written to again; the OVERLAY holds this session's script
@@ -220,8 +221,9 @@ namespace StoryFlow
             // Everything below is read in the language this line just set, so a handler running
             // at this point would see the OUTGOING project's globals, characters and .sfd seed
             // under the INCOMING project's language.
-            var carried = Project.ResolveLanguageCode(_currentLanguage);
+            var carried = _hasEstablishedLanguage ? Project.ResolveLanguageCode(_currentLanguage) : null;
             _currentLanguage = string.IsNullOrEmpty(carried) ? Project.SourceLanguage : carried;
+            _hasEstablishedLanguage = true;
 
             DeepCopyGlobalVariables();
             DeepCopyRuntimeCharacters();
@@ -783,10 +785,8 @@ namespace StoryFlow
         /// engine keeps string-table KEYS in its runtime state and resolves them per read. The
         /// seed-time posture the sibling engines document therefore has almost no surface here:
         /// initial values are not pre-resolved at load, so a mid-session switch reaches them
-        /// too. ONE EXCEPTION, and it is an IMPORT-time bake rather than a load-time seed: a
-        /// character's display NAME is resolved into the imported character asset (see
-        /// StoryFlowImporter.ImportCharacter), so a speaker label does not flip until the
-        /// project is re-imported. Character string VARIABLES are unaffected and do flip.
+        /// too. Authored character display names are refreshed from NameKey before the
+        /// language event; player-written names have no key and remain literal.
         ///
         /// PERSISTENCE IS THE GAME'S. This plugin keeps the choice for the SESSION only, and
         /// deliberately: it has no player-settings lane of its own, and the save envelope
@@ -808,6 +808,7 @@ namespace StoryFlow
                 return false;
             }
 
+            _hasEstablishedLanguage = true;
             if (next != _currentLanguage)
             {
                 // ASSIGN, THEN RAISE. A handler must never observe a half-applied switch:
@@ -999,8 +1000,13 @@ namespace StoryFlow
                 if (RuntimeCharacters.TryGetValue(nameEntry.Key, out var characterData))
                 {
                     characterData.Name = nameEntry.Value;
+                    // Old saves carried only the resolved name. It is ambiguous whether
+                    // that was authored or player-written, so preserve it as literal data.
+                    characterData.NameKey = snapshot.CharacterNameKeys.TryGetValue(nameEntry.Key, out var nameKey)
+                        ? nameKey : null;
                 }
             }
+            RefreshRuntimeCharacterNames();
 
             foreach (var imageEntry in snapshot.CharacterImages)
             {

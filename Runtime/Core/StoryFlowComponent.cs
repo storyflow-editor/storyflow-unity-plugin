@@ -713,14 +713,12 @@ namespace StoryFlow
         }
 
         /// <summary>
-        /// The project a string lookup reads through: the live context's while one exists, the
-        /// manager's otherwise. Preserves the pre-localization precedence exactly — the
-        /// during-dialogue branch went through the context (and therefore its project), the
-        /// outside-dialogue branch through the manager's.
+        /// The manager owns the installed project. A retained dialogue context may belong to
+        /// an outgoing project; its script table joins lookups only while the projects match.
         /// </summary>
         private StoryFlowProjectAsset ResolutionProject()
         {
-            return _context != null ? _context.Project : GetProject();
+            return GetProject() ?? _context?.Project;
         }
 
         /// <summary>
@@ -737,8 +735,10 @@ namespace StoryFlow
         {
             if (string.IsNullOrEmpty(key)) return key;
 
+            var project = ResolutionProject();
+            var script = _context?.Project == project ? _context?.CurrentScript : null;
             return StoryFlowExecutionContext.LookUpLocalizedIn(
-                ResolutionProject(), _context?.CurrentScript, key, ActiveLanguageCode()) ?? key;
+                project, script, key, ActiveLanguageCode()) ?? key;
         }
 
         /// <summary>Gets a boolean variable by its display name. When global is true, searches only global; otherwise searches local first then global.</summary>
@@ -870,13 +870,12 @@ namespace StoryFlow
                 return null;
             }
 
-            // Handle built-in "Name" field (stored as string table key — resolve it).
+            // Name is already refreshed from NameKey, or is literal player-written text.
             // cf_name aliases it per amendment A1/A2(a).
             if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(varName))
             {
-                var resolved = ResolveString(characterData.Name);
                 var result = new StoryFlowVariant();
-                result.SetString(resolved);
+                result.SetString(characterData.Name ?? "");
                 return result;
             }
 
@@ -1373,11 +1372,14 @@ namespace StoryFlow
             foreach (var item in array)
             {
                 var copy = new StoryFlowVariant(item);
-                if (copy.Type == StoryFlowVariableType.String ||
+                if (!copy.IsLiteralString && (copy.Type == StoryFlowVariableType.String ||
                     copy.Type == StoryFlowVariableType.Image ||
                     copy.Type == StoryFlowVariableType.Audio ||
-                    copy.Type == StoryFlowVariableType.Character)
+                    copy.Type == StoryFlowVariableType.Character))
+                {
                     copy.StringValue = ResolveString(copy.StringValue);
+                    if (copy.Type == StoryFlowVariableType.String) copy.IsLiteralString = true;
+                }
                 else if (copy.Type == StoryFlowVariableType.Enum)
                     copy.EnumValue = ResolveString(copy.EnumValue);
                 result.Add(copy);
@@ -2425,6 +2427,7 @@ namespace StoryFlow
                     newArray.Add(new StoryFlowVariant
                     {
                         Type = StoryFlowVariableType.String,
+                        IsLiteralString = true,
                         StringValue = s ?? ""
                     });
                 }
@@ -2735,6 +2738,7 @@ namespace StoryFlow
             variable.Value.ArrayValue.Add(new StoryFlowVariant
             {
                 Type = StoryFlowVariableType.String,
+                IsLiteralString = true,
                 StringValue = value ?? ""
             });
 

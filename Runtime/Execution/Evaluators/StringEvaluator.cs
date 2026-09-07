@@ -1,5 +1,6 @@
 using System.Globalization;
 using StoryFlow.Data;
+using StoryFlow.Utilities;
 using UnityEngine;
 
 namespace StoryFlow.Execution
@@ -48,13 +49,23 @@ namespace StoryFlow.Execution
             try
             {
                 // The exemptions and why each one exists live on ShouldSkipCache.
-                bool skipCache = EvaluatorHelpers.ShouldSkipCache(node.Type);
+                // Runtime Name is finished text refreshed from NameKey on language changes,
+                // or a literal player name. Read it live and never interpret it as another key.
+                bool characterName = (node.Type == StoryFlowNodeType.GetCharacterVar ||
+                    node.Type == StoryFlowNodeType.SetCharacterVar) &&
+                    StoryFlowCharacterTokens.IsCharacterNameBuiltin(node.GetData("variableName"));
+                bool skipCache = EvaluatorHelpers.ShouldSkipCache(node.Type) || characterName;
+                bool arrayElement = node.Type == StoryFlowNodeType.GetStringArrayElement ||
+                    node.Type == StoryFlowNodeType.GetRandomStringArrayElement ||
+                    node.Type == StoryFlowNodeType.ForEachStringLoop;
+                bool finishedText = EvaluatorHelpers.IsDataAssetAccessor(node.Type) || arrayElement || characterName;
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
-                    return ctx.ResolveStringKey(state.CachedOutput.GetString());
+                    return arrayElement ? ctx.ResolveArrayString(state.CachedOutput)
+                        : ctx.ResolveStringKey(state.CachedOutput.GetString());
 
                 string result = EvaluateFromNodeInternal(ctx, node);
-                if (!skipCache)
+                if (!skipCache && !arrayElement)
                     state.CachedOutput = StoryFlowVariant.String(result);
 
                 if (ctx.TraceEnabled)
@@ -74,12 +85,9 @@ namespace StoryFlow.Execution
                 // somebody else's prose, invisibly in the source language. Pre-amendment this
                 // wrap was a harmless no-op over a .sfd literal, which is why it was here.
                 //
-                // Only the SCALAR path needs saying. The cached branch above cannot reach a .sfd
-                // accessor at all (they are cache-exempt), and a value read out of a .sfd ARRAY
-                // or MAP by a downstream node re-enters this ladder as that node's result — a
-                // known limit of container reads in this engine, harmless for declared prose
-                // (which keys nothing once translated) and recorded for the divergence register.
-                if (EvaluatorHelpers.IsDataAssetAccessor(node.Type)) return result;
+                // Array element readers also settle provenance before returning text.
+                // Do not interpret a literal element that happens to match a key a second time.
+                if (finishedText) return result;
 
                 return ctx.ResolveStringKey(result);
             }
@@ -150,7 +158,11 @@ namespace StoryFlow.Execution
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
                     int idx = StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, StoryFlowHandles.In_Integer, node.GetDataInt("value"));
                     if (arr != null && idx >= 0 && idx < arr.Count)
-                        return arr[idx].GetString();
+                    {
+                        // Cache the key and provenance, not this language's resolved text.
+                        ctx.GetNodeRuntimeState(node.Id).CachedOutput = new StoryFlowVariant(arr[idx]);
+                        return ctx.ResolveArrayString(arr[idx]);
+                    }
                     return "";
                 }
 
@@ -159,7 +171,8 @@ namespace StoryFlow.Execution
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
                     if (arr == null || arr.Count == 0) return "";
                     int idx = Random.Range(0, arr.Count);
-                    return arr[idx].GetString();
+                    ctx.GetNodeRuntimeState(node.Id).CachedOutput = new StoryFlowVariant(arr[idx]);
+                    return ctx.ResolveArrayString(arr[idx]);
                 }
 
                 case StoryFlowNodeType.ForEachStringLoop:
@@ -168,7 +181,7 @@ namespace StoryFlow.Execution
                     if (runtimeState.LoopArray != null && runtimeState.LoopIndex >= 0 &&
                         runtimeState.LoopIndex < runtimeState.LoopArray.Count)
                     {
-                        return runtimeState.LoopArray[runtimeState.LoopIndex].GetString();
+                        return ctx.ResolveArrayString(runtimeState.LoopArray[runtimeState.LoopIndex]);
                     }
                     return "";
                 }

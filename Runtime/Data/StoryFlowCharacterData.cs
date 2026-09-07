@@ -23,7 +23,7 @@ namespace StoryFlow.Data
         /// state. So the record carries BOTH: the resolved text games read, and the key to
         /// re-resolve it from when the language moves.
         ///
-        /// EMPTY MEANS AUTHORED. A name a script wrote is live data, not content, so clearing the
+        /// EMPTY MEANS LITERAL. A name a script wrote is live data, not content, so clearing the
         /// key is what stops a later SetLanguage overwriting it — the same provenance rule the
         /// .sfd read door applies to session writes.
         /// </summary>
