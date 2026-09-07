@@ -1294,7 +1294,7 @@ namespace StoryFlow
         /// </summary>
         private bool AfterDataAssetWrite(bool written)
         {
-            if (written) _context?.ClearNodeRuntimeStates();
+            if (written) _context?.ClearDerivedNodeCaches();
             return written;
         }
 

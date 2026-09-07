@@ -20,7 +20,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return "";
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return "";
 
             var prevHandle = ctx.LastSourceHandle;
@@ -41,6 +41,7 @@ namespace StoryFlow.Execution
             if (ctx.EvaluationDepth > StoryFlowExecutionContext.MaxEvaluationDepth)
             {
                 ctx.EvaluationDepth--;
+                ctx.FailResolution();
                 Debug.LogWarning("[StoryFlow] Enum evaluation depth exceeded. Possible circular reference.");
                 return "";
             }
@@ -84,7 +85,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetEnum:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.FindVariable(variableId);
+                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.Enum, false);
                     string val = variable?.Value?.GetEnum() ?? "";
                     if (ctx.TraceEnabled && variable != null)
                     {
@@ -110,22 +111,9 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var varType = node.GetData("variableType");
-                    if (varType == "enum")
-                    {
-                        var charPath = node.GetData("characterPath");
-                        var varName = node.GetData("variableName");
-                        var characterData = ctx.FindCharacter(charPath);
-                        if (characterData != null)
-                        {
-                            if (characterData.Variables != null &&
-                                characterData.Variables.TryGetValue(varName, out var charVar))
-                            {
-                                return charVar.GetEnum();
-                            }
-                        }
-                    }
-                    return "";
+                    var charVar = node.GetData("variableType") == "enum"
+                        ? EvaluatorHelpers.EvaluateCharacterVariable(ctx, node) : null;
+                    return ctx.ReadValue(charVar, StoryFlowVariableType.Enum)?.GetEnum() ?? "";
                 }
 
                 // Get/SetDataAssetVariable returning an enum. Enum storage is EnumValue, not
@@ -137,7 +125,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetDataAssetVariable:
                 case StoryFlowNodeType.SetDataAssetVariable:
                 {
-                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    var dataAssetVar = ctx.ReadValue(EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node), StoryFlowVariableType.Enum);
                     return dataAssetVar?.GetEnum() ?? "";
                 }
 
@@ -181,7 +169,7 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.RunScript:
                 {
-                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    var outputValue = ctx.ReadValue(EvaluatorHelpers.ResolveRunScriptOutput(ctx, node), StoryFlowVariableType.Enum);
                     return outputValue?.GetEnum() ?? "";
                 }
 
@@ -200,6 +188,7 @@ namespace StoryFlow.Execution
                 }
 
                 default:
+                    ctx.FailResolution();
                     return "";
             }
         }

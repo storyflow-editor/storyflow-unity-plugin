@@ -60,11 +60,9 @@ namespace StoryFlow.Data
     /// path rather than a localizing one and a raw one. Localization spec §2's amendment of
     /// 2026-08-27 owns the rules; StoryFlowDataAssetStore.TryRead writes them down.
     ///
-    /// WRITES DO NOT INVALIDATE ANYTHING HERE. Every setter reports whether the overlay changed
-    /// and stops; the caller decides what that means for its own memos, because the two callers
-    /// have different answers (see StoryFlowComponent's setter and the manager's). Character
-    /// writes report through the same bool, so the component's cache drop covers them with no
-    /// extra wiring — invalidation parity with seed writes by construction.
+    /// Successful writes advance the shared store generation, including character-bridge
+    /// writes. Live contexts observe it before evaluation, invalidating derived caches while
+    /// retaining completed execution outputs.
     /// </summary>
     internal static class StoryFlowDataAssetAccess
     {
@@ -295,11 +293,13 @@ namespace StoryFlow.Data
                     character.Name = value ?? "";
                     // Written names are live data - see CharacterVarNodeHandler for the rule.
                     character.NameKey = null;
+                    StoryFlowDataAssetStore.NotifyChanged(store?.Overlay);
                     return true;
                 }
                 if (StoryFlowCharacterTokens.IsCharacterImageBuiltin(variableName))
                 {
                     character.ImageAssetKey = value ?? "";
+                    StoryFlowDataAssetStore.NotifyChanged(store?.Overlay);
                     return true;
                 }
 
@@ -322,6 +322,7 @@ namespace StoryFlow.Data
                     variable.Value.Type = variable.Type;
                     variable.Value.StringValue = value ?? "";
                 }
+                StoryFlowDataAssetStore.NotifyChanged(store?.Overlay);
                 return true;
             }
 
@@ -539,6 +540,7 @@ namespace StoryFlow.Data
                     case StoryFlowVariableType.Float: variable.Value.SetFloat(value.GetFloat()); break;
                     default: variable.Value.SetEnum(value.GetEnum()); break;
                 }
+                StoryFlowDataAssetStore.NotifyChanged(store?.Overlay);
                 return true;
             }
 

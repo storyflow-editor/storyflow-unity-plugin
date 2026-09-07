@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Newtonsoft.Json.Linq;
 // The string ladder lives on the execution context (StoryFlow.Execution) and is reached from
 // here for the .sfd read door's lookup. One assembly, and the precedent is StoryFlowComponent,
@@ -168,6 +169,12 @@ namespace StoryFlow.Data
     /// </summary>
     public static class StoryFlowDataAssetStore
     {
+        // The generation follows the shared overlay identity without retaining dead stores.
+        private sealed class Revision { public long Value; }
+        private static readonly ConditionalWeakTable<object, Revision> Revisions = new();
+        internal static void NotifyChanged(object overlay) { if (overlay != null) Revisions.GetOrCreateValue(overlay).Value++; }
+        internal static long GetRevision(object overlay) => overlay == null ? 0 : Revisions.GetOrCreateValue(overlay).Value;
+
         /// <summary>
         /// Chain depth cap, matching the reference implementation's MAX_DEPTH (contract §4.4):
         /// the walk admits MaxChainDepth ancestors PLUS the starting level, so 65 levels are
@@ -1037,6 +1044,7 @@ namespace StoryFlow.Data
                 overlay[assetId] = levelOverlay;
             }
             levelOverlay[variableId] = new StoryFlowVariant(value);
+            Revisions.GetOrCreateValue(overlay).Value++;
             return true;
         }
 
@@ -1044,6 +1052,7 @@ namespace StoryFlow.Data
         public static void ResetOverlay(Dictionary<string, Dictionary<string, StoryFlowVariant>> overlay)
         {
             overlay?.Clear();
+            if (overlay != null) Revisions.GetOrCreateValue(overlay).Value++;
         }
 
         // =====================================================================

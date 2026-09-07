@@ -52,7 +52,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return new List<StoryFlowVariant>();
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
             // Forward-compat: warn once per dialogue run when a script wires an
@@ -104,6 +104,7 @@ namespace StoryFlow.Execution
             if (IsArrayModifyNode(sourceNode.Type))
             {
                 var state = ctx.GetNodeRuntimeState(sourceNode.Id);
+                if (state?.CachedOutput?.ArrayValue == null) ctx.FailResolution();
                 return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
             }
 
@@ -116,11 +117,12 @@ namespace StoryFlow.Execution
             var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
-                var variable = ctx.FindVariable(variableId);
+                var variable = ctx.ReadVariable(variableId, null, true);
                 if (variable?.Value?.ArrayValue != null)
                     return variable.Value.ArrayValue;
             }
 
+            ctx.FailResolution();
             return new List<StoryFlowVariant>();
         }
 
@@ -135,7 +137,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return new List<StoryFlowVariant>();
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return new List<StoryFlowVariant>();
 
             var prevHandle = ctx.LastSourceHandle;
@@ -171,7 +173,7 @@ namespace StoryFlow.Execution
                 // Handle RunScript output arrays — resolve via the node's stored output values
                 if (node.Type == StoryFlowNodeType.RunScript)
                 {
-                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    var outputValue = ctx.ReadValue(EvaluatorHelpers.ResolveRunScriptOutput(ctx, node), expectedType, true);
                     return outputValue?.ArrayValue != null
                         ? new List<StoryFlowVariant>(outputValue.ArrayValue)
                         : new List<StoryFlowVariant>();
@@ -181,7 +183,7 @@ namespace StoryFlow.Execution
                 if (node.Type == StoryFlowNodeType.GetCharacterVar ||
                     node.Type == StoryFlowNodeType.SetCharacterVar)
                 {
-                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    var charVar = ctx.ReadValue(EvaluatorHelpers.EvaluateCharacterVariable(ctx, node), expectedType, true);
                     return charVar?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
@@ -189,7 +191,7 @@ namespace StoryFlow.Execution
                 // for why this sits ahead of the name lookup)
                 if (EvaluatorHelpers.IsDataAssetAccessor(node.Type))
                 {
-                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    var dataAssetVar = ctx.ReadValue(EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node), expectedType, true);
                     return dataAssetVar?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
@@ -204,6 +206,7 @@ namespace StoryFlow.Execution
                 if (IsArrayModifyNode(node.Type))
                 {
                     var state = ctx.GetNodeRuntimeState(node.Id);
+                    if (state?.CachedOutput?.ArrayValue == null) ctx.FailResolution();
                     return state?.CachedOutput?.ArrayValue ?? new List<StoryFlowVariant>();
                 }
 
@@ -217,11 +220,12 @@ namespace StoryFlow.Execution
                 var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
                 {
-                    var variable = ctx.FindVariable(variableId);
+                    var variable = ctx.ReadVariable(variableId, expectedType, true);
                     if (variable?.Value?.ArrayValue != null)
                         return variable.Value.ArrayValue;
                 }
 
+                ctx.FailResolution();
                 return new List<StoryFlowVariant>();
             }
             finally

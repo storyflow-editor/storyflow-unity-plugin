@@ -41,7 +41,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 // condition re-evaluates (contract §6, the value-refusal row).
                 Debug.LogWarning(
                     "[StoryFlow] Set Data Asset Variable refused an undefined value " +
-                    $"(nothing wired to its value pin): node {node.Id}");
+                    $"(unwired or unresolved value source): node {node.Id}");
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }
@@ -79,6 +79,14 @@ namespace StoryFlow.Execution.NodeHandlers
         private static bool TryReadSetInput(
             StoryFlowExecutionContext context, StoryFlowNode node, out StoryFlowVariant value)
         {
+            context.ClearDerivedNodeCaches();
+            var failures = context.ResolutionFailures;
+            return TryReadSetInputCore(context, node, out value) && failures == context.ResolutionFailures;
+        }
+
+        private static bool TryReadSetInputCore(
+            StoryFlowExecutionContext context, StoryFlowNode node, out StoryFlowVariant value)
+        {
             value = null;
             var variableType = node.GetData("variableType");
 
@@ -96,9 +104,24 @@ namespace StoryFlow.Execution.NodeHandlers
                 // CopyEntries, not the resolved list: a map input resolves to LIVE variable
                 // storage, and the overlay must never share it (the store copies again on the
                 // way in — this one keeps the read side honest as well).
+                var source = MapEvaluator.ResolveMapInputVariable(context, node,
+                    StoryFlowHandles.DataAssetValueOptionId, out var sourceKind);
+                if (source == null) return false;
+                if (sourceKind != MapSourceKind.RunScriptOutput &&
+                    (source.KeyType != ParseElementType(keyType) || source.ValueType != ParseElementType(valueType)))
+                    return false;
+                var entries = source.Value.GetMap();
+                foreach (var entry in entries)
+                    if (context.ReadValue(entry.Key, ParseElementType(keyType)) == null ||
+                        context.ReadValue(entry.Value, ParseElementType(valueType)) == null) return false;
                 value = new StoryFlowVariant();
-                value.SetMap(MapEvaluator.CopyEntries(
-                    MapEvaluator.EvaluateMapInput(context, node, StoryFlowHandles.DataAssetValueOptionId)));
+                value.SetMap(MapEvaluator.CopyEntries(entries));
+                if (valueType == "string")
+                    foreach (var entry in value.MapValue)
+                    {
+                        entry.Value = StoryFlowVariant.String(context.ResolveArrayString(entry.Value));
+                        entry.Value.IsLiteralString = true;
+                    }
                 return true;
             }
 
@@ -238,6 +261,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 // and it should state the same element type the write just did.
                 context.GetNodeRuntimeState(opNode.Id).CachedOutput =
                     new StoryFlowVariant { Type = value.Type, ArrayValue = value.ArrayValue };
+                context.GetNodeRuntimeState(opNode.Id).HasExecutionOutput = true;
             }
             return true;
         }
@@ -254,7 +278,7 @@ namespace StoryFlow.Execution.NodeHandlers
         /// </summary>
         private static void InvalidateCachedConditions(StoryFlowExecutionContext context)
         {
-            context.ClearNodeRuntimeStates();
+            context.ClearDerivedNodeCaches();
         }
 
         private static void FollowFlowOrFallthrough(

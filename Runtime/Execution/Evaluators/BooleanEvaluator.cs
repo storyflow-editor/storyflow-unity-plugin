@@ -21,7 +21,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return false;
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return false;
 
             var prevHandle = ctx.LastSourceHandle;
@@ -43,6 +43,7 @@ namespace StoryFlow.Execution
             if (ctx.EvaluationDepth > StoryFlowExecutionContext.MaxEvaluationDepth)
             {
                 ctx.EvaluationDepth--;
+                ctx.FailResolution();
                 Debug.LogWarning("[StoryFlow] Boolean evaluation depth exceeded. Possible circular reference.");
                 return false;
             }
@@ -88,7 +89,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetBool:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.FindVariable(variableId);
+                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.Boolean, false);
                     bool val = variable?.Value?.GetBool() ?? false;
                     if (ctx.TraceEnabled && variable != null)
                     {
@@ -398,7 +399,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    var charVar = ctx.ReadValue(EvaluatorHelpers.EvaluateCharacterVariable(ctx, node), StoryFlowVariableType.Boolean);
                     return charVar?.GetBool() ?? false;
                 }
 
@@ -414,7 +415,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetDataAssetVariable:
                 case StoryFlowNodeType.SetDataAssetVariable:
                 {
-                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    var dataAssetVar = ctx.ReadValue(EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node), StoryFlowVariableType.Boolean);
                     return dataAssetVar?.GetBool() ?? false;
                 }
 
@@ -435,11 +436,12 @@ namespace StoryFlow.Execution
                 // RunScript output
                 case StoryFlowNodeType.RunScript:
                 {
-                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    var outputValue = ctx.ReadValue(EvaluatorHelpers.ResolveRunScriptOutput(ctx, node), StoryFlowVariableType.Boolean);
                     return outputValue?.GetBool() ?? false;
                 }
 
                 default:
+                    ctx.FailResolution();
                     return false;
             }
         }
@@ -477,7 +479,7 @@ namespace StoryFlow.Execution
                     var inputEdge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Boolean);
                     if (inputEdge != null)
                     {
-                        var sourceNode = ctx.CurrentScript.GetNode(inputEdge.Source);
+                        var sourceNode = ctx.ResolveInputNode(inputEdge);
                         if (sourceNode != null) ProcessBooleanChainInternal(ctx, sourceNode);
                     }
                     // Evaluate and cache
@@ -490,7 +492,7 @@ namespace StoryFlow.Execution
                     var condEdge = ctx.CurrentScript.FindInputEdge(node.Id, "boolean-condition");
                     if (condEdge != null)
                     {
-                        var sourceNode = ctx.CurrentScript.GetNode(condEdge.Source);
+                        var sourceNode = ctx.ResolveInputNode(condEdge);
                         if (sourceNode != null) ProcessBooleanChainInternal(ctx, sourceNode);
                     }
                     break;
@@ -569,7 +571,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, visibilitySuffix);
             if (edge == null) return true; // No visibility edge = always visible
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return true;
 
             // The condition edge's source handle must reach the evaluator — multi-output

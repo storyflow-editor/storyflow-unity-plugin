@@ -224,7 +224,7 @@ namespace StoryFlow.Execution
         {
             var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return defaultValue;
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return defaultValue;
             var prevHandle = ctx.LastSourceHandle;
             ctx.LastSourceHandle = edge.SourceHandle;
@@ -240,7 +240,7 @@ namespace StoryFlow.Execution
         {
             var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return defaultValue;
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return defaultValue;
             var prevHandle = ctx.LastSourceHandle;
             ctx.LastSourceHandle = edge.SourceHandle;
@@ -256,7 +256,7 @@ namespace StoryFlow.Execution
         {
             var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return defaultValue;
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return defaultValue;
             var prevHandle = ctx.LastSourceHandle;
             ctx.LastSourceHandle = edge.SourceHandle;
@@ -272,7 +272,7 @@ namespace StoryFlow.Execution
         {
             var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return ctx != null ? ctx.ResolveStringKey(defaultValue) : defaultValue;
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return ctx.ResolveStringKey(defaultValue);
             var prevHandle = ctx.LastSourceHandle;
             ctx.LastSourceHandle = edge.SourceHandle;

@@ -112,6 +112,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // connected to this node's output can read it (matches HTML's setNodeOutputValue)
             var runtimeState = context.GetNodeRuntimeState(node.Id);
             runtimeState.CachedOutput = new StoryFlowVariant { ArrayValue = array };
+            runtimeState.HasExecutionOutput = true;
 
             // Update the source array variable
             UpdateConnectedArrayVariable(context, component, node, elementType, array);
@@ -152,6 +153,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // Store result in cached output for downstream consumers
             var runtimeState = context.GetNodeRuntimeState(node.Id);
             runtimeState.CachedOutput = new StoryFlowVariant { ArrayValue = array };
+            runtimeState.HasExecutionOutput = true;
 
             // Update the source array variable
             UpdateConnectedArrayVariable(context, component, node, elementType, array);
@@ -228,6 +230,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // Store result in cached output for downstream consumers
             var clearRtState = context.GetNodeRuntimeState(node.Id);
             clearRtState.CachedOutput = new StoryFlowVariant { ArrayValue = new List<StoryFlowVariant>() };
+            clearRtState.HasExecutionOutput = true;
 
             // Follow flow edge
             var flowHandle = StoryFlowHandles.Source(node.Id, StoryFlowHandles.Out_Flow);

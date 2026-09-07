@@ -196,11 +196,12 @@ namespace StoryFlow.Utilities
         /// to a read (an enum and a string both answer GetString) and visible in the NEXT save,
         /// so a save -> load -> save cycle would stop being stable.
         ///
-        /// Non-throwing on every shape: a token of the wrong kind produces the declared type's
-        /// default rather than an exception, because this input arrives from a file.
+        /// Validate raw tokens before conversion. Incompatible values return null so restore
+        /// omits the whole slot and reveals the current inherited/default value.
         /// </summary>
         internal static StoryFlowVariant BareValueFromJson(JToken token, StoryFlowVariable declaration)
         {
+            if (!SavedDataAssetValueMatches(token, declaration)) return null;
             if (declaration.Type == StoryFlowVariableType.Map)
             {
                 var entries = new List<StoryFlowMapEntry>();
@@ -240,6 +241,46 @@ namespace StoryFlow.Utilities
             }
 
             return VariantFromJson(token, declaration.Type);
+        }
+
+        private static bool SavedDataAssetValueMatches(JToken token, StoryFlowVariable declaration)
+        {
+            if (declaration.Type == StoryFlowVariableType.Map)
+            {
+                if (!(token is JArray entries)) return false;
+                foreach (var item in entries)
+                    if (!(item is JObject entry) ||
+                        !SavedScalarMatches(entry["key"], declaration.KeyType, declaration.KeyEnumValues) ||
+                        !SavedScalarMatches(entry["value"], declaration.ValueType, declaration.ValueEnumValues)) return false;
+                return true;
+            }
+            if (declaration.IsArray)
+            {
+                if (!(token is JArray elements)) return false;
+                foreach (var element in elements)
+                    if (!SavedScalarMatches(element, declaration.Type, declaration.EnumValues)) return false;
+                return true;
+            }
+            return SavedScalarMatches(token, declaration.Type, declaration.EnumValues);
+        }
+
+        private static bool SavedScalarMatches(JToken token, StoryFlowVariableType type, List<string> enumValues)
+        {
+            if (token == null || token.Type == JTokenType.Null) return false;
+            if (type == StoryFlowVariableType.Boolean) return token.Type == JTokenType.Boolean;
+            if (type == StoryFlowVariableType.Integer || type == StoryFlowVariableType.Float)
+            {
+                if (token.Type != JTokenType.Integer && token.Type != JTokenType.Float) return false;
+                if (!double.TryParse(token.ToString(Newtonsoft.Json.Formatting.None), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var number) || double.IsNaN(number) || double.IsInfinity(number)) return false;
+                return type == StoryFlowVariableType.Integer
+                    ? number == Math.Truncate(number) && number >= int.MinValue && number <= int.MaxValue
+                    : number >= -float.MaxValue && number <= float.MaxValue;
+            }
+            if (type != StoryFlowVariableType.String && type != StoryFlowVariableType.Enum &&
+                type != StoryFlowVariableType.Image && type != StoryFlowVariableType.Audio && type != StoryFlowVariableType.Character) return false;
+            return token.Type == JTokenType.String && (type != StoryFlowVariableType.Enum ||
+                enumValues == null || enumValues.Count == 0 || enumValues.Contains((string)token));
         }
 
         private static JObject VariableToJson(StoryFlowVariable variable)
@@ -338,7 +379,14 @@ namespace StoryFlow.Utilities
             JObject root;
             try
             {
-                root = JToken.Parse(json) as JObject;
+                // Saved strings are game data, including ISO-looking dates. Keep their JSON
+                // token type and original text so declaration validation cannot discard them.
+                using (var reader = new JsonTextReader(new System.IO.StringReader(json)) { DateParseHandling = DateParseHandling.None })
+                {
+                    root = JToken.ReadFrom(reader) as JObject;
+                    // Like JToken.Parse, reject trailing content before applying any state.
+                    while (reader.Read()) { }
+                }
                 if (root == null) { return null; }
             }
             catch (JsonException)

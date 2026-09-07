@@ -82,6 +82,10 @@ namespace StoryFlow.Execution
     {
         /// <summary>Cached output value from the most recent evaluation.</summary>
         public StoryFlowVariant CachedOutput;
+        public bool HasExecutionOutput;
+
+        /// <summary>Completed detached .sfd map mutation, retained until the chain ends.</summary>
+        public StoryFlowVariable DetachedMapOutput;
 
         /// <summary>Current loop index for forEach nodes.</summary>
         public int LoopIndex;
@@ -125,6 +129,8 @@ namespace StoryFlow.Execution
         public void ClearCache()
         {
             CachedOutput = null;
+            HasExecutionOutput = false;
+            DetachedMapOutput = null;
             CachedTextBlocks = null;
             CachedOptions = null;
             Dirty = false;

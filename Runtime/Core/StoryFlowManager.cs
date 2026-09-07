@@ -357,16 +357,8 @@ namespace StoryFlow
         // StoryFlowDataAssetStore.TryRead's business — declarations localize, overrides and
         // session writes never do (localization spec §2's amendment of 2026-08-27).
         //
-        // THE SETTERS HERE INVALIDATE NO EVALUATION CACHES, and cannot: a manager has no
-        // execution context. If a dialogue is running on some component when one of these
-        // writes lands, that component keeps any condition it had already memoized ABOVE a .sfd
-        // accessor until its next rebuild, so an option can answer with the pre-write value for
-        // a moment. The component's own setters clear their context for exactly this reason and
-        // still only reach THEIR context — a second component mid-dialogue is stale either way,
-        // so this is the same documented asymmetry, not a worse one. The blast radius is small
-        // because the accessors themselves are cache-exempt: only a memoized parent goes stale,
-        // never the read. Writing from a manager while a dialogue runs is not the shape this
-        // surface is for; a script node is.
+        // Shared store writes advance the overlay revision. Every live context observes it
+        // before evaluation and drops derived caches while preserving completed exec outputs.
 
         /// <summary>Reads a boolean .sfd variable. <paramref name="found"/> is false for every refusal.</summary>
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)
@@ -1051,17 +1043,9 @@ namespace StoryFlow
         /// session's writes survive into the loaded game; the once-only options above are the
         /// same shape and the precedent for it, while every other section of a snapshot merges.
         ///
-        /// Two kinds of entry are DROPPED rather than restored:
-        ///  - an asset the current seed does not carry (deleted since the save). Resolution
-        ///    starts its walk at seed[assetId], so the entry can never be read, and keeping it
-        ///    would make it ride every subsequent save forever.
-        ///  - a variable no level of that asset's chain declares any more (contract §7's
-        ///    carve-out). The reference keeps such entries because JS values need no
-        ///    declaration; a variant does — with no declaration there is no type to restore it
-        ///    AS, and §4.3 already makes it unreadable. Unreal drops them and so does this.
-        ///
-        /// Values are NOT otherwise re-validated: a stale-TYPED entry degrades at the accessor
-        /// via §6.1, exactly as a stale session write does.
+        /// Unknown assets and variables are dropped. Each remaining bare slot must match its
+        /// current rootmost declaration before conversion; an incompatible scalar, array or
+        /// map is discarded whole so the current inherited/default value becomes visible.
         /// </summary>
         private void ApplyDataAssetValues(Dictionary<string, Dictionary<string, JToken>> table)
         {
@@ -1096,9 +1080,10 @@ namespace StoryFlow
                         continue;
                     }
 
+                    var restored = StoryFlowStateSerializer.BareValueFromJson(valueEntry.Value, declaration);
+                    if (restored == null) continue;
                     if (values == null) { values = new Dictionary<string, StoryFlowVariant>(); }
-                    values[valueEntry.Key] = StoryFlowStateSerializer.BareValueFromJson(
-                        valueEntry.Value, declaration);
+                    values[valueEntry.Key] = restored;
                 }
 
                 // An asset whose every entry was dropped leaves NO entry behind: an empty inner

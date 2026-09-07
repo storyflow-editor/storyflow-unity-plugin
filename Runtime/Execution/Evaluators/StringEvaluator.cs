@@ -21,7 +21,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return "";
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return "";
 
             var prevHandle = ctx.LastSourceHandle;
@@ -42,6 +42,7 @@ namespace StoryFlow.Execution
             if (ctx.EvaluationDepth > StoryFlowExecutionContext.MaxEvaluationDepth)
             {
                 ctx.EvaluationDepth--;
+                ctx.FailResolution();
                 Debug.LogWarning("[StoryFlow] String evaluation depth exceeded. Possible circular reference.");
                 return "";
             }
@@ -110,7 +111,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetString:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.FindVariable(variableId);
+                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.String, false);
                     string val = variable?.Value?.GetString() ?? "";
                     if (ctx.TraceEnabled && variable != null)
                     {
@@ -195,7 +196,11 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetCharacter:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.FindVariable(variableId);
+                    var expected = node.Type == StoryFlowNodeType.GetImage || node.Type == StoryFlowNodeType.SetImage
+                        ? StoryFlowVariableType.Image
+                        : node.Type == StoryFlowNodeType.GetAudio || node.Type == StoryFlowNodeType.SetAudio
+                            ? StoryFlowVariableType.Audio : StoryFlowVariableType.Character;
+                    var variable = ctx.ReadVariable(variableId, expected, false);
                     return variable?.Value?.GetString() ?? "";
                 }
 
@@ -210,7 +215,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    var charVar = ctx.ReadValue(EvaluatorHelpers.EvaluateCharacterVariable(ctx, node), StoryFlowVariableType.String);
                     return charVar?.GetString() ?? "";
                 }
 
@@ -221,7 +226,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetDataAssetVariable:
                 case StoryFlowNodeType.SetDataAssetVariable:
                 {
-                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    var dataAssetVar = ctx.ReadValue(EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node), StoryFlowVariableType.String);
                     return dataAssetVar?.GetString() ?? "";
                 }
 
@@ -316,7 +321,7 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.RunScript:
                 {
-                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    var outputValue = ctx.ReadValue(EvaluatorHelpers.ResolveRunScriptOutput(ctx, node), StoryFlowVariableType.String);
                     return outputValue?.GetString() ?? "";
                 }
 
@@ -327,6 +332,7 @@ namespace StoryFlow.Execution
                 }
 
                 default:
+                    ctx.FailResolution();
                     return "";
             }
         }

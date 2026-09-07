@@ -265,8 +265,55 @@ namespace StoryFlow.Execution
         // =====================================================================
 
         /// <summary>
-        /// Finds a variable by its ID. Checks local variables first, then global.
+        /// Monotonic failure marker for evaluated sources; setters compare it around a pull.
+        /// Unwired optional expression pins keep their existing fallback without recording failure.
         /// </summary>
+        internal long ResolutionFailures { get; private set; }
+        internal void FailResolution() => ResolutionFailures++;
+
+        internal StoryFlowNode ResolveInputNode(StoryFlowConnection edge)
+        {
+            if (edge == null) return null;
+            var node = CurrentScript?.GetNode(edge.Source);
+            if (node == null) FailResolution();
+            return node;
+        }
+
+        private static bool ReadTypesMatch(StoryFlowVariableType actual, StoryFlowVariableType expected, bool array)
+        {
+            bool Text(StoryFlowVariableType type) => type == StoryFlowVariableType.String ||
+                type == StoryFlowVariableType.Enum || type == StoryFlowVariableType.Image ||
+                type == StoryFlowVariableType.Audio || type == StoryFlowVariableType.Character;
+            return actual == expected || ((array || expected == StoryFlowVariableType.String) && Text(actual) && Text(expected));
+        }
+
+        internal StoryFlowVariant ReadValue(StoryFlowVariant value, StoryFlowVariableType expected, bool array = false)
+        {
+            // Host container setters may store media as String variants; declarations still
+            // require their exact type through ReadVariable and the map binding checks.
+            bool mediaString = value?.Type == StoryFlowVariableType.String &&
+                (expected == StoryFlowVariableType.Image || expected == StoryFlowVariableType.Audio || expected == StoryFlowVariableType.Character);
+            if (value == null || (value.ArrayValue != null) != array || (!ReadTypesMatch(value.Type, expected, array) && !mediaString))
+            {
+                FailResolution();
+                return null;
+            }
+            return value;
+        }
+
+        internal StoryFlowVariable ReadVariable(string id, StoryFlowVariableType? expected = null, bool? array = null)
+        {
+            var variable = FindVariable(id);
+            if (variable == null || (expected.HasValue && !ReadTypesMatch(variable.Type, expected.Value, array == true)) ||
+                (array.HasValue && variable.IsArray != array.Value))
+            {
+                FailResolution();
+                return null;
+            }
+            return variable;
+        }
+
+        /// <summary>Finds a variable by ID, checking locals before globals.</summary>
         public StoryFlowVariable FindVariable(string id)
         {
             if (string.IsNullOrEmpty(id)) return null;
@@ -374,6 +421,12 @@ namespace StoryFlow.Execution
         /// </summary>
         public NodeRuntimeState GetNodeRuntimeState(string nodeId)
         {
+            var revision = StoryFlowDataAssetStore.GetRevision(DataAssetStore?.Overlay);
+            if (revision != dataAssetRevision)
+            {
+                dataAssetRevision = revision;
+                ClearDerivedNodeCaches();
+            }
             if (string.IsNullOrEmpty(nodeId)) return new NodeRuntimeState();
 
             if (!nodeRuntimeStates.TryGetValue(nodeId, out var state))
@@ -407,6 +460,7 @@ namespace StoryFlow.Execution
             if (node == null || node.Type != StoryFlowNodeType.Unknown)
                 return false;
 
+            FailResolution();
             if (warnedUnknownNodes.Add(node.Id))
             {
                 var typeName = !string.IsNullOrEmpty(node.RawType) ? node.RawType : node.Type.ToString();
@@ -611,8 +665,9 @@ namespace StoryFlow.Execution
             if (node == null || DataAssetStore == null || !DataAssetStore.IsValid)
                 return new List<string>();
 
-            return StoryFlowDataAssetStore.VariableNames(
-                DataAssetStore.Seed, ResolveDataAssetId(node));
+            var assetId = ResolveDataAssetId(node);
+            if (!StoryFlowDataAssetStore.HasAsset(DataAssetStore.Seed, assetId)) FailResolution();
+            return StoryFlowDataAssetStore.VariableNames(DataAssetStore.Seed, assetId);
         }
 
         /// <summary>
@@ -1105,6 +1160,14 @@ namespace StoryFlow.Execution
             if (string.IsNullOrEmpty(key)) return key;
 
             return LookUpLocalized(key) ?? key;
+        }
+
+        private long dataAssetRevision;
+
+        internal void ClearDerivedNodeCaches()
+        {
+            foreach (var state in nodeRuntimeStates.Values)
+                if (!state.HasExecutionOutput) state.ClearCache();
         }
 
         internal string ResolveArrayString(StoryFlowVariant value)

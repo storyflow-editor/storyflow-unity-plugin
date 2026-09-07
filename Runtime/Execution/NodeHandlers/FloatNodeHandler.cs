@@ -66,6 +66,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // Store result in node runtime state for lazy evaluation
             var runtimeState = context.GetNodeRuntimeState(node.Id);
             runtimeState.CachedOutput = StoryFlowVariant.Float(result);
+            runtimeState.HasExecutionOutput = true;
 
             // Try to follow the float output edge
             component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_Float);

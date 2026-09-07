@@ -74,19 +74,34 @@ namespace StoryFlow.Execution
         internal static StoryFlowVariable ResolveMapInputVariableByHandle(
             StoryFlowExecutionContext ctx, StoryFlowNode node, string handleSuffix, out MapSourceKind sourceKind)
         {
+            var variable = ResolveMapInputCore(ctx, node, handleSuffix, out sourceKind);
+            if (variable == null && ctx?.CurrentScript?.FindInputEdge(node?.Id, handleSuffix) != null)
+                ctx.FailResolution();
+            return variable;
+        }
+
+        private static StoryFlowVariable ResolveMapInputCore(
+            StoryFlowExecutionContext ctx, StoryFlowNode node, string handleSuffix, out MapSourceKind sourceKind)
+        {
             sourceKind = MapSourceKind.Unresolved;
             if (ctx?.CurrentScript == null || node == null) return null;
 
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
             if (edge == null) return null;
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
 
             // Walk upstream while the source is a mutator. Hop-bounded to defend against
             // cyclic graphs (the HTML recursion has no guard; we fail to unresolved).
             int hops = 0;
             while (sourceNode != null && IsMapMutatorNode(sourceNode.Type))
             {
+                var output = ctx.GetNodeRuntimeState(sourceNode.Id).DetachedMapOutput;
+                if (output != null)
+                {
+                    sourceKind = MapSourceKind.DataAsset;
+                    return output;
+                }
                 if (++hops > StoryFlowExecutionContext.MaxEvaluationDepth)
                 {
                     Debug.LogWarning($"[StoryFlow] Map mutator chain too deep at node {sourceNode.Id} - possible cycle.");
@@ -108,7 +123,7 @@ namespace StoryFlow.Execution
                 // Keep the terminal edge — its SourceHandle carries the runScript
                 // "-out-" UUID the RunScript arm below parses.
                 edge = upstreamEdge;
-                sourceNode = ctx.CurrentScript.GetNode(upstreamEdge.Source);
+                sourceNode = ctx.ResolveInputNode(upstreamEdge);
             }
 
             if (sourceNode == null) return null;
@@ -124,7 +139,7 @@ namespace StoryFlow.Execution
                 {
                     // Resolve the bound variable (locals first, then globals) and return it
                     // with LIVE map storage established — never hand out a copy here.
-                    var variable = ctx.FindVariable(sourceNode.GetData("variable"));
+                    var variable = ctx.ReadVariable(sourceNode.GetData("variable"), StoryFlowVariableType.Map, false);
                     if (variable != null && variable.Type == StoryFlowVariableType.Map)
                     {
                         if (variable.Value.MapValue == null)
@@ -170,13 +185,9 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetDataAssetVariable:
                 case StoryFlowNodeType.SetDataAssetVariable:
                 {
-                    // Map-typed .sfd variables resolve to a DETACHED copy — the store copies
-                    // out by contract (§3), and there is no live variable behind an accessor
-                    // to alias in the first place. Flagged READ-ONLY like charvar and
-                    // runScript chains, so setMap SNAPSHOTS it rather than aliasing and the
-                    // mutators no-op: the reference builds a fresh Map off the read the same
-                    // way, and a .sfd map is written by the Set node (which replaces the whole
-                    // value), never by a mutator reaching into store storage.
+                    // The store returns a detached copy. Map mutators retain their changed
+                    // copy as an execution output; only an explicit Set Data Asset Variable
+                    // writes that result back into the session overlay.
                     var resolved = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, sourceNode);
                     if (resolved == null || resolved.Type != StoryFlowVariableType.Map) return null;
 
@@ -188,6 +199,8 @@ namespace StoryFlow.Execution
                     {
                         Id = sourceNode.Id,
                         Name = sourceNode.GetData("variable"),
+                        KeyType = StoryFlowWireTypes.TryParseWireType(sourceNode.GetData("keyType"), out var kt) ? kt : StoryFlowVariableType.String,
+                        ValueType = StoryFlowWireTypes.TryParseWireType(sourceNode.GetData("valueType"), out var vt) ? vt : StoryFlowVariableType.String,
                         Type = StoryFlowVariableType.Map,
                         Value = resolved,
                     };
@@ -250,7 +263,7 @@ namespace StoryFlow.Execution
             }
 
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
-            var sourceNode = edge != null ? ctx.CurrentScript.GetNode(edge.Source) : null;
+            var sourceNode = edge != null ? ctx.ResolveInputNode(edge) : null;
             if (sourceNode != null)
             {
                 // Propagate the edge's source handle (save/restore, mirroring the typed
@@ -310,7 +323,7 @@ namespace StoryFlow.Execution
                 case StoryFlowVariableType.Enum:
                 {
                     var edge = ctx.CurrentScript.FindInputEdge(node.Id, handleSuffix);
-                    var sourceNode = edge != null ? ctx.CurrentScript.GetNode(edge.Source) : null;
+                    var sourceNode = edge != null ? ctx.ResolveInputNode(edge) : null;
                     if (sourceNode != null)
                     {
                         // Same source-handle propagation as EvaluateMapOpKeyInput
@@ -340,6 +353,7 @@ namespace StoryFlow.Execution
                 default: // string (a map value pin never declares "map")
                     value.SetString(StoryFlowEvaluator.EvaluateStringWithDefault(
                         ctx, node.Id, handleSuffix, node.GetData("value")));
+                    value.IsLiteralString = true; // Evaluation already resolved the displayed text.
                     break;
             }
             return value;

@@ -20,7 +20,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(nodeId, targetHandleSuffix);
             if (edge == null) return 0;
 
-            var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+            var sourceNode = ctx.ResolveInputNode(edge);
             if (sourceNode == null) return 0;
 
             var prevHandle = ctx.LastSourceHandle;
@@ -41,6 +41,7 @@ namespace StoryFlow.Execution
             if (ctx.EvaluationDepth > StoryFlowExecutionContext.MaxEvaluationDepth)
             {
                 ctx.EvaluationDepth--;
+                ctx.FailResolution();
                 Debug.LogWarning("[StoryFlow] Integer evaluation depth exceeded. Possible circular reference.");
                 return 0;
             }
@@ -85,7 +86,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetInt:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.FindVariable(variableId);
+                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.Integer, false);
                     int val = variable?.Value?.GetInt() ?? 0;
                     if (ctx.TraceEnabled && variable != null)
                     {
@@ -347,7 +348,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetCharacterVar:
                 case StoryFlowNodeType.SetCharacterVar:
                 {
-                    var charVar = EvaluatorHelpers.EvaluateCharacterVariable(ctx, node);
+                    var charVar = ctx.ReadValue(EvaluatorHelpers.EvaluateCharacterVariable(ctx, node), StoryFlowVariableType.Integer);
                     return charVar?.GetInt() ?? 0;
                 }
 
@@ -356,7 +357,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.GetDataAssetVariable:
                 case StoryFlowNodeType.SetDataAssetVariable:
                 {
-                    var dataAssetVar = EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node);
+                    var dataAssetVar = ctx.ReadValue(EvaluatorHelpers.EvaluateDataAssetVariable(ctx, node), StoryFlowVariableType.Integer);
                     return dataAssetVar?.GetInt() ?? 0;
                 }
 
@@ -376,7 +377,7 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.RunScript:
                 {
-                    var outputValue = EvaluatorHelpers.ResolveRunScriptOutput(ctx, node);
+                    var outputValue = ctx.ReadValue(EvaluatorHelpers.ResolveRunScriptOutput(ctx, node), StoryFlowVariableType.Integer);
                     return outputValue?.GetInt() ?? 0;
                 }
 
@@ -393,6 +394,7 @@ namespace StoryFlow.Execution
                 }
 
                 default:
+                    ctx.FailResolution();
                     return 0;
             }
         }

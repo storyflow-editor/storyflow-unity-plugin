@@ -125,16 +125,16 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
+            bool detached = sourceKind == MapSourceKind.DataAsset;
+            if (detached) variable = new StoryFlowVariable(variable);
             if (sourceKind == MapSourceKind.CharacterVariable ||
-                sourceKind == MapSourceKind.RunScriptOutput ||
-                sourceKind == MapSourceKind.DataAsset)
+                sourceKind == MapSourceKind.RunScriptOutput)
             {
-                // Read-only-terminal chain (charvar, runScript output or .sfd accessor): HTML
+                // Read-only-terminal chain (charvar or runScript output): HTML
                 // hands the mutator a THROWAWAY fresh Map — the stored variable is observably
-                // unchanged and no variable-change dispatch fires. Observable no-op: use
-                // setCharacterVar to write charvars, setDataAssetVariable to write .sfd maps
-                // (which REPLACE the whole value, contract §5).
-                LogVerbose($"[StoryFlow] Map mutator node {node.Id} resolves to a read-only map source (character variable, runScript output or data asset) - mutation skipped.");
+                // unchanged and no variable-change dispatch fires. Use setCharacterVar to
+                // write character variables.
+                LogVerbose($"[StoryFlow] Map mutator node {node.Id} resolves to a read-only map source (character variable or runScript output) - mutation skipped.");
                 FollowFlowOrFallthrough(component, context, node);
                 return;
             }
@@ -176,7 +176,13 @@ namespace StoryFlow.Execution.NodeHandlers
                     break;
             }
 
-            component.BroadcastVariableChanged(variable, sourceKind == MapSourceKind.GlobalVariable);
+            if (detached)
+            {
+                var state = context.GetNodeRuntimeState(node.Id);
+                state.DetachedMapOutput = variable;
+                state.HasExecutionOutput = true;
+            }
+            else component.BroadcastVariableChanged(variable, sourceKind == MapSourceKind.GlobalVariable);
             FollowFlowOrFallthrough(component, context, node);
         }
 

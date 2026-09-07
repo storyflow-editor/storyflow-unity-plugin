@@ -127,7 +127,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Integer1);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -145,7 +145,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Integer2);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -163,7 +163,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Float1);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -181,7 +181,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Float2);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -199,7 +199,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_String1);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -217,7 +217,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_String2);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -235,7 +235,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Enum1);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -253,7 +253,7 @@ namespace StoryFlow.Execution
             var edge = ctx.CurrentScript.FindInputEdge(node.Id, StoryFlowHandles.In_Enum2);
             if (edge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(edge.Source);
+                var sourceNode = ctx.ResolveInputNode(edge);
                 if (sourceNode != null)
                 {
                     var prevHandle = ctx.LastSourceHandle;
@@ -361,6 +361,13 @@ namespace StoryFlow.Execution
         internal static StoryFlowVariant ResolveRunScriptOutputByHandle(
             StoryFlowExecutionContext ctx, StoryFlowNode node, string sourceHandle)
         {
+            var value = ResolveRunScriptOutputByHandleCore(ctx, node, sourceHandle);
+            if (value == null) ctx.FailResolution();
+            return value;
+        }
+
+        private static StoryFlowVariant ResolveRunScriptOutputByHandleCore(StoryFlowExecutionContext ctx, StoryFlowNode node, string sourceHandle)
+        {
             var runtimeState = ctx.GetNodeRuntimeState(node.Id);
             if (runtimeState.OutputValues == null || runtimeState.OutputValues.Count == 0)
                 return null;
@@ -444,7 +451,7 @@ namespace StoryFlow.Execution
             var charEdge = ctx.CurrentScript?.FindInputEdge(node.Id, StoryFlowHandles.In_CharacterInput);
             if (charEdge != null)
             {
-                var sourceNode = ctx.CurrentScript.GetNode(charEdge.Source);
+                var sourceNode = ctx.ResolveInputNode(charEdge);
                 if (sourceNode != null)
                 {
                     string evaluated = StringEvaluator.EvaluateFromNode(ctx, sourceNode);
@@ -461,6 +468,13 @@ namespace StoryFlow.Execution
         /// fields as well as custom variables. Returns null if not found.
         /// </summary>
         internal static StoryFlowVariant EvaluateCharacterVariable(StoryFlowExecutionContext ctx, StoryFlowNode node)
+        {
+            var value = EvaluateCharacterVariableCore(ctx, node);
+            if (value == null) ctx.FailResolution();
+            return value;
+        }
+
+        private static StoryFlowVariant EvaluateCharacterVariableCore(StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
             string charPath = ResolveCharacterPath(ctx, node);
             string varName = node.GetData("variableName");
@@ -511,7 +525,9 @@ namespace StoryFlow.Execution
             StoryFlowExecutionContext ctx, StoryFlowNode node)
         {
             if (ctx == null || node == null) return null;
-            return ctx.TryReadDataAssetBinding(node, out _, out var value) ? value : null;
+            if (ctx.TryReadDataAssetBinding(node, out _, out var value)) return value;
+            ctx.FailResolution();
+            return null;
         }
     }
 }

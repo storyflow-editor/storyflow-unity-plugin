@@ -25,6 +25,7 @@ namespace StoryFlow.Tests
             Run(nameof(DataAssetArrayWriteCapturesAuthoredText), DataAssetArrayWriteCapturesAuthoredText);
             Run(nameof(StoppedComponentUsesReplacementProject), StoppedComponentUsesReplacementProject);
             Run(nameof(MapKeysRemainLiteralInArrayConsumers), MapKeysRemainLiteralInArrayConsumers);
+            RunDataAssetHardeningTests();
         }
 
         private static void MapKeysRemainLiteralInArrayConsumers()
