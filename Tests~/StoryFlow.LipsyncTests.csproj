@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="../Runtime/**/*.cs" />
+    <Compile Remove="../Runtime/UI/StoryFlowRuntimeUI.cs" />
+    <Compile Remove="../Runtime/UI/StoryFlowRuntimeUIPortrait.cs" />
+    <Compile Include="LipsyncUnityStubs.cs" />
+    <Compile Include="LipsyncComponentTests.cs" />
+  </ItemGroup>
+</Project>

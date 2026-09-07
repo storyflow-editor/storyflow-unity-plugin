@@ -298,6 +298,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // overwriting PlayAudio clips or restarting on variable-change re-renders.
             if (isFreshEntry)
             {
+                component.DialogueEntrySerial++;
                 if (state.Audio != null)
                 {
                     component.PlayDialogueAudio(state.Audio, state.AudioLoop);

@@ -101,7 +101,7 @@ namespace StoryFlow.Lipsync
         private bool _warnedUnknownCharacter;
         private bool _saidEveryLine;
 
-        private bool _subscribed;
+        private StoryFlowComponent _boundSource;
 
         private AudioSource _speaking;
         private AudioClip _lineClip;
@@ -116,8 +116,12 @@ namespace StoryFlow.Lipsync
         /// <summary>How long this line's AudioSource has been looked for. The search retries for a second before warning.</summary>
         private float _sinceAudioSearch;
 
-        /// <summary>The node this face is already speaking. A repeat of it is a re-render, not a new line.</summary>
+        /// <summary>Only initial acquisition retries. A paused, ended or destroyed acquired source is never replaced.</summary>
+        private bool _awaitingAudioSource;
+
+        /// <summary>The displayed entry. Node ids alone repeat across loops and called scripts.</summary>
         private string _lineNodeId;
+        private ulong _lineEntrySerial;
 
         /// <summary>True once the mouth is shut AND being asked to stay shut, so the write can stop.</summary>
         private bool _atRest;
@@ -145,18 +149,14 @@ namespace StoryFlow.Lipsync
             // Seeded per component: Unity's Mono seeds a bare `new Random()` from TickCount, so a crowd built
             // in one frame would idle in lockstep.
             _driver = new StoryFlowLipsyncDriver(table, GetInstanceID());
+            _atRest = false;
             ResolveFace();
             BindSource();
         }
 
         private void OnDisable()
         {
-            if (_subscribed && Source != null)
-            {
-                Source.OnDialogueUpdated -= HandleDialogueUpdated;
-                Source.OnDialogueEnded -= HandleDialogueEnded;
-            }
-            _subscribed = false;
+            UnbindSource();
             StopLipsync();
 
             // Nothing else will run to ease this face shut, so a component disabled mid-vowel would leave the
@@ -173,7 +173,10 @@ namespace StoryFlow.Lipsync
         /// </summary>
         private void BindSource()
         {
-            if (_subscribed && Source != null) return;
+            if (_boundSource != null && _boundSource == Source) return;
+
+            UnbindSource();
+            if (!_manual) StopLipsync();
 
             if (Source == null)
             {
@@ -190,21 +193,31 @@ namespace StoryFlow.Lipsync
                 }
             }
 
-            Source.OnDialogueUpdated += HandleDialogueUpdated;
-            Source.OnDialogueEnded += HandleDialogueEnded;
-            _subscribed = true;
+            _boundSource = Source;
+            _boundSource.OnDialogueUpdated += HandleDialogueUpdated;
+            _boundSource.OnDialogueEnded += HandleDialogueEnded;
 
             // A line may already be on screen — this component was enabled mid-dialogue, or its actor was
             // spawned by the line itself. Without this it waits for the next one with a dead face.
-            if (Source.IsDialogueActive())
+            if (_boundSource.IsDialogueActive())
             {
-                var showing = Source.GetCurrentDialogue();
+                var showing = _boundSource.GetCurrentDialogue();
                 if (showing != null) HandleDialogueUpdated(showing);
             }
         }
 
+        private void UnbindSource()
+        {
+            if (_boundSource != null)
+            {
+                _boundSource.OnDialogueUpdated -= HandleDialogueUpdated;
+                _boundSource.OnDialogueEnded -= HandleDialogueEnded;
+            }
+            _boundSource = null;
+        }
+
         /// <summary>
-        /// Re-resolve the face when what was cached has gone, or when the mesh under it changed.
+        /// Re-resolve immediately when cached meshes change, and periodically for added or reparented parts.
         ///
         /// The case that forced this is Unreal's: Synty's Sidekick tool rebuilds a character's part meshes
         /// whenever the outfit changes at runtime, so targets resolved once point at destroyed objects and
@@ -222,12 +235,6 @@ namespace StoryFlow.Lipsync
             foreach (var target in _targets)
             {
                 if (!IsLive(target)) anyStale = true;
-            }
-
-            if (!anyStale && _targets.Count > 0)
-            {
-                _sinceFaceCheck = 0f;
-                return;
             }
 
             _sinceFaceCheck += dt;
@@ -256,9 +263,9 @@ namespace StoryFlow.Lipsync
 
             // The dialogue component can go away and come back (a scene load under a persistent character). Its
             // events died with it, so discovery has to be re-armed or this face is deaf with nothing said.
-            if (_subscribed && Source == null) _subscribed = false;
+            if (_boundSource != Source) BindSource();
 
-            if (!_subscribed)
+            if (_boundSource == null)
             {
                 _sinceSourceCheck += dt;
                 if (_sinceSourceCheck >= FaceRecheckSeconds)
@@ -322,20 +329,28 @@ namespace StoryFlow.Lipsync
         /// </summary>
         private void RetryAudioSource(float dt)
         {
-            if (!_lineIsMine || !_lineHasAudio || _speaking != null) return;
+            if (!_awaitingAudioSource) return;
 
             _sinceAudioSearch += dt;
             if (_sinceAudioSearch < FaceRecheckSeconds)
             {
                 _speaking = FindSourcePlaying(_lineClip);
-                if (_speaking != null) _driver.ResetLevel();
+                if (_speaking != null)
+                {
+                    _awaitingAudioSource = false;
+                    _driver.ResetLevel();
+                }
             }
-            else if (!_warnedNoAudioSource)
+            else
             {
-                _warnedNoAudioSource = true;
-                Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
-                                 $"'{_lineClip.name}'. The mouth will stay closed for this line. " +
-                                 "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
+                _awaitingAudioSource = false;
+                if (!_warnedNoAudioSource)
+                {
+                    _warnedNoAudioSource = true;
+                    Debug.LogWarning($"[StoryFlow] Lipsync on '{name}' could not find the AudioSource playing " +
+                                     $"'{_lineClip.name}'. The mouth will stay closed for this line. " +
+                                     "If your game plays dialogue audio itself, call StartLipsyncFor with that source.", this);
+                }
             }
         }
 
@@ -350,14 +365,15 @@ namespace StoryFlow.Lipsync
             _manual = source != null;
             _lineIsMine = false;
             _lineHasAudio = false;
+            _awaitingAudioSource = false;
             _lineNodeId = null;
             _speaking = source;
             _lineClip = source != null ? source.clip : null;
             _driver?.ResetLevel();
         }
 
-        /// <summary>Is this face being driven right now — by a line of its own, or by StartLipsyncFor from game code?</summary>
-        public bool IsLipsyncActive => _manual || _lineIsMine;
+        /// <summary>Is this face driven by its line, a retained audio tail, or StartLipsyncFor from game code?</summary>
+        public bool IsLipsyncActive => _manual || _lineIsMine || IsAnalysable();
 
         /// <summary>
         /// Loudness 0..1 the driver is currently seeing, after the peak follower. For a debug meter while
@@ -392,6 +408,7 @@ namespace StoryFlow.Lipsync
             _lineClip = null;
             _lineIsMine = false;
             _lineHasAudio = false;
+            _awaitingAudioSource = false;
             _lineNodeId = null;
         }
 
@@ -418,16 +435,20 @@ namespace StoryFlow.Lipsync
                 return;
             }
 
-            // A RE-RENDER, not a new line. The same node is broadcast again on a variable change, on
+            // A RE-RENDER, not a new entry. The same node is broadcast again on a variable change, on
             // ResumeDialogue and on a dead-end redraw; treating those as line starts resets the peak
             // follower, searches for the AudioSource again and repeats every warning — and a per-frame
             // variable write would then pin the follower at its initial value and hold the mouth wide open.
-            if (_lineIsMine && state.NodeId == _lineNodeId) return;
+            // The entry serial distinguishes these redraws from fresh loops and same-id nodes in other scripts.
+            var entrySerial = _boundSource != null ? _boundSource.DialogueEntrySerial : 0;
+            if (_lineIsMine && state.NodeId == _lineNodeId && entrySerial == _lineEntrySerial) return;
 
             _lineNodeId = state.NodeId;
+            _lineEntrySerial = entrySerial;
             _lineIsMine = true;
             _manual = false;
             _lineHasAudio = state.Audio != null;
+            _awaitingAudioSource = false;
 
             if (_lineHasAudio)
             {
@@ -437,6 +458,7 @@ namespace StoryFlow.Lipsync
                 // Not found yet is not a failure: RetryAudioSource keeps looking for a second.
                 _lineClip = state.Audio;
                 _speaking = FindSourcePlaying(state.Audio);
+                _awaitingAudioSource = _speaking == null;
                 _sinceAudioSearch = 0f;
                 _driver?.ResetLevel();
             }
@@ -473,6 +495,7 @@ namespace StoryFlow.Lipsync
 
             _lineIsMine = false;
             _lineHasAudio = false;
+            _awaitingAudioSource = false;
             _lineNodeId = null;
         }
 
@@ -487,9 +510,9 @@ namespace StoryFlow.Lipsync
         private bool SpeakerIsMine(StoryFlowDialogueState state)
         {
             if (string.IsNullOrEmpty(CharacterId)) return true;
-            if (Source == null) return false;
+            if (_boundSource == null) return false;
 
-            var path = Source.GetCharacterPathById(CharacterId, out var found);
+            var path = _boundSource.GetCharacterPathById(CharacterId, out var found);
             if (!found || string.IsNullOrEmpty(path))
             {
                 // A typo, a wrong case, or a project imported before character ids existed. Without this the
@@ -521,34 +544,36 @@ namespace StoryFlow.Lipsync
         /// </summary>
         private AudioSource FindSourcePlaying(AudioClip clip)
         {
-            if (Source != null)
+            if (_boundSource != null)
             {
-                foreach (var source in Source.GetComponents<AudioSource>())
+                foreach (var source in _boundSource.GetComponents<AudioSource>())
                 {
-                    if (source != null && source.clip == clip) return source;
+                    if (source != null && source.clip == clip && source.isPlaying) return source;
                 }
             }
 
-            AudioSource holding = null;
             foreach (var source in FindObjectsByType<AudioSource>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (source == null || source.clip != clip) continue;
                 if (source.isPlaying) return source;
-                if (holding == null) holding = source;
             }
-            return holding;
+
+            // Enabling or rebinding during a pause must retain the actual current source until UnPause.
+            // Only the component's entry-scoped playback record has that authority; arbitrary stopped
+            // holders would prevent discovery of game audio that starts after OnDialogueUpdated.
+            var current = _boundSource != null ? _boundSource.CurrentDialogueAudioSource : null;
+            return current != null && current.clip == clip ? current : null;
         }
 
         /// <summary>
-        /// Resolve every driven morph to a blendshape index, once. Names are matched leniently because the same
+        /// Resolve every driven morph to a blendshape index. Names are matched leniently because the same
         /// shape is spelled differently by engine: Unity keeps the FBX group prefix (`MESHBlends.jawOpen`) while
         /// the source rig and Unreal call it `jawOpen`. A name no renderer owns is simply absent, and the rest of
         /// the pose still plays — a missing `tongueOut` must not take the jaw down with it.
         /// </summary>
         private void ResolveFace()
         {
-            _targets.Clear();
-            _atRest = false;
+            var nextTargets = new List<FaceTarget>();
             var root = FaceRoot != null ? FaceRoot : transform;
             var keys = _driver.Keys;
             var style = VisemeMap != null ? VisemeMap.NameStyle : StoryFlowMorphNameStyle.UnityMeshBlendsPrefix;
@@ -575,7 +600,7 @@ namespace StoryFlow.Lipsync
                 }
                 if (slots.Count > 0)
                 {
-                    _targets.Add(new FaceTarget
+                    nextTargets.Add(new FaceTarget
                     {
                         Renderer = renderer,
                         Mesh = mesh,
@@ -584,6 +609,19 @@ namespace StoryFlow.Lipsync
                     });
                 }
             }
+
+            // A live part can leave the hierarchy without being destroyed. Release our last pose on it,
+            // but only while we still own the writes: at rest, another animator may already own the mouth.
+            if (!_atRest)
+            {
+                foreach (var target in _targets)
+                {
+                    if (!nextTargets.Exists(next => next.Renderer == target.Renderer)) ZeroOwnedShapes(target);
+                }
+            }
+            _targets.Clear();
+            _targets.AddRange(nextTargets);
+            // Keep _atRest: periodic discovery must not stamp zeros over a surrendered expression.
 
             // A face was found, so the next disappearance is worth reporting again.
             _warnedNoFace = _warnedNoFace && _targets.Count == 0;
@@ -680,11 +718,13 @@ namespace StoryFlow.Lipsync
 
         private void ZeroOwnedShapes()
         {
-            foreach (var target in _targets)
-            {
-                if (!IsLive(target)) continue;
-                for (var i = 0; i < target.Shapes.Length; i++) target.Renderer.SetBlendShapeWeight(target.Shapes[i], 0f);
-            }
+            foreach (var target in _targets) ZeroOwnedShapes(target);
+        }
+
+        private static void ZeroOwnedShapes(FaceTarget target)
+        {
+            if (!IsLive(target)) return;
+            for (var i = 0; i < target.Shapes.Length; i++) target.Renderer.SetBlendShapeWeight(target.Shapes[i], 0f);
         }
     }
 }

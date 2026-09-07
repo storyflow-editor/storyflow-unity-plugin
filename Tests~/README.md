@@ -26,3 +26,20 @@ Host and graph character-name reads also preserve player names that equal table
 keys, and resolved host array copies retain their provenance when reused.
 Authored string arrays written into `.sfd` state capture the active display text and
 remain literal after a language switch, without modifying the source array.
+
+# Lipsync component regression tests
+
+```powershell
+dotnet run --project 'Tests~/StoryFlow.LipsyncTests.csproj'
+```
+
+This suite requires .NET 9 and includes its own Unity stubs, so it runs from a
+clean checkout without `_build_verify~`. It compiles the real runtime component,
+dialogue handler, and graph executor. Cases cover fresh entries versus redraws,
+cross-script node ids, audio-source selection and acquisition, paused-line catch-up,
+manual playback and audio tails, source rebinding, modular face changes, and
+handoff to other animation at rest.
+
+The harness explicitly drives lifecycle callbacks and substitutes scene
+discovery, audio playback flags/spectra, and blendshape storage. It does not
+validate Unity lifecycle ordering, real audio analysis, or rendered animation.

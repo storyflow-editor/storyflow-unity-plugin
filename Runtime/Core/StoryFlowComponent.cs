@@ -84,6 +84,12 @@ namespace StoryFlow
         public event Action<StoryFlowDialogueState> OnDialogueUpdated;
 
         /// <summary>
+        /// Identifies a fresh dialogue entry, including revisits and entries in a called script.
+        /// Re-renders keep the same value. This belongs to the component lifetime, not saved dialogue state.
+        /// </summary>
+        public ulong DialogueEntrySerial { get; internal set; }
+
+        /// <summary>
         /// Fired once per tag when a tagged dialogue node is freshly entered, in authored (array) order.
         /// Parameter: the raw tag string. Fires only on a new dialogue node — re-rendering the same
         /// current line (variable-change refresh, input change, Set* fallthrough) never re-fires;
@@ -160,6 +166,7 @@ namespace StoryFlow
 
         private StoryFlowExecutionContext _context;
         private AudioSource _dialogueAudioSource;
+        private ulong _dialogueAudioEntrySerial;
         private bool _isDialogueActive;
         private bool _waitingForAudioAdvance;
         private bool _audioAdvanceAllowSkip;
@@ -3245,7 +3252,18 @@ namespace StoryFlow
 
             _dialogueAudioSource.Play();
             CurrentDialogueAudioClip = clip;
+            _dialogueAudioEntrySerial = DialogueEntrySerial;
         }
+
+        /// <summary>
+        /// The source this component started for the displayed entry, including paused playback.
+        /// Explicitly stopped playback and sources left over from an earlier entry are not current.
+        /// </summary>
+        internal AudioSource CurrentDialogueAudioSource =>
+            _dialogueAudioSource != null && CurrentDialogueAudioClip != null &&
+            _dialogueAudioSource.clip == CurrentDialogueAudioClip && _dialogueAudioEntrySerial == DialogueEntrySerial
+                ? _dialogueAudioSource
+                : null;
 
         /// <summary>
         /// Stops the dialogue audio source if it is currently playing.
