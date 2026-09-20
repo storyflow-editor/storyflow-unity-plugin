@@ -5,7 +5,7 @@ Runtime plugin for [StoryFlow Editor](https://storyflow-editor.com) - a visual n
 ## Features
 
 - 160+ node types - dialogue, branching, variables, arrays, characters, audio, images
-- Zero-setup workflow - auto-creating manager, auto-project discovery, auto-fallback UI
+- Auto-creating manager, auto-project discovery, auto-fallback UI
 - Live text interpolation - `{varname}`, `{Character.Name}`
 - RunScript / RunFlow - nested scripts with parameters, outputs, and exit flows
 - ForEach loops across all array types
@@ -18,7 +18,8 @@ Runtime plugin for [StoryFlow Editor](https://storyflow-editor.com) - a visual n
 ## Requirements
 
 - Unity 2022.3 LTS or newer (including Unity 6)
-- Newtonsoft.Json and TextMeshPro (resolved automatically by Package Manager)
+- Newtonsoft.Json and TextMeshPro (code packages resolved by Package Manager)
+- TextMeshPro Essential Resources for the built-in UI font: **Window > TextMeshPro > Import TMP Essential Resources**. The TMP code package alone does not include a default font in a fresh Unity project.
 - StoryFlow Editor (for creating and exporting projects)
 
 ## Installation
