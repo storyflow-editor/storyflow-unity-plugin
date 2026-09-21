@@ -29,6 +29,11 @@ keys, and resolved host array copies retain their provenance when reused.
 Authored string arrays written into `.sfd` state capture the active display text and
 remain literal after a language switch, without modifying the source array.
 
+The synthetic `Fixtures/pre-character-index` export contains no character index,
+private project data or media. The importer/runtime cases prove that old path-based
+characters still import and play, then add a current index to the same fixture to
+prove stable-id lookup without weakening the path fallback.
+
 # Lipsync component regression tests
 
 ```powershell

@@ -1,0 +1,23 @@
+{
+  "characters": {
+    "characters\\legacy_hero.sfc": {
+      "name": "char_hero_name",
+      "image": "",
+      "variables": {
+        "var_title": {
+          "id": "var_title",
+          "name": "Title",
+          "type": "string",
+          "value": "char_title_value"
+        }
+      }
+    }
+  },
+  "strings": {
+    "en": {
+      "char_hero_name": "Legacy Hero",
+      "char_title_value": "Captain"
+    }
+  },
+  "assets": {}
+}

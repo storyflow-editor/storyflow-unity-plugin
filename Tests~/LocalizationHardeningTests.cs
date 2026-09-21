@@ -27,6 +27,7 @@ namespace StoryFlow.Tests
             Run(nameof(StoppedComponentUsesReplacementProject), StoppedComponentUsesReplacementProject);
             Run(nameof(MapKeysRemainLiteralInArrayConsumers), MapKeysRemainLiteralInArrayConsumers);
             RunDataAssetHardeningTests();
+            RunLegacyCharacterImportTests();
         }
 
         private static void MapKeysRemainLiteralInArrayConsumers()

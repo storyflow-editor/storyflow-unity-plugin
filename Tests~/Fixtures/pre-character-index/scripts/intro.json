@@ -1,0 +1,44 @@
+{
+  "startNode": "0",
+  "nodes": {
+    "0": {
+      "type": "start",
+      "id": "0"
+    },
+    "dialogue": {
+      "type": "dialogue",
+      "id": "dialogue",
+      "title": "dialogue_title",
+      "text": "dialogue_text",
+      "character": "characters\\legacy_hero.sfc"
+    },
+    "end": {
+      "type": "end",
+      "id": "end"
+    }
+  },
+  "connections": [
+    {
+      "id": "start-dialogue",
+      "source": "0",
+      "target": "dialogue",
+      "sourceHandle": "source-0-",
+      "targetHandle": "target-dialogue-"
+    },
+    {
+      "id": "dialogue-end",
+      "source": "dialogue",
+      "target": "end",
+      "sourceHandle": "source-dialogue-",
+      "targetHandle": "target-end-"
+    }
+  ],
+  "variables": {},
+  "strings": {
+    "en": {
+      "dialogue_title": "Legacy greeting",
+      "dialogue_text": "Legacy path dialogue, {Character.Title}."
+    }
+  },
+  "assets": {}
+}
