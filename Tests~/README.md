@@ -19,6 +19,8 @@ The existing full local harness can additionally include
 `dotnet run --project '_build_verify~/Tests'`.
 
 Cases cover new and legacy source buckets, first-install language selection,
+language-change events after first install, explicit changes, no-ops, refusals
+and project replacement,
 authored/player/legacy character-name saves, array membership and search,
 runtime literal strings that equal table keys, array save provenance, cached
 array reads after switching language, and stopped-component project replacement.

@@ -39,12 +39,17 @@ namespace StoryFlow.Tests
             AssertEqual(true, value, message);
         }
 
-        private static void SetManagerProject(StoryFlowProjectAsset project)
+        private static StoryFlowManager CreateManager()
         {
             var manager = new StoryFlowManager();
             typeof(StoryFlowManager).GetProperty("Instance").GetSetMethod(true)
                 .Invoke(null, new object[] { manager });
-            manager.SetProject(project);
+            return manager;
+        }
+
+        private static void SetManagerProject(StoryFlowProjectAsset project)
+        {
+            CreateManager().SetProject(project);
         }
 
         private static void ClearManager()

@@ -12,6 +12,7 @@ namespace StoryFlow.Tests
         {
             Run(nameof(LocalizationReadsNewAndLegacySourceBuckets), LocalizationReadsNewAndLegacySourceBuckets);
             Run(nameof(FirstInstallUsesSourceThenCarriesPlayerChoice), FirstInstallUsesSourceThenCarriesPlayerChoice);
+            Run(nameof(LanguageChangedEventUsesCommittedState), LanguageChangedEventUsesCommittedState);
             Run(nameof(AuthoredNameSaveResolvesInCurrentLanguage), AuthoredNameSaveResolvesInCurrentLanguage);
             Run(nameof(WrittenNameSaveSurvivesProjectResetAndLanguageSwitch), WrittenNameSaveSurvivesProjectResetAndLanguageSwitch);
             Run(nameof(LegacyNameSaveRemainsLiteral), LegacyNameSaveRemainsLiteral);
@@ -165,6 +166,45 @@ namespace StoryFlow.Tests
                 AssertTrue(manager.SetLanguage("en"), "host can choose English");
                 manager.SetProject(p);
                 AssertEqual("en", manager.GetLanguage(), "reinstall carries the established choice");
+            }
+            finally { ClearManager(); }
+        }
+
+        private static void LanguageChangedEventUsesCommittedState()
+        {
+            var manager = CreateManager();
+            var observed = new List<string>();
+            manager.OnLanguageChanged += language =>
+            {
+                var hero = manager.RuntimeCharacters.TryGetValue("hero", out var value)
+                    ? value.Name
+                    : "<missing>";
+                observed.Add(language + ":" + manager.GetLanguage() + ":" + hero);
+            };
+            try
+            {
+                var japanese = LocalizationProject("ja");
+                japanese.LanguageEntries.Add(new() { Code = "en", Name = "English" });
+                japanese.GlobalStringEntries.Add(new() { Key = "ja.hero.name", Value = "騎士" });
+                manager.SetProject(japanese);
+                AssertEqual("ja:ja:騎士", observed[0], "first install event sees installed source state");
+
+                AssertTrue(manager.SetLanguage("FR"), "registered codes are case-insensitive");
+                AssertEqual("fr:fr:Chevalier", observed[1], "explicit event sees canonical code and refreshed name");
+                manager.SetLanguage("fr");
+                AssertEqual(2, observed.Count, "setting the active language is silent");
+                AssertTrue(!manager.SetLanguage("unknown"), "unknown language is refused");
+                AssertEqual(2, observed.Count, "refused language is silent");
+
+                manager.SetProject(LocalizationProject("en"));
+                AssertEqual("fr", manager.GetLanguage(), "replacement carries a valid explicit choice");
+                AssertEqual(2, observed.Count, "carried replacement is silent");
+
+                var japaneseOnly = LocalizationProject("ja");
+                japaneseOnly.LanguageEntries.Clear();
+                japaneseOnly.GlobalStringEntries.Add(new() { Key = "ja.hero.name", Value = "騎士" });
+                manager.SetProject(japaneseOnly);
+                AssertEqual("ja:ja:騎士", observed[2], "snap event sees the replacement project after seeding");
             }
             finally { ClearManager(); }
         }
