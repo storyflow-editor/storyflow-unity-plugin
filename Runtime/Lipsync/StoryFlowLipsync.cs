@@ -57,19 +57,19 @@ namespace StoryFlow.Lipsync
         public StoryFlowVisemeMap VisemeMap;
 
         [Header("Feel")]
-        [Range(0f, 1f)] public float Strength = 0.55f;
+        [Range(0f, 1f)] public float Strength = 0.5f;
         [Range(0.1f, 3f)] public float Sensitivity = 1f;
-        [Range(0f, 2f)] public float JawBias = 1f;
-        [Range(1f, 40f)] public float Smoothing = 16f;
+        [Range(0f, 2f)] public float JawBias = 1.12f;
+        [Range(1f, 40f)] public float Smoothing = 40f;
 
         [Tooltip("Move the mouth on lines whose audio cannot be analysed, instead of leaving a dead face.")]
         public bool IdleMouthWithoutAudio = true;
 
         [Tooltip("The spectrum magnitude a full-scale sine produces at its own bin: the 0 dB reference the driver " +
-                 "converts against. GetSpectrumData is normalised, so 1 is right on paper. If Level sits near 1 on " +
+                 "converts against. If Level sits near 1 on " +
                  "every line and the mouth never closes between words, raise this; if quiet lines never open it, " +
                  "lower it. RawPeak shows what a loud line actually measures.")]
-        [Min(0.001f)] public float AnalysisFullScale = 1f;
+        [Min(0.001f)] public float AnalysisFullScale = 32f;
 
         /// <summary>Unity's spectrum size must be a power of two. 512 bins over 90–4200 Hz is ample for a mouth.</summary>
         private const int SpectrumBins = 512;
