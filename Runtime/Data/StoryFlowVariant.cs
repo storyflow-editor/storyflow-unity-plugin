@@ -113,11 +113,11 @@ namespace StoryFlow.Data
 
         public string GetString(string defaultValue = "")
         {
-            // Image, Audio, and Character types also store their values in StringValue
+            // Media and reference types also store their values in StringValue
             return (Type == StoryFlowVariableType.String ||
                     Type == StoryFlowVariableType.Image ||
                     Type == StoryFlowVariableType.Audio ||
-                    Type == StoryFlowVariableType.Character)
+                    Type == StoryFlowVariableType.Character || Type == StoryFlowVariableType.DataAsset)
                 ? StringValue : defaultValue;
         }
 
@@ -185,6 +185,7 @@ namespace StoryFlow.Data
                 StoryFlowVariableType.Image => StringValue,
                 StoryFlowVariableType.Audio => StringValue,
                 StoryFlowVariableType.Character => StringValue,
+                StoryFlowVariableType.DataAsset => StringValue,
                 // Map display formatting is deliberately deferred — interpolation of maps
                 // is out of contract; maps render as an empty string
                 StoryFlowVariableType.Map => "",

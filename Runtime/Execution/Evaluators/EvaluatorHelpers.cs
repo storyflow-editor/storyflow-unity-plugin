@@ -31,6 +31,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.ForEachStringLoop:
                 case StoryFlowNodeType.ForEachImageLoop:
                 case StoryFlowNodeType.ForEachCharacterLoop:
+                case StoryFlowNodeType.ForEachDataAssetLoop:
                 case StoryFlowNodeType.ForEachAudioLoop:
                 case StoryFlowNodeType.ForEachMap:
                     return true;

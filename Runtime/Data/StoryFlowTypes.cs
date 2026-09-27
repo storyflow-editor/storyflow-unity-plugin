@@ -226,6 +226,22 @@ namespace StoryFlow.Data
         // Get Variable Names (contract §11.1): the pure enumeration over a .sfd chain's
         // declarations. Appended, same serialized-integer rule.
         GetDataAssetVariableNames,
+
+        // Appended to preserve imported Unity enum values.
+        GetDataAssetRef,
+        SetDataAssetRef,
+        GetDataAssetArray,
+        SetDataAssetArray,
+        GetDataAssetArrayElement,
+        SetDataAssetArrayElement,
+        GetRandomDataAssetArrayElement,
+        AddDataAssetArrayElement,
+        RemoveDataAssetArrayElement,
+        ClearDataAssetArray,
+        DataAssetArrayLength,
+        DataAssetArrayContains,
+        FindInDataAssetArray,
+        ForEachDataAssetLoop,
     }
 
     public enum StoryFlowVariableType
@@ -239,6 +255,7 @@ namespace StoryFlow.Data
         Audio,
         Character,
         Map,
+        DataAsset,
     }
 
     /// <summary>
@@ -260,7 +277,7 @@ namespace StoryFlow.Data
     /// predates still imports), while the store treats it as "no match", so a garbled
     /// snapshot degrades to the type default instead of resolving to something.
     ///
-    /// MATCHING IS EXACT-MATCH LOWERCASE (StringComparer.Ordinal) on the nine tokens below —
+    /// MATCHING IS EXACT (StringComparer.Ordinal), including the camel-cased dataAsset token —
     /// that is the wire rule per the engine contract. The exporter writes these tokens and
     /// only these; a differently cased string is not a type this format has, and accepting
     /// one would make the plugin resolve payloads the other runtimes reject.
@@ -279,6 +296,7 @@ namespace StoryFlow.Data
                 { "audio", StoryFlowVariableType.Audio },
                 { "character", StoryFlowVariableType.Character },
                 { "map", StoryFlowVariableType.Map },
+                { "dataAsset", StoryFlowVariableType.DataAsset },
             };
 
         /// <summary>

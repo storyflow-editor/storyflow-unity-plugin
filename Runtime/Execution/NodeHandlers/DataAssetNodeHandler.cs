@@ -15,6 +15,21 @@ namespace StoryFlow.Execution.NodeHandlers
     /// </summary>
     public static class DataAssetNodeHandler
     {
+        public static void HandleSetReference(StoryFlowComponent component, StoryFlowNode node)
+        {
+            var context = component.GetContext();
+            var variable = DataReferenceEvaluator.ReadVariable(context, node, false);
+            if (variable != null)
+            {
+                variable.Value = new StoryFlowVariant { Type = StoryFlowVariableType.DataAsset,
+                    StringValue = DataReferenceEvaluator.Evaluate(context, node.Id, "dataAsset", node.GetData("value")) };
+                component.BroadcastVariableChanged(variable, node.GetDataBool("isGlobal"));
+            }
+            var handle = StoryFlowHandles.Source(node.Id, StoryFlowHandles.Out_Flow);
+            if (context.CurrentScript.FindEdgeBySourceHandle(handle) != null) component.ProcessNextNode(handle);
+            else BooleanNodeHandler.SetNodeFallthrough(component, context, node);
+        }
+
         public static void HandleSetDataAssetVariable(StoryFlowComponent component, StoryFlowNode node)
         {
             var context = component.GetContext();

@@ -292,6 +292,8 @@ namespace StoryFlow.Execution
         {
             switch (type)
             {
+                case StoryFlowVariableType.DataAsset:
+                    return new StoryFlowVariant { Type = type, StringValue = DataReferenceEvaluator.Evaluate(ctx, nodeId, targetHandleSuffix) };
                 case StoryFlowVariableType.Boolean:
                     return StoryFlowVariant.Bool(EvaluateBoolean(ctx, nodeId, targetHandleSuffix));
                 case StoryFlowVariableType.Integer:

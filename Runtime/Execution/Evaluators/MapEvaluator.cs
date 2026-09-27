@@ -338,6 +338,10 @@ namespace StoryFlow.Execution
                     }
                     break;
                 }
+                case StoryFlowVariableType.DataAsset:
+                    value.Type = declaredType;
+                    value.StringValue = DataReferenceEvaluator.Evaluate(ctx, node.Id, handleSuffix, node.GetData("value"));
+                    break;
                 case StoryFlowVariableType.Image:
                 case StoryFlowVariableType.Character:
                 case StoryFlowVariableType.Audio:

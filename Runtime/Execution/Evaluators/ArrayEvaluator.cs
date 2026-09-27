@@ -60,6 +60,9 @@ namespace StoryFlow.Execution
             if (ctx.MaybeWarnUnknownNode(sourceNode))
                 return new List<StoryFlowVariant>();
 
+            if (DataReferenceEvaluator.IsArrayVariableNode(sourceNode))
+                return DataReferenceEvaluator.ReadVariable(ctx, sourceNode, true)?.Value?.ArrayValue ?? new List<StoryFlowVariant>();
+
             // Handle RunScript output arrays — resolve via the node's stored output values
             if (sourceNode.Type == StoryFlowNodeType.RunScript)
             {
@@ -153,6 +156,36 @@ namespace StoryFlow.Execution
         internal static List<StoryFlowVariant> EvaluateArrayFromNode(
             StoryFlowExecutionContext ctx, StoryFlowNode node, StoryFlowVariableType expectedType)
         {
+            if (expectedType != StoryFlowVariableType.DataAsset)
+                return EvaluateArrayFromNodeCore(ctx, node, expectedType);
+            if (ctx == null || node == null) return new List<StoryFlowVariant>();
+
+            // Validate the producer even when it returns no members. An empty String
+            // projection or stale cached String operation is still not a Data array.
+            bool compatible = DataReferenceEvaluator.IsArrayVariableNode(node) ||
+                node.Type == StoryFlowNodeType.RunScript ||
+                node.Type == StoryFlowNodeType.AddDataAssetArrayElement ||
+                node.Type == StoryFlowNodeType.RemoveDataAssetArrayElement ||
+                node.Type == StoryFlowNodeType.ClearDataAssetArray;
+            if (node.Type == StoryFlowNodeType.MapKeys || node.Type == StoryFlowNodeType.MapValues)
+                compatible = node.GetData(node.Type == StoryFlowNodeType.MapKeys ? "keyType" : "valueType") == "dataAsset";
+            if (EvaluatorHelpers.IsDataAssetAccessor(node.Type) ||
+                node.Type == StoryFlowNodeType.GetCharacterVar || node.Type == StoryFlowNodeType.SetCharacterVar)
+                compatible = node.GetData("variableType") == "dataAsset" && node.GetDataBool("isArray");
+            if (!compatible)
+            {
+                ctx.FailResolution();
+                return new List<StoryFlowVariant>();
+            }
+            var result = EvaluateArrayFromNodeCore(ctx, node, expectedType);
+            foreach (var value in result)
+                if (ctx.ReadValue(value, expectedType) == null) return new List<StoryFlowVariant>();
+            return result;
+        }
+
+        private static List<StoryFlowVariant> EvaluateArrayFromNodeCore(
+            StoryFlowExecutionContext ctx, StoryFlowNode node, StoryFlowVariableType expectedType)
+        {
             if (node == null || ctx == null) return new List<StoryFlowVariant>();
 
             ctx.EvaluationDepth++;
@@ -169,6 +202,12 @@ namespace StoryFlow.Execution
                 // unrecognized node type into a typed-array input.
                 if (ctx.MaybeWarnUnknownNode(node))
                     return new List<StoryFlowVariant>();
+
+                if (DataReferenceEvaluator.IsArrayVariableNode(node))
+                {
+                    var value = DataReferenceEvaluator.ReadVariable(ctx, node, true)?.Value;
+                    return ctx.ReadValue(value, expectedType, true)?.ArrayValue ?? new List<StoryFlowVariant>();
+                }
 
                 // Handle RunScript output arrays — resolve via the node's stored output values
                 if (node.Type == StoryFlowNodeType.RunScript)
@@ -296,6 +335,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.AddStringArrayElement:
                 case StoryFlowNodeType.AddImageArrayElement:
                 case StoryFlowNodeType.AddCharacterArrayElement:
+                case StoryFlowNodeType.AddDataAssetArrayElement:
                 case StoryFlowNodeType.AddAudioArrayElement:
                 case StoryFlowNodeType.RemoveBoolArrayElement:
                 case StoryFlowNodeType.RemoveIntArrayElement:
@@ -303,6 +343,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.RemoveStringArrayElement:
                 case StoryFlowNodeType.RemoveImageArrayElement:
                 case StoryFlowNodeType.RemoveCharacterArrayElement:
+                case StoryFlowNodeType.RemoveDataAssetArrayElement:
                 case StoryFlowNodeType.RemoveAudioArrayElement:
                 case StoryFlowNodeType.ClearBoolArray:
                 case StoryFlowNodeType.ClearIntArray:
@@ -310,6 +351,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.ClearStringArray:
                 case StoryFlowNodeType.ClearImageArray:
                 case StoryFlowNodeType.ClearCharacterArray:
+                case StoryFlowNodeType.ClearDataAssetArray:
                 case StoryFlowNodeType.ClearAudioArray:
                     return true;
                 default:

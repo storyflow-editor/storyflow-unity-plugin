@@ -13,6 +13,8 @@
     <Compile Include="../_build_verify~/Stubs/UnityEditorStubs.cs" />
     <Compile Include="LocalizationHardeningTests.cs" />
     <Compile Include="DataAssetHardeningTests.cs" />
+    <Compile Include="DataReferenceTests.cs" />
+    <None Include="Fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="LegacyCharacterImportTests.cs" />
     <Compile Include="LocalizationHardeningRunner.cs" />
     <Compile Remove="../Runtime/UI/StoryFlowRuntimeUI.cs" />

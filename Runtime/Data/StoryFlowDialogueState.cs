@@ -13,6 +13,7 @@ namespace StoryFlow.Data
         public Sprite Image;
         public AudioClip Audio;
         public StoryFlowCharacterData Character;
+        public string CharacterReference;
         public List<StoryFlowTextBlock> TextBlocks;
         public List<StoryFlowOption> Options;
 

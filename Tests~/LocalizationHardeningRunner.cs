@@ -12,6 +12,7 @@ namespace StoryFlow.Tests
         private static int Main()
         {
             RunLocalizationHardeningTests();
+            RunDataReferenceTests();
             return failures == 0 ? 0 : 1;
         }
 

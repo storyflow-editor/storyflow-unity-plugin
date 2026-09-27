@@ -234,6 +234,20 @@ namespace StoryFlow.Editor
             // exported names. Only getCharacterVar's "variable" -> "variableName" remap is
             // special, and it is keyed on characterPath, which these nodes never carry.
             { "getDataAsset", StoryFlowNodeType.GetDataAsset },
+            { "getDataAssetRef", StoryFlowNodeType.GetDataAssetRef },
+            { "setDataAssetRef", StoryFlowNodeType.SetDataAssetRef },
+            { "getDataAssetRefArray", StoryFlowNodeType.GetDataAssetArray },
+            { "setDataAssetRefArray", StoryFlowNodeType.SetDataAssetArray },
+            { "getDataAssetArrayElement", StoryFlowNodeType.GetDataAssetArrayElement },
+            { "setDataAssetArrayElement", StoryFlowNodeType.SetDataAssetArrayElement },
+            { "getRandomDataAssetArrayElement", StoryFlowNodeType.GetRandomDataAssetArrayElement },
+            { "addToDataAssetArray", StoryFlowNodeType.AddDataAssetArrayElement },
+            { "removeFromDataAssetArray", StoryFlowNodeType.RemoveDataAssetArrayElement },
+            { "clearDataAssetArray", StoryFlowNodeType.ClearDataAssetArray },
+            { "arrayLengthDataAsset", StoryFlowNodeType.DataAssetArrayLength },
+            { "arrayContainsDataAsset", StoryFlowNodeType.DataAssetArrayContains },
+            { "findInDataAssetArray", StoryFlowNodeType.FindInDataAssetArray },
+            { "forEachDataAssetLoop", StoryFlowNodeType.ForEachDataAssetLoop },
             { "getDataAssetVariable", StoryFlowNodeType.GetDataAssetVariable },
             { "setDataAssetVariable", StoryFlowNodeType.SetDataAssetVariable },
             // Get Variable Names (contract §11.1) carries NO payload fields at all —
@@ -2042,6 +2056,7 @@ namespace StoryFlow.Editor
                 case StoryFlowVariableType.Image:
                 case StoryFlowVariableType.Audio:
                 case StoryFlowVariableType.Character:
+                case StoryFlowVariableType.DataAsset:
                     return valueToken.ToString();
 
                 default:
@@ -2094,6 +2109,7 @@ namespace StoryFlow.Editor
                 case StoryFlowVariableType.Image:
                 case StoryFlowVariableType.Audio:
                 case StoryFlowVariableType.Character:
+                case StoryFlowVariableType.DataAsset:
                     variant.StringValue = valueToken.ToString();
                     break;
             }
@@ -2470,7 +2486,8 @@ namespace StoryFlow.Editor
         /// script imported under 4 would keep that node serialized as Unknown forever
         /// without the re-parse.
         /// </summary>
-        private const string ParseSchemaVersion = "5";
+        // Version 6 adds the Data variable type and its complete node family.
+        private const string ParseSchemaVersion = "6";
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser

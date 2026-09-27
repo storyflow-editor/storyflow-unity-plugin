@@ -300,6 +300,17 @@ namespace StoryFlow.Execution
                     }
                     return false;
                 }
+                case StoryFlowNodeType.DataAssetArrayContains:
+                {
+                    var arr = ArrayEvaluator.EvaluateTypedArray(ctx, node.Id, StoryFlowHandles.In_DataAssetArray, StoryFlowVariableType.DataAsset);
+                    string val = DataReferenceEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_DataAsset, node.GetData("value"));
+                    if (arr == null) return false;
+                    foreach (var item in arr)
+                    {
+                        if (item.GetString() == val) return true;
+                    }
+                    return false;
+                }
                 case StoryFlowNodeType.CharacterArrayContains:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_CharacterArray);

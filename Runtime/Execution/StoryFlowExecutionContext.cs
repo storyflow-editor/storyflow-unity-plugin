@@ -553,16 +553,9 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
-        /// The assetId an accessor reads and writes through: the <c>assetId</c> of the
-        /// getDataAsset PILL wired into its dataAsset pin, or empty when there is nothing
-        /// usable upstream (nothing wired, an unbound pill, or a wire from a node that is not
-        /// a pill).
-        ///
-        /// SINGLE HOP is sufficient, not a limitation: the editor collapses reroute elbows
-        /// before export, so a wire that ran through elbows on the canvas arrives here as a
-        /// direct pill -> accessor edge. The node-type check keeps that honest — anything else
-        /// on the far end degrades instead of having an "assetId" field speculatively read off
-        /// it (contract §6 row 1).
+        /// Resolves the accessor's wired Data reference through the typed evaluator.
+        /// Pills, variables, Character/Data fields, arrays, maps, and script outputs share
+        /// the same path; stale IDs are rejected by the store binding below.
         /// </summary>
         private string ResolveDataAssetId(StoryFlowNode accessor)
         {
@@ -571,10 +564,7 @@ namespace StoryFlow.Execution
             var edge = CurrentScript.FindInputEdge(accessor.Id, StoryFlowHandles.In_DataAssetRef);
             if (edge == null) return "";
 
-            var source = CurrentScript.GetNode(edge.Source);
-            if (source == null || source.Type != StoryFlowNodeType.GetDataAsset) return "";
-
-            return source.GetData("assetId");
+            return DataReferenceEvaluator.Evaluate(this, accessor.Id, StoryFlowHandles.In_DataAssetRef);
         }
 
         /// <summary>

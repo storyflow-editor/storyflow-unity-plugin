@@ -88,6 +88,8 @@ namespace StoryFlow.Data
         // The accessor's asset pin: "target-{nodeId}-dataAsset-asset". The wire IS the
         // binding (contract §2.2) — the accessor carries no assetId of its own, so this
         // edge, followed a SINGLE hop to a getDataAsset pill, is the whole lookup.
+        public const string In_DataAsset = "dataAsset";
+        public const string In_DataAssetArray = "dataAsset-array";
         public const string In_DataAssetRef = "dataAsset-asset";
 
         // The Set node's VALUE input is the editor's pin "2" (SetDataAssetVariableNode.tsx

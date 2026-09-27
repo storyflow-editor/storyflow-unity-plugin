@@ -21,15 +21,20 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Evaluate the array input
-            var inputArray = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType));
+            long failures = context.ResolutionFailures;
+            var inputArray = elementType == StoryFlowVariableType.DataAsset
+                ? ArrayEvaluator.EvaluateTypedArray(context, node.Id, GetArrayInputSuffix(elementType), elementType)
+                : StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType));
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
-            if (variable != null)
+            var variable = elementType == StoryFlowVariableType.DataAsset
+                ? DataReferenceEvaluator.ReadVariable(context, node, true) : context.FindVariable(variableId);
+            if (variable != null && (elementType != StoryFlowVariableType.DataAsset || failures == context.ResolutionFailures))
             {
                 variable.Value.ArrayValue = inputArray != null ? new List<StoryFlowVariant>(inputArray) : new List<StoryFlowVariant>();
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = elementType == StoryFlowVariableType.DataAsset
+                    ? node.GetDataBool("isGlobal") : !context.LocalVariables.ContainsKey(variable.Id);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[{variable.Value.ArrayValue.Count} elements]");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
@@ -59,7 +64,9 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Get the array from input
-            var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
+            var array = elementType == StoryFlowVariableType.DataAsset
+                ? new List<StoryFlowVariant>(ArrayEvaluator.EvaluateTypedArray(context, node.Id, GetArrayInputSuffix(elementType, "2"), elementType))
+                : StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
             // Get the index. The export dialect renames the inline fallbacks: the .sfe
@@ -100,7 +107,9 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Get the array from input
-            var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
+            var array = elementType == StoryFlowVariableType.DataAsset
+                ? new List<StoryFlowVariant>(ArrayEvaluator.EvaluateTypedArray(context, node.Id, GetArrayInputSuffix(elementType, "2"), elementType))
+                : StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
             // Get the value to add (the export writes addTo*Array's inline value as "value")
@@ -138,7 +147,9 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             // Get the array from input
-            var array = StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
+            var array = elementType == StoryFlowVariableType.DataAsset
+                ? new List<StoryFlowVariant>(ArrayEvaluator.EvaluateTypedArray(context, node.Id, GetArrayInputSuffix(elementType, "2"), elementType))
+                : StoryFlowEvaluator.EvaluateArray(context, node.Id, GetArrayInputSuffix(elementType, "2"));
             if (array == null) array = new List<StoryFlowVariant>();
 
             // Get the index (the export renames removeFrom*Array's inline "index" to "value")
@@ -193,34 +204,41 @@ namespace StoryFlow.Execution.NodeHandlers
             if (!DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
                     component, context, null, clearInputSource, new List<StoryFlowVariant>()))
             {
-                // Find the connected array source variable and clear it
-                var variableId = node.GetData("variable");
-                var variable = context.FindVariable(variableId);
-                if (variable != null)
+                if (elementType == StoryFlowVariableType.DataAsset)
                 {
-                    variable.Value.ArrayValue = new List<StoryFlowVariant>();
-                    bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
-                    component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
-                    component.BroadcastVariableChanged(variable, isGlobal);
+                    UpdateConnectedArrayVariable(context, component, node, elementType, new List<StoryFlowVariant>());
                 }
                 else
                 {
-                    // Try to clear via connected array input
-                    var arraySuffix = GetArrayInputSuffix(elementType, "2");
-                    var inputEdge = context.CurrentScript.FindInputEdge(node.Id, arraySuffix);
-                    if (inputEdge != null)
+                    // Find the connected array source variable and clear it
+                    var variableId = node.GetData("variable");
+                    var variable = context.FindVariable(variableId);
+                    if (variable != null)
                     {
-                        var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
-                        if (sourceNode != null)
+                        variable.Value.ArrayValue = new List<StoryFlowVariant>();
+                        bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                        component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
+                        component.BroadcastVariableChanged(variable, isGlobal);
+                    }
+                    else
+                    {
+                        // Try to clear via connected array input
+                        var arraySuffix = GetArrayInputSuffix(elementType, "2");
+                        var inputEdge = context.CurrentScript.FindInputEdge(node.Id, arraySuffix);
+                        if (inputEdge != null)
                         {
-                            var sourceVarId = sourceNode.GetData("variable");
-                            var sourceVar = context.FindVariable(sourceVarId);
-                            if (sourceVar != null)
+                            var sourceNode = context.CurrentScript.GetNode(inputEdge.Source);
+                            if (sourceNode != null)
                             {
-                                sourceVar.Value.ArrayValue = new List<StoryFlowVariant>();
-                                bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
-                                component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
-                                component.BroadcastVariableChanged(sourceVar, isGlobal);
+                                var sourceVarId = sourceNode.GetData("variable");
+                                var sourceVar = context.FindVariable(sourceVarId);
+                                if (sourceVar != null)
+                                {
+                                    sourceVar.Value.ArrayValue = new List<StoryFlowVariant>();
+                                    bool isGlobal = !context.LocalVariables.ContainsKey(sourceVar.Id);
+                                    component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[0 elements]");
+                                    component.BroadcastVariableChanged(sourceVar, isGlobal);
+                                }
                             }
                         }
                     }
@@ -359,6 +377,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 StoryFlowVariableType.String => "string",
                 StoryFlowVariableType.Image => "image",
                 StoryFlowVariableType.Character => "character",
+                StoryFlowVariableType.DataAsset => "dataAsset",
                 StoryFlowVariableType.Audio => "audio",
                 _ => "string"
             };
@@ -412,6 +431,8 @@ namespace StoryFlow.Execution.NodeHandlers
                     variant.StringValue = val ?? "";
                     return variant;
                 }
+                case StoryFlowVariableType.DataAsset:
+                    return new StoryFlowVariant { Type = elementType, StringValue = DataReferenceEvaluator.Evaluate(context, node.Id, "dataAsset-" + handleIndex, node.GetData(inlineValueKey)) };
                 case StoryFlowVariableType.Character:
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(
@@ -457,6 +478,37 @@ namespace StoryFlow.Execution.NodeHandlers
             if (DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
                     component, context, node, sourceNode, newArray))
                 return;
+
+            if (elementType == StoryFlowVariableType.DataAsset)
+            {
+                // Only the immediate source is writable. Modifier outputs are snapshots;
+                // following their input edges would mutate the original variable again.
+                if (DataReferenceEvaluator.IsArrayVariableNode(sourceNode))
+                {
+                    var variable = DataReferenceEvaluator.ReadVariable(context, sourceNode, true);
+                    if (variable != null)
+                    {
+                        variable.Value.ArrayValue = newArray;
+                        component.BroadcastVariableChanged(variable, sourceNode.GetDataBool("isGlobal"));
+                    }
+                }
+                else if ((sourceNode.Type == StoryFlowNodeType.GetCharacterVar ||
+                          sourceNode.Type == StoryFlowNodeType.SetCharacterVar) &&
+                         sourceNode.GetData("variableType") == "dataAsset" && sourceNode.GetDataBool("isArray"))
+                {
+                    var characterPath = EvaluatorHelpers.ResolveCharacterPath(context, sourceNode);
+                    var character = context.FindCharacter(characterPath);
+                    var variable = character?.FindVariableByName(sourceNode.GetData("variableName"));
+                    if (variable != null && variable.Type == StoryFlowVariableType.DataAsset && variable.IsArray)
+                    {
+                        variable.Value.ArrayValue = newArray;
+                        character.Variables[variable.Name] = variable.Value;
+                        component.BroadcastVariableChanged(variable, false);
+                        component.BroadcastCharacterVariableChanged(characterPath, variable.Name, variable.Value);
+                    }
+                }
+                return;
+            }
 
             var sourceVarId = sourceNode.GetData("variable");
             var sourceVar = context.FindVariable(sourceVarId);

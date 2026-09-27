@@ -200,6 +200,7 @@ namespace StoryFlow.Execution.NodeHandlers
                     string fallback = node.GetData("value", targetVar.Value.GetString());
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_String, fallback);
                     targetVar.Value.SetString(val);
+                    targetVar.Value.IsLiteralString = true;
                     break;
                 }
                 case "enum":
@@ -227,6 +228,10 @@ namespace StoryFlow.Execution.NodeHandlers
                     targetVar.Value.StringValue = val ?? "";
                     break;
                 }
+                case "dataAsset":
+                    targetVar.Value.Type = StoryFlowVariableType.DataAsset;
+                    targetVar.Value.StringValue = DataReferenceEvaluator.Evaluate(context, node.Id, "dataAsset", node.GetData("value", targetVar.Value.GetString()));
+                    break;
                 case "character":
                 {
                     string fallback = node.GetData("value", targetVar.Value.GetString());
@@ -239,6 +244,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 {
                     string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_String, node.GetData("value"));
                     targetVar.Value.SetString(val);
+                    targetVar.Value.IsLiteralString = true;
                     break;
                 }
             }

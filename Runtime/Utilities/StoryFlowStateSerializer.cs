@@ -278,7 +278,7 @@ namespace StoryFlow.Utilities
                     : number >= -float.MaxValue && number <= float.MaxValue;
             }
             if (type != StoryFlowVariableType.String && type != StoryFlowVariableType.Enum &&
-                type != StoryFlowVariableType.Image && type != StoryFlowVariableType.Audio && type != StoryFlowVariableType.Character) return false;
+                type != StoryFlowVariableType.Image && type != StoryFlowVariableType.Audio && type != StoryFlowVariableType.Character && type != StoryFlowVariableType.DataAsset) return false;
             return token.Type == JTokenType.String && (type != StoryFlowVariableType.Enum ||
                 enumValues == null || enumValues.Count == 0 || enumValues.Contains((string)token));
         }
@@ -335,6 +335,7 @@ namespace StoryFlow.Utilities
                 obj["value"] = VariantToJson(variable.Value);
             }
 
+            if (!variable.IsArray && variable.Type == StoryFlowVariableType.String && variable.Value?.IsLiteralString == true) obj["isLiteralString"] = true;
             return obj;
         }
 
@@ -356,6 +357,7 @@ namespace StoryFlow.Utilities
                 case StoryFlowVariableType.Image:
                 case StoryFlowVariableType.Audio:
                 case StoryFlowVariableType.Character:
+                case StoryFlowVariableType.DataAsset:
                     // Values persist EXACTLY as held in memory. This runtime resolves the
                     // strings table at READ time, so string-family values are normally the
                     // raw table key, matching the other engines.
@@ -551,6 +553,7 @@ namespace StoryFlow.Utilities
             }
 
             value = VariantFromJson(token, type);
+            if (type == StoryFlowVariableType.String) value.IsLiteralString = record.Value<bool?>("isLiteralString") == true;
             return true;
         }
 

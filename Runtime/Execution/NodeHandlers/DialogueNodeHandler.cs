@@ -41,6 +41,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // fall-back — settled in the context's one resolution point.
             var characterPath = context.ResolveCharacterRef(
                 node.GetData("characterRefId"), node.GetData("character"));
+            state.CharacterReference = characterPath;
             if (!string.IsNullOrEmpty(characterPath))
             {
                 var characterData = context.FindCharacter(characterPath);

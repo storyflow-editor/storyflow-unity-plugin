@@ -287,6 +287,20 @@ namespace StoryFlow.Execution.NodeHandlers
             // Data Assets (.sfd). The reference pill, the read accessor and the names
             // enumeration are pure reads, evaluated on demand by the typed evaluators;
             // only the Set node executes.
+            Handlers[StoryFlowNodeType.GetDataAssetArray] = NoOp;
+            Handlers[StoryFlowNodeType.SetDataAssetArray] = (c, n) => ArrayNodeHandler.HandleSetArray(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.GetDataAssetArrayElement] = NoOp;
+            Handlers[StoryFlowNodeType.SetDataAssetArrayElement] = (c, n) => ArrayNodeHandler.HandleSetArrayElement(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.GetRandomDataAssetArrayElement] = NoOp;
+            Handlers[StoryFlowNodeType.AddDataAssetArrayElement] = (c, n) => ArrayNodeHandler.HandleAddArrayElement(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.RemoveDataAssetArrayElement] = (c, n) => ArrayNodeHandler.HandleRemoveArrayElement(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.ClearDataAssetArray] = (c, n) => ArrayNodeHandler.HandleClearArray(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.DataAssetArrayLength] = NoOp;
+            Handlers[StoryFlowNodeType.DataAssetArrayContains] = NoOp;
+            Handlers[StoryFlowNodeType.FindInDataAssetArray] = NoOp;
+            Handlers[StoryFlowNodeType.ForEachDataAssetLoop] = (c, n) => ArrayNodeHandler.HandleForEachLoop(c, n, StoryFlowVariableType.DataAsset);
+            Handlers[StoryFlowNodeType.GetDataAssetRef] = NoOp;
+            Handlers[StoryFlowNodeType.SetDataAssetRef] = DataAssetNodeHandler.HandleSetReference;
             Handlers[StoryFlowNodeType.GetDataAsset] = NoOp;
             Handlers[StoryFlowNodeType.GetDataAssetVariable] = NoOp;
             Handlers[StoryFlowNodeType.GetDataAssetVariableNames] = NoOp;

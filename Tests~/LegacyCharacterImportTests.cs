@@ -84,6 +84,7 @@ namespace StoryFlow.Tests
         {
             var originalDirectory = Directory.GetCurrentDirectory();
             var fixtureSource = Path.Combine(originalDirectory, "Tests~", "Fixtures", "pre-character-index");
+            if (!Directory.Exists(fixtureSource)) fixtureSource = Path.Combine(AppContext.BaseDirectory, "Fixtures", "pre-character-index");
             var fixtureCopy = Path.Combine(Path.GetTempPath(), "storyflow-unity-legacy-fixture-" + Guid.NewGuid().ToString("N"));
             var projectRoot = Path.Combine(Path.GetTempPath(), "storyflow-unity-legacy-project-" + Guid.NewGuid().ToString("N"));
             try

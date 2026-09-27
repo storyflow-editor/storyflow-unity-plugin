@@ -9,111 +9,88 @@ namespace StoryFlow.Utilities
     {
         private static readonly Regex VariablePattern = new(@"\{([^}]+)\}", RegexOptions.Compiled);
 
-        /// <summary>
-        /// Interpolates {varname} placeholders in text using variables from the execution context.
-        /// Special: {Character.Name} resolves to the current dialogue character's name.
-        /// Special: {Character.VarName} resolves to a character variable value.
-        /// Special: {charVar.Name} / {charVar.InnerVar} reaches through a character-TYPE
-        /// variable to a field on the character it points to.
-        /// </summary>
         public static string Interpolate(string text, StoryFlowExecutionContext context)
         {
-            if (string.IsNullOrEmpty(text)) return text;
-
-            return VariablePattern.Replace(text, match =>
-            {
-                var varName = match.Groups[1].Value;
-
-                // Handle Character.X pattern
-                if (varName.StartsWith("Character."))
-                {
-                    var charField = varName.Substring("Character.".Length);
-                    var character = context.CurrentDialogueState?.Character;
-                    if (character == null) return match.Value;
-
-                    // A2(a): the dictionary lookup below is case-sensitive, so this lane is
-                    // second-tier — see RewriteCfTokensOnly for why only cf_ rewrites.
-                    charField = StoryFlowCharacterTokens.RewriteCfTokensOnly(charField);
-
-                    // The Name builtin arm (case-insensitive pre-P4, unchanged)
-                    if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(charField))
-                        return character.Name ?? match.Value;
-
-                    // Check character variables
-                    if (character.Variables != null &&
-                        character.Variables.TryGetValue(charField, out var charVar))
-                        return ResolveVariantText(charVar, context);
-
-                    return match.Value;
-                }
-
-                // Handle {charVarName.innerField}: reach through a character-TYPE variable to
-                // a field on the character it points to (e.g. {player1.Name}). Mirrors the HTML
-                // runtime's {charVarName.innerVarName} interpolation. Only a token whose left
-                // side resolves to a character-type variable is handled here; anything else
-                // falls through to the flat-variable lookup below.
-                int dotIndex = varName.IndexOf('.');
-                if (dotIndex > 0)
-                {
-                    var charVarName = varName.Substring(0, dotIndex);
-                    var charTypeVar = context.FindVariableByName(charVarName, searchLocal: true, searchGlobal: true);
-                    if (charTypeVar != null && charTypeVar.Type == StoryFlowVariableType.Character)
-                    {
-                        var innerField = varName.Substring(dotIndex + 1);
-                        var character = context.FindCharacter(charTypeVar.Value.GetString());
-                        if (character == null) return match.Value;
-
-                        // A2(a), second tier like the {Character.X} arm above — see
-                        // RewriteCfTokensOnly.
-                        innerField = StoryFlowCharacterTokens.RewriteCfTokensOnly(innerField);
-
-                        if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(innerField))
-                            return character.Name ?? match.Value;
-
-                        if (character.Variables != null &&
-                            character.Variables.TryGetValue(innerField, out var innerVar))
-                            return ResolveVariantText(innerVar, context);
-
-                        return match.Value;
-                    }
-                }
-
-                // Try local variables first
-                var localVar = context.FindVariableByName(varName, searchLocal: true, searchGlobal: false);
-                if (localVar != null)
-                {
-                    var value = localVar.Value.ToString();
-                    if (localVar.Type == StoryFlowVariableType.String)
-                        value = context.ResolveStringKey(value);
-                    return value;
-                }
-
-                // Then global variables
-                var globalVar = context.FindVariableByName(varName, searchLocal: false, searchGlobal: true);
-                if (globalVar != null)
-                {
-                    var value = globalVar.Value.ToString();
-                    if (globalVar.Type == StoryFlowVariableType.String)
-                        value = context.ResolveStringKey(value);
-                    return value;
-                }
-
-                // Not found — return original placeholder
-                return match.Value;
-            });
+            if (string.IsNullOrEmpty(text) || context == null) return text;
+            // Regex replacement visits authored tokens once; inserted strings remain literal.
+            return VariablePattern.Replace(text, match => Resolve(match.Groups[1].Value.Trim(), context) ?? match.Value);
         }
 
-        /// <summary>
-        /// Renders a character variable's value as display text. String-typed values are
-        /// strings-table keys (the editor export keys them), so they resolve through the
-        /// current language — same rule as a plain {stringVar}. Other types stringify directly.
-        /// </summary>
-        private static string ResolveVariantText(StoryFlowVariant variant, StoryFlowExecutionContext context)
+        private static string Resolve(string path, StoryFlowExecutionContext ctx)
         {
-            var text = variant.ToString();
-            if (variant.Type == StoryFlowVariableType.String)
-                text = context.ResolveStringKey(text);
-            return text;
+            Func<string, StoryFlowVariable> fields;
+            string remaining;
+            if (path.StartsWith("Character.", StringComparison.Ordinal))
+            {
+                var state = ctx.CurrentDialogueState;
+                var character = string.IsNullOrEmpty(state?.CharacterReference) ? state?.Character : ctx.FindCharacter(state.CharacterReference);
+                fields = CharacterFields(character, ctx);
+                remaining = path.Substring(10).Trim();
+            }
+            else
+            {
+                int dot = path.IndexOf('.');
+                if (dot < 0) return Leaf(ctx.FindVariableByName(path), ctx);
+                var root = ctx.FindVariableByName(path.Substring(0, dot));
+                fields = Fields(root, ctx);
+                remaining = path.Substring(dot + 1);
+            }
+            while (fields != null)
+            {
+                var exact = fields(remaining);
+                if (exact != null) return Leaf(exact, ctx);
+                int dot = remaining.IndexOf('.');
+                if (dot < 0) return null;
+                fields = Fields(fields(remaining.Substring(0, dot)), ctx);
+                remaining = remaining.Substring(dot + 1);
+            }
+            return null;
+        }
+
+        private static Func<string, StoryFlowVariable> Fields(StoryFlowVariable reference, StoryFlowExecutionContext ctx)
+        {
+            if (reference == null || reference.IsArray || reference.Value == null || reference.Value.ArrayValue != null) return null;
+            string id = reference.Value.GetString();
+            if (string.IsNullOrEmpty(id)) return null;
+            if (reference.Type == StoryFlowVariableType.Character) return CharacterFields(ctx.FindCharacter(id), ctx);
+            var store = ctx.DataAssetStore;
+            if (reference.Type != StoryFlowVariableType.DataAsset || store == null || !store.IsValid || !StoryFlowDataAssetStore.HasAsset(store.Seed, id)) return null;
+            return name =>
+            {
+                var declaration = StoryFlowDataAssetStore.FindDeclarationByName(store.Seed, id, name);
+                if (declaration == null || !StoryFlowDataAssetStore.TryRead(store.Seed, store.Overlay, ctx.Project, ctx.ActiveLanguageCode, id, declaration.Id, out var value)) return null;
+                if (value.Type == StoryFlowVariableType.String) value.IsLiteralString = true;
+                var field = new StoryFlowVariable(declaration); field.Value = value; return field;
+            };
+        }
+
+        private static Func<string, StoryFlowVariable> CharacterFields(StoryFlowCharacterData character, StoryFlowExecutionContext ctx)
+        {
+            if (character == null) return null;
+            return name =>
+            {
+                name = StoryFlowCharacterTokens.RewriteCfTokensOnly(name);
+                if (StoryFlowCharacterTokens.IsCharacterNameBuiltin(name))
+                    return new StoryFlowVariable { Type = StoryFlowVariableType.String, Value = new StoryFlowVariant { Type = StoryFlowVariableType.String, StringValue = character.Name, IsLiteralString = true } };
+                var declaration = character.FindVariableByName(name);
+                if (declaration != null) return declaration;
+                return character.Variables != null && character.Variables.TryGetValue(name, out var value)
+                    ? new StoryFlowVariable { Type = value.Type, IsArray = value.ArrayValue != null, Value = value } : null;
+            };
+        }
+
+        private static string Leaf(StoryFlowVariable field, StoryFlowExecutionContext ctx)
+        {
+            if (field == null || field.IsArray || field.Value == null || field.Value.ArrayValue != null) return null;
+            switch (field.Type)
+            {
+                case StoryFlowVariableType.Boolean: return field.Value.GetBool() ? "true" : "false";
+                case StoryFlowVariableType.Integer:
+                case StoryFlowVariableType.Float:
+                case StoryFlowVariableType.Enum: return field.Value.ToString();
+                case StoryFlowVariableType.String: return field.Value.IsLiteralString ? field.Value.GetString() : ctx.ResolveStringKey(field.Value.GetString());
+                default: return null;
+            }
         }
     }
 }

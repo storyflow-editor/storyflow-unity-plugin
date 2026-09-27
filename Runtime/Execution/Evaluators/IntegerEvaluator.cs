@@ -178,6 +178,11 @@ namespace StoryFlow.Execution
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_ImageArray);
                     return arr?.Count ?? 0;
                 }
+                case StoryFlowNodeType.DataAssetArrayLength:
+                {
+                    var arr = ArrayEvaluator.EvaluateTypedArray(ctx, node.Id, StoryFlowHandles.In_DataAssetArray, StoryFlowVariableType.DataAsset);
+                    return arr?.Count ?? 0;
+                }
                 case StoryFlowNodeType.CharacterArrayLength:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_CharacterArray);
@@ -245,6 +250,17 @@ namespace StoryFlow.Execution
                     }
                     return -1;
                 }
+                case StoryFlowNodeType.FindInDataAssetArray:
+                {
+                    var arr = ArrayEvaluator.EvaluateTypedArray(ctx, node.Id, StoryFlowHandles.In_DataAssetArray, StoryFlowVariableType.DataAsset);
+                    string val = DataReferenceEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_DataAsset, node.GetData("value"));
+                    if (arr == null) return -1;
+                    for (int i = 0; i < arr.Count; i++)
+                    {
+                        if (arr[i].GetString() == val) return i;
+                    }
+                    return -1;
+                }
                 case StoryFlowNodeType.FindInCharacterArray:
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_CharacterArray);
@@ -295,6 +311,7 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.ForEachStringLoop:
                 case StoryFlowNodeType.ForEachImageLoop:
                 case StoryFlowNodeType.ForEachCharacterLoop:
+                case StoryFlowNodeType.ForEachDataAssetLoop:
                 case StoryFlowNodeType.ForEachAudioLoop:
                 {
                     var runtimeState = ctx.GetNodeRuntimeState(node.Id);

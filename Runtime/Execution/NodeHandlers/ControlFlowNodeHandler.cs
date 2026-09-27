@@ -71,7 +71,10 @@ namespace StoryFlow.Execution.NodeHandlers
                     var variable = kvp.Value;
                     if (variable.IsOutput)
                     {
-                        outputValues[variable.Name] = new StoryFlowVariant(variable.Value);
+                        // Preserve the actual callee declaration across the return boundary.
+                        // A stale caller pin must not turn a String declaration into Data.
+                        outputValues[variable.Name] = DataBoundaryMatches(variable, variable.Value)
+                            ? new StoryFlowVariant(variable.Value) : null;
                     }
                 }
 
@@ -308,7 +311,8 @@ namespace StoryFlow.Execution.NodeHandlers
                     var localVar = localKvp.Value;
                     if (localVar.IsInput && localVar.Name == kvp.Key)
                     {
-                        localVar.Value = new StoryFlowVariant(kvp.Value);
+                        if (DataBoundaryMatches(localVar, kvp.Value))
+                            localVar.Value = new StoryFlowVariant(kvp.Value);
                         break;
                     }
                 }
@@ -338,6 +342,19 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 Debug.LogError($"[StoryFlow] Start node not found in script: {scriptId}");
             }
+        }
+
+        private static bool DataBoundaryMatches(StoryFlowVariable declaration, StoryFlowVariant value)
+        {
+            if (declaration.Type != StoryFlowVariableType.DataAsset && value?.Type != StoryFlowVariableType.DataAsset)
+                return true;
+            if (value == null || value.Type != declaration.Type || declaration.IsArray != (value.ArrayValue != null))
+                return false;
+            if (value.ArrayValue != null)
+                foreach (var element in value.ArrayValue)
+                    if (element == null || element.Type != StoryFlowVariableType.DataAsset || element.ArrayValue != null)
+                        return false;
+            return true;
         }
 
         // =====================================================================
