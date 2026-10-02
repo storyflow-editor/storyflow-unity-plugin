@@ -37,6 +37,12 @@ namespace StoryFlow.Data
         public List<StoryFlowDataAssetAsset> DataAssetReferences = new();
 
         /// <summary>
+        /// data-assets.json's localization version. Version 2 keys authored overrides as
+        /// well as declarations; older exports localize declarations only.
+        /// </summary>
+        public int DataAssetLocalizationVersion = 1;
+
+        /// <summary>
         /// The character id bridge from character-index.json (characters engine contract §3):
         /// character FILE id (da_ prefixed) → the character's record key, i.e. exactly a key
         /// of <see cref="Characters"/>. A serialized list rebuilt into a runtime dictionary,

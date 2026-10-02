@@ -558,11 +558,17 @@ namespace StoryFlow.Editor
                 // pool below, which is what makes ResolveAsset<Sprite>(GetDataAssetString(...))
                 // work without the .sfd surface learning anything about assets.
                 var dataAssetMediaEntries = new List<StoryFlowScriptAsset.SerializedAsset>();
+                int dataAssetLocalizationVersion = 1;
                 string dataAssetsJsonPath = Path.Combine(buildDirectory, "data-assets.json");
                 if (File.Exists(dataAssetsJsonPath))
                 {
                     JObject dataAssetsJson = JObject.Parse(File.ReadAllText(dataAssetsJsonPath));
                     dataAssetsCondensed = dataAssetsJson.ToString(Newtonsoft.Json.Formatting.None);
+                    var versionToken = dataAssetsJson["localizationVersion"];
+                    if (versionToken != null &&
+                        (versionToken.Type == JTokenType.Integer || versionToken.Type == JTokenType.Float) &&
+                        versionToken.Value<double>() == 2)
+                        dataAssetLocalizationVersion = 2;
 
                     // data-assets.json's OWN strings table, merged into the project's global
                     // table exactly as characters.json's is — same helper, same `<code>.<key>`
@@ -896,6 +902,7 @@ namespace StoryFlow.Editor
                 // assignment is what the runtime seed (StoryFlowDataAssetStore.BuildSeed)
                 // reads.
                 projectAsset.SetDataAssetReferences(dataAssetReferences);
+                projectAsset.DataAssetLocalizationVersion = dataAssetLocalizationVersion;
                 // Registration point 4 of 5 for the character index - see the five-point
                 // registration list at the character-index.json read site above. The
                 // runtime bridge (StoryFlowProjectAsset.CharacterIdBridge) is built from
@@ -1386,6 +1393,7 @@ namespace StoryFlow.Editor
                 Type = varType,
                 Value = defaultValue,
                 IsArray = isArray,
+                Localizable = varObj.Value<bool?>("localizable") ?? true,
                 EnumValues = enumValues,
                 KeyType = keyType,
                 ValueType = valueType,
@@ -2487,7 +2495,8 @@ namespace StoryFlow.Editor
         /// without the re-parse.
         /// </summary>
         // Version 6 adds the Data variable type and its complete node family.
-        private const string ParseSchemaVersion = "6";
+        // Version 7 persists Data Asset override localization and declaration opt-out metadata.
+        private const string ParseSchemaVersion = "7";
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser

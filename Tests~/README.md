@@ -29,6 +29,22 @@ keys, and resolved host array copies retain their provenance when reused.
 Authored string arrays written into `.sfd` state capture the active display text and
 remain literal after a language switch, without modifying the source array.
 
+Data Asset import cases cover version 2 authored scalar, array and map overrides,
+inherited override ownership, declaration opt-out, literal map keys, language
+switching, session save/reset, legacy missing/version 1 exports and version-only
+reimports of an already cached project. The importer schema revision ensures the
+new serialized metadata is refreshed when existing exports are reimported.
+Map lookups, projected arrays and map loops also preserve resolved text when it
+matches another translation key. These checks cover opt-outs, legacy overrides,
+restored session writes and ordinary authored maps that still need localization.
+
+`Fixtures/character-contract-v2` vendors the current editor's generated Data Asset
+and localization outputs plus resolution expectations. The test imports these
+outputs and consumes all 14 localized accessor cases and three literal cases
+through both manager and component accessors, switching languages in one session.
+It also compares raw seed values with the authored-owner expectations. Legacy
+fixtures and their declaration-only override tests remain unchanged.
+
 The synthetic `Fixtures/pre-character-index` export contains no character index,
 private project data or media. The importer/runtime cases prove that old path-based
 characters still import and play, then add a current index to the same fixture to

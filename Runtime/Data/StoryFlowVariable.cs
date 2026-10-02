@@ -11,6 +11,8 @@ namespace StoryFlow.Data
         public StoryFlowVariableType Type;
         public StoryFlowVariant Value;
         public bool IsArray;
+        // Data Asset declarations control localization for their own value and all overrides.
+        public bool Localizable = true;
         public List<string> EnumValues;
         public bool IsInput;
         public bool IsOutput;
@@ -44,6 +46,7 @@ namespace StoryFlow.Data
             Type = other.Type;
             Value = new StoryFlowVariant(other.Value);
             IsArray = other.IsArray;
+            Localizable = other.Localizable;
             EnumValues = other.EnumValues != null ? new List<string>(other.EnumValues) : new List<string>();
             IsInput = other.IsInput;
             IsOutput = other.IsOutput;

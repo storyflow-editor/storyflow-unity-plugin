@@ -85,12 +85,11 @@ namespace StoryFlow.Data
     public enum StoryFlowDataAssetOrigin
     {
         /// <summary>
-        /// The root-most declaration's own authored value (contract §4.3). The ONLY tier that
-        /// localizes — see <see cref="StoryFlowDataAssetStore.TryRead"/>.
+        /// The root-most declaration's own authored value (contract §4.3).
         /// </summary>
         Declaration,
 
-        /// <summary>An <c>overrides</c> entry at some chain level. Authored, but NOT keyed.</summary>
+        /// <summary>An authored <c>overrides</c> entry, keyed in localization version 2 exports.</summary>
         Override,
 
         /// <summary>An overlay entry: a write this session made. Live data, never content.</summary>
@@ -597,16 +596,11 @@ namespace StoryFlow.Data
         /// other artifact's strings already use (the importer merges that table into the project
         /// globals characters.json's strings feed).
         ///
-        /// WHAT LOCALIZES, and the three rules that are re-derivable wrongly (the vendored golden
-        /// package's manifest, localization.dataAssets, spells all of them out):
+        /// WHAT LOCALIZES, including the version 2 authored-override contract:
         ///
-        ///  - ONLY A DECLARATION. <see cref="StoryFlowDataAssetOrigin.Override"/> and
-        ///    <see cref="StoryFlowDataAssetOrigin.SessionWrite"/> are handed back verbatim. An
-        ///    override is authored but UNKEYED: a .sfd id carries no per-asset segment, so a
-        ///    declaration and a descendant's override of it would collide on one
-        ///    <c>&lt;variableId&gt;.value</c>, and the exporter therefore keys declarations only.
-        ///    Localizing an override does not MISS — it serves the ancestor's translation for a
-        ///    text the descendant replaced.
+        ///  - DECLARATIONS AND VERSION 2 AUTHORED OVERRIDES. Older exports keep their
+        ///    overrides literal. The root-most declaration's Localizable flag applies to both
+        ///    tiers, including an override inherited through another asset.
         ///  - A WRITTEN VALUE NEVER LOCALIZES, including after a save/load, because the save
         ///    carries the overlay and a restored write was never content. The gate is WHERE THE
         ///    VALUE CAME FROM and never whether it LOOKS like a key: a write that happened to
@@ -615,13 +609,10 @@ namespace StoryFlow.Data
         ///  - STRING-TYPED PROSE ONLY, decided by the DECLARED type — see
         ///    <see cref="LocalizeDeclaredValue"/>.
         ///
-        /// THE ID IS BUILT FROM THE VARIABLE ALONE — <c>&lt;variableId&gt;.value</c>,
-        /// <c>.value.&lt;index&gt;</c>, <c>.value.&lt;mapKey&gt;</c> — and it is the EXPORTER
-        /// that built it; nothing here re-derives one, it resolves the bytes the seed carries.
-        /// That is the deliberate CONTRAST with a character value's
-        /// <c>&lt;characterId&gt;.&lt;variableId&gt;.value</c>, and the reason a chain localizes
-        /// at every level that declares something: it is the VARIABLE that is unique, not the
-        /// asset.
+        /// The exporter builds declaration keys as <c>&lt;variableId&gt;.value</c> and override
+        /// keys as <c>data.&lt;authoringAssetId&gt;.&lt;variableId&gt;.value</c>, with array indices
+        /// or opaque map keys appended. This door resolves the bytes the seed carries, so an
+        /// inherited override retains the key of the asset that authored it.
         ///
         /// RESOLUTION IS AT THIS DOOR, not baked into the seed, so a mid-session SetLanguage
         /// lands on the very next .sfd read. That is the same read-time posture this engine
@@ -675,7 +666,7 @@ namespace StoryFlow.Data
         /// <see cref="Resolution.Origin"/> reports WHICH of the three tiers answered, recorded
         /// at the branch that already knows rather than re-derived by a caller that no longer can
         /// (see <see cref="StoryFlowDataAssetOrigin"/>). With no nearest hit the declaration
-        /// answered, which is the only tier the localization gate treats as content.
+        /// answered. The localization gate also accepts authored overrides in version 2 exports.
         ///
         /// The three travel back as ONE <see cref="Resolution"/> because they are one answer:
         /// they mean nothing apart, and every consumer below needs all three of THIS walk's.
@@ -751,21 +742,27 @@ namespace StoryFlow.Data
             Resolution walk, StoryFlowProjectAsset project, string languageCode)
         {
             var value = CopyOut(walk);
-            if (walk.Origin == StoryFlowDataAssetOrigin.Declaration && project != null)
+            if (project != null && walk.Declaration.Localizable &&
+                (walk.Origin == StoryFlowDataAssetOrigin.Declaration ||
+                 (walk.Origin == StoryFlowDataAssetOrigin.Override && project.DataAssetLocalizationVersion == 2)))
             {
                 LocalizeDeclaredValue(walk.Declaration, project, languageCode, value);
             }
             // This door returns finished text (including deliberately literal overrides).
-            // Downstream array consumers must not reinterpret it as a fresh authored key.
+            // Downstream array/map consumers must not reinterpret it as a fresh authored key.
             if (walk.Declaration.IsArray && walk.Declaration.Type == StoryFlowVariableType.String && value.ArrayValue != null)
                 foreach (var element in value.ArrayValue)
                     if (element != null) element.IsLiteralString = true;
+            if (walk.Declaration.Type == StoryFlowVariableType.Map &&
+                walk.Declaration.ValueType == StoryFlowVariableType.String && value.MapValue != null)
+                foreach (var entry in value.MapValue)
+                    if (entry?.Value != null) entry.Value.IsLiteralString = true;
             return value;
         }
 
         /// <summary>
-        /// A DECLARED value with its string-table keys resolved, IN PLACE on the copy the read
-        /// is about to hand out.
+        /// An authored value with its string-table keys resolved according to its declaration,
+        /// IN PLACE on the copy the read is about to hand out.
         ///
         /// THE TYPE GATE IS THE EXPORTER'S, transcribed (json-export-strategy.ts
         /// keyDataAssetDeclaration): a string scalar, the elements of a string ARRAY, and the

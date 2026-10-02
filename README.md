@@ -86,6 +86,8 @@ Saved `dataAssets` values remain bare JSON. Restore validates each complete slot
 
 The manager and component expose `GetDataAssetVariant` for detached scalar, array, and map reads.
 
+Exports with `data-assets.json` `localizationVersion: 2` localize authored overrides as well as declarations, including inherited overrides, string arrays and string-valued maps. A declaration's `localizable: false` keeps its value and every descendant override literal. Missing or version 1 metadata preserves declaration-only localization. Map keys and session writes, including restored writes, remain literal. Language changes apply on the next read.
+
 ## Contributing
 
 Contributions are welcome! Please read the guidelines below before submitting.

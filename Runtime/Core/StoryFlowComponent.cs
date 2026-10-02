@@ -1102,8 +1102,8 @@ namespace StoryFlow
         //    both answer the manager's; for a pre-localization one the component's own
         //    LanguageCode keeps its old meaning, which is the whole point of that helper. What
         //    the language does to a read is StoryFlowDataAssetStore.TryRead's business —
-        //    declarations localize, overrides and session writes never do (localization spec §2's
-        //    amendment of 2026-08-27).
+        //    declarations and version 2 authored overrides localize unless their declaration
+        //    opts out; session writes stay literal.
 
         /// <summary>Reads a boolean .sfd variable. <paramref name="found"/> is false for every refusal.</summary>
         public bool GetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, out bool found)

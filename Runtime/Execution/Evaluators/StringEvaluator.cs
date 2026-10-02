@@ -59,7 +59,9 @@ namespace StoryFlow.Execution
                 bool arrayElement = node.Type == StoryFlowNodeType.GetStringArrayElement ||
                     node.Type == StoryFlowNodeType.GetRandomStringArrayElement ||
                     node.Type == StoryFlowNodeType.ForEachStringLoop;
-                bool finishedText = EvaluatorHelpers.IsDataAssetAccessor(node.Type) || arrayElement || characterName;
+                bool mapValue = node.Type == StoryFlowNodeType.GetMapValue ||
+                    (node.Type == StoryFlowNodeType.ForEachMap && (ctx.LastSourceHandle ?? "").EndsWith("-value"));
+                bool finishedText = EvaluatorHelpers.IsDataAssetAccessor(node.Type) || arrayElement || characterName || mapValue;
                 var state = ctx.GetNodeRuntimeState(node.Id);
                 if (!skipCache && state.CachedOutput != null)
                     return arrayElement ? ctx.ResolveArrayString(state.CachedOutput)
@@ -75,19 +77,9 @@ namespace StoryFlow.Execution
                     Debug.Log($"[SF-TRACE] EVAL {node.Id} {typeName} result={result}");
                 }
 
-                // THE .sfd ACCESSORS ANSWER FINISHED TEXT and must not re-enter this ladder.
-                // Every other node here hands back a value whose string IS a table key, which is
-                // why this wrap exists at all; a .sfd accessor's read already went through the
-                // store's own door, which resolved it or deliberately did not, GATED ON
-                // PROVENANCE (StoryFlowDataAssetStore.TryRead — declarations localize, overrides
-                // and session writes never do). Running this ladder over the answer would be a
-                // second door gated on SHAPE, and it would undo exactly the case the gate exists
-                // for: a session write whose value happens to be a real key would come back as
-                // somebody else's prose, invisibly in the source language. Pre-amendment this
-                // wrap was a harmless no-op over a .sfd literal, which is why it was here.
-                //
-                // Array element readers also settle provenance before returning text.
-                // Do not interpret a literal element that happens to match a key a second time.
+                // Data-asset reads settle localization in the store; array and map value
+                // readers honor the element's provenance. Their finished text must not be
+                // interpreted as another key, including opted-out fields and session writes.
                 if (finishedText) return result;
 
                 return ctx.ResolveStringKey(result);
@@ -278,7 +270,7 @@ namespace StoryFlow.Execution
                         mapValueType == "character" || mapValueType == "audio")
                     {
                         MapEvaluator.ComputeGetMapValue(ctx, node, out var mapValue);
-                        return mapValue != null ? MapEvaluator.AsText(mapValue) : "";
+                        return ResolveMapValueText(ctx, mapValue);
                     }
                     return "";
                 }
@@ -301,7 +293,7 @@ namespace StoryFlow.Execution
                         (mapValueType == "string" || mapValueType == "enum" || mapValueType == "image" ||
                          mapValueType == "character" || mapValueType == "audio"))
                     {
-                        return MapEvaluator.AsText(runtimeState.LoopValue);
+                        return ResolveMapValueText(ctx, runtimeState.LoopValue);
                     }
                     return "";
                 }
@@ -335,6 +327,13 @@ namespace StoryFlow.Execution
                     ctx.FailResolution();
                     return "";
             }
+        }
+
+        private static string ResolveMapValueText(StoryFlowExecutionContext ctx, StoryFlowVariant value)
+        {
+            if (value == null) return "";
+            var text = MapEvaluator.AsText(value);
+            return value.IsLiteralString ? text : ctx.ResolveStringKey(text);
         }
     }
 }

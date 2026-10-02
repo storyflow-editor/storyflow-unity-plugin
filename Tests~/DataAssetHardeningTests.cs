@@ -11,6 +11,14 @@ namespace StoryFlow.Tests
     {
         private static void RunDataAssetHardeningTests()
         {
+            Run(nameof(DataAssetAuthoredOverridesLocalize), DataAssetAuthoredOverridesLocalize);
+            Run(nameof(DataAssetMapConsumersResolveTextOnce), DataAssetMapConsumersResolveTextOnce);
+            Run(nameof(DataAssetMapConsumersKeepLiteralValues), DataAssetMapConsumersKeepLiteralValues);
+            Run(nameof(AuthoredMapConsumersStillLocalize), AuthoredMapConsumersStillLocalize);
+            Run(nameof(DataAssetLocalizationOptOutIsInherited), DataAssetLocalizationOptOutIsInherited);
+            Run(nameof(DataAssetLegacyOverridesRemainLiteral), DataAssetLegacyOverridesRemainLiteral);
+            Run(nameof(DataAssetLocalizationVersionReimport), DataAssetLocalizationVersionReimport);
+            Run(nameof(DataAssetCurrentLocalizationFixture), DataAssetCurrentLocalizationFixture);
             Run(nameof(DataAssetMapWrite), DataAssetMapWrite);
             Run(nameof(DataAssetMediaMapHostValuesCopy), DataAssetMediaMapHostValuesCopy);
             Run(nameof(DataAssetDetachedMapStringIsLiteral), DataAssetDetachedMapStringIsLiteral);
@@ -27,6 +35,366 @@ namespace StoryFlow.Tests
             Run(nameof(DataAssetSavedDateShapedText), DataAssetSavedDateShapedText);
             Run(nameof(DataAssetChainedSources), DataAssetChainedSources);
             Run(nameof(DataAssetMigrationFixture), () => DataAssetMigrationFixture());
+        }
+
+        private static Newtonsoft.Json.Linq.JObject DataAssetLocalizationExport()
+        {
+            return Newtonsoft.Json.Linq.JObject.Parse(@"{
+              'localizationVersion': 2,
+              'dataAssets': {
+                'base': { 'name': 'Base', 'parent': null, 'variables': [
+                  { 'id': 'text', 'name': 'Text', 'type': 'string', 'value': 'text.value' },
+                  { 'id': 'array', 'name': 'Array', 'type': 'string', 'isArray': true, 'value': ['array.value.0'] },
+                  { 'id': 'map', 'name': 'Map', 'type': 'map', 'keyType': 'string', 'valueType': 'string',
+                    'value': [{ 'key': 'a.b', 'value': 'map.value.a.b' }] }
+                ], 'overrides': {} },
+                'child': { 'name': 'Child', 'parent': 'base', 'variables': [], 'overrides': {
+                  'text': 'data.child.text.value', 'array': ['data.child.array.value.0'],
+                  'map': [{ 'key': 'a.b', 'value': 'data.child.map.value.a.b' }]
+                } },
+                'leaf': { 'name': 'Leaf', 'parent': 'child', 'variables': [], 'overrides': {} }
+              },
+              'strings': { 'en': {
+                'text.value': 'Base text', 'array.value.0': 'Base array', 'map.value.a.b': 'Base map',
+                'data.child.text.value': 'Child text', 'data.child.array.value.0': 'Child array',
+                'data.child.map.value.a.b': 'Child map', 'a.b': 'Do not translate map keys'
+              } }
+            }");
+        }
+
+        private static void WithDataAssetLocalizationExport(
+            Newtonsoft.Json.Linq.JObject export, System.Action<string, StoryFlowProjectAsset> assertion,
+            string localizationJson = null)
+        {
+            var originalDirectory = System.IO.Directory.GetCurrentDirectory();
+            var temporaryRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                "storyflow-unity-data-localization-" + System.Guid.NewGuid().ToString("N"));
+            var buildDirectory = System.IO.Path.Combine(temporaryRoot, "build");
+            try
+            {
+                System.IO.Directory.CreateDirectory(buildDirectory);
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(temporaryRoot, "Assets"));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(buildDirectory, "project.json"),
+                    "{\"version\":\"1.7.0\",\"apiVersion\":\"1.0\",\"metadata\":{\"title\":\"Data localization\"}}");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(buildDirectory, "data-assets.json"), export.ToString());
+                System.IO.File.WriteAllText(System.IO.Path.Combine(buildDirectory, "localization.json"), localizationJson ?? @"{
+                  'schemaVersion': '1', 'sourceLanguage': 'en', 'languages': [{ 'code': 'fr', 'name': 'French' }],
+                  'strings': { 'fr': {
+                    'text.value': 'Texte de base', 'array.value.0': 'Tableau de base', 'map.value.a.b': 'Carte de base',
+                    'data.child.text.value': 'Texte enfant', 'data.child.array.value.0': 'Tableau enfant',
+                    'data.child.map.value.a.b': 'Carte enfant', 'a.b': 'Wrong map key'
+                  } }
+                }");
+                System.IO.Directory.SetCurrentDirectory(temporaryRoot);
+                UnityEditor.EditorStubs.Reset();
+                var project = StoryFlow.Editor.StoryFlowImporter.ImportProject(
+                    buildDirectory, "Assets/DataLocalization", out var report, force: true);
+                AssertTrue(project != null && !report.HasFailures, "data localization export imports");
+                SetManagerProject(project);
+                assertion(buildDirectory, project);
+            }
+            finally
+            {
+                ClearManager();
+                System.IO.Directory.SetCurrentDirectory(originalDirectory);
+                TryDeleteDirectory(temporaryRoot);
+            }
+        }
+
+        private static StoryFlowVariant ReadLocalizedDataAsset(string assetId, string variableId)
+        {
+            var manager = StoryFlowManager.Instance;
+            var store = manager.GetDataAssetStore();
+            AssertTrue(StoryFlowDataAssetStore.TryRead(store.Seed, store.Overlay, manager.Project,
+                manager.GetLanguage(), assetId, variableId, out var value), "localized data asset read succeeds");
+            return value;
+        }
+
+        private static void DataAssetCurrentLocalizationFixture()
+        {
+            var directory = System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", "character-contract-v2");
+            var export = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory, "data-assets.json")));
+            var cases = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory, "localization-resolution.json")));
+            var localizedCases = 0;
+            var literalCases = 0;
+            WithDataAssetLocalizationExport(export, (_, project) =>
+            {
+                var manager = StoryFlowManager.Instance;
+                var component = new StoryFlowComponent();
+                var store = manager.GetDataAssetStore();
+                foreach (var item in cases["cases"])
+                {
+                    var kind = (string)item["kind"];
+                    if (kind != "data-asset-localized" && kind != "unkeyed") continue;
+                    var caseName = (string)item["case"];
+                    var assetId = (string)item["dataAssetId"];
+                    var variableId = (string)item["variableId"];
+                    var declaration = StoryFlowDataAssetStore.FindDeclaration(store.Seed, assetId, variableId);
+                    AssertTrue(declaration != null, caseName + ": declaration imports");
+                    if (declaration == null) continue;
+                    AssertTrue(StoryFlowDataAssetStore.TryResolve(store.Seed, store.Overlay, assetId, variableId, out var stored),
+                        caseName + ": authored seed resolves");
+                    AssertTrue(Newtonsoft.Json.Linq.JToken.DeepEquals(item["storedValue"] ?? item["literal"], DataAssetFixtureJson(stored, declaration)),
+                        caseName + ": imported seed retains the nearest author's value");
+
+                    void AssertRead(string language, Newtonsoft.Json.Linq.JToken expected)
+                    {
+                        AssertTrue(manager.SetLanguage(language), caseName + ": fixture language is registered");
+                        var value = manager.GetDataAssetVariant(project.DataAssets[assetId], declaration.Name, out var found);
+                        AssertTrue(found, caseName + ": manager accessor resolves");
+                        AssertTrue(Newtonsoft.Json.Linq.JToken.DeepEquals(expected, DataAssetFixtureJson(value, declaration)),
+                            caseName + ": manager read matches the current exporter fixture in " + language);
+                        var componentValue = component.GetDataAssetVariant(project.DataAssets[assetId], declaration.Name, out found);
+                        AssertTrue(found, caseName + ": component accessor resolves");
+                        AssertTrue(Newtonsoft.Json.Linq.JToken.DeepEquals(expected, DataAssetFixtureJson(componentValue, declaration)),
+                            caseName + ": component read matches the current exporter fixture in " + language);
+                    }
+
+                    if (kind == "data-asset-localized")
+                    {
+                        localizedCases++;
+                        AssertRead((string)item["language"], item["expected"]);
+                    }
+                    else
+                    {
+                        literalCases++;
+                        foreach (var language in ((Newtonsoft.Json.Linq.JObject)item["expected"]).Properties())
+                            AssertRead(language.Name, language.Value);
+                    }
+                }
+            }, System.IO.File.ReadAllText(System.IO.Path.Combine(directory, "localization.json")));
+            AssertEqual(14, localizedCases, "all current fixture accessor cases were consumed");
+            AssertEqual(3, literalCases, "all current fixture opt-out and enum cases were consumed");
+        }
+
+        private static Newtonsoft.Json.Linq.JToken DataAssetFixtureJson(StoryFlowVariant value, StoryFlowVariable declaration)
+        {
+            if (declaration.Type == StoryFlowVariableType.Map)
+                return Newtonsoft.Json.Linq.JToken.Parse(value.SerializeMapToJson());
+            if (declaration.IsArray)
+                return Newtonsoft.Json.Linq.JToken.Parse(value.SerializeArrayToJson());
+            return new Newtonsoft.Json.Linq.JValue(value.ToString());
+        }
+
+        private static void DataAssetAuthoredOverridesLocalize()
+        {
+            WithDataAssetLocalizationExport(DataAssetLocalizationExport(), (_, project) =>
+            {
+                var manager = StoryFlowManager.Instance;
+                AssertEqual("Child text", ReadLocalizedDataAsset("leaf", "text").GetString(), "source table resolves an ancestor override");
+                manager.SetLanguage("fr");
+                AssertEqual("Texte de base", ReadLocalizedDataAsset("base", "text").GetString(), "declaration keeps its original key");
+                AssertEqual("Texte enfant", ReadLocalizedDataAsset("child", "text").GetString(), "own override localizes");
+                AssertEqual("Texte enfant", ReadLocalizedDataAsset("leaf", "text").GetString(), "nearest authored ancestor supplies its own key");
+                AssertEqual("Tableau enfant", ReadLocalizedDataAsset("leaf", "array").ArrayValue[0].GetString(), "override array elements localize");
+                var map = ReadLocalizedDataAsset("leaf", "map").MapValue[0];
+                AssertEqual("Carte enfant", map.Value.GetString(), "opaque dotted map value key localizes");
+                AssertEqual("a.b", map.Key.GetString(), "map keys remain literal");
+                var store = manager.GetDataAssetStore();
+                StoryFlowDataAssetStore.ReadBound(store.Seed, store.Overlay, project, "fr", "leaf", "text",
+                    new StoryFlowDataAssetPinShape("string", false), out var bound);
+                AssertEqual("Texte enfant", bound.GetString(), "bound accessor uses the same override localization gate");
+
+                var leaf = project.DataAssets["leaf"];
+                AssertTrue(manager.SetDataAssetString(leaf, "Text", "data.child.text.value"), "key-looking session scalar writes");
+                AssertTrue(manager.SetDataAssetArrayVariable(leaf, "Array", new() { StoryFlowVariant.String("data.child.array.value.0") }), "key-looking session array writes");
+                AssertTrue(manager.SetDataAssetMapVariable(leaf, "Map", new() { StoryFlowVariant.String("a.b") },
+                    new() { StoryFlowVariant.String("data.child.map.value.a.b") }), "key-looking session map writes");
+                var saved = manager.ExportState();
+                manager.SetProject(project);
+                AssertTrue(manager.ImportState(saved), "session values restore after reseed");
+                manager.SetLanguage("en");
+                AssertEqual("data.child.text.value", ReadLocalizedDataAsset("leaf", "text").GetString(), "restored session scalar stays literal");
+                AssertEqual("data.child.array.value.0", ReadLocalizedDataAsset("leaf", "array").ArrayValue[0].GetString(), "restored session array stays literal");
+                AssertEqual("data.child.map.value.a.b", ReadLocalizedDataAsset("leaf", "map").MapValue[0].Value.GetString(), "restored session map stays literal");
+                StoryFlowDataAssetStore.ResetOverlay(manager.GetDataAssetStore().Overlay);
+                AssertEqual("Child text", ReadLocalizedDataAsset("leaf", "text").GetString(), "reset reveals localized authored override");
+            });
+
+            var decimalVersion = DataAssetLocalizationExport();
+            decimalVersion["localizationVersion"] = 2.0;
+            WithDataAssetLocalizationExport(decimalVersion, (_, project) =>
+                AssertEqual("Child text", ReadLocalizedDataAsset("leaf", "text").GetString(), "numeric 2.0 also declares localization version 2"));
+        }
+
+        private static void AssertMapConsumerText(StoryFlowProjectAsset project, string expected,
+            string assetId = "leaf", bool ordinaryMap = false)
+        {
+            var script = ScriptableObject.CreateInstance<StoryFlowScriptAsset>();
+            script.SetNodes(new()
+            {
+                DaN("P", StoryFlowNodeType.GetDataAsset, ("assetId", assetId)),
+                ordinaryMap ? DaN("G", StoryFlowNodeType.GetMap, ("variable", "map")) :
+                    DaN("G", StoryFlowNodeType.GetDataAssetVariable, ("variableId", "map"),
+                        ("variableType", "map"), ("keyType", "string"), ("valueType", "string")),
+                DaN("V", StoryFlowNodeType.GetMapValue, ("keyType", "string"), ("valueType", "string"), ("key", "a.b")),
+                DaN("A", StoryFlowNodeType.MapValues, ("keyType", "string"), ("valueType", "string")),
+                DaN("E", StoryFlowNodeType.GetStringArrayElement, ("value", "0")),
+                DaN("L", StoryFlowNodeType.ForEachMap, ("keyType", "string"), ("valueType", "string"))
+            });
+            script.SetConnections(new()
+            {
+                DaE("P", "G", "dataAsset-asset"), DaE("G", "V", "map-string-string-1"),
+                DaE("G", "A", "map-string-string-1"), DaE("A", "E", "string-array-1"),
+                DaE("G", "L", "map-string-string-map")
+            });
+            var manager = StoryFlowManager.Instance;
+            var context = new StoryFlowExecutionContext();
+            context.Initialize(script, new(), new(), new(), manager.GetDataAssetStore());
+            context.Project = project;
+            if (ordinaryMap)
+                context.LocalVariables["map"] = new()
+                {
+                    Id = "map", Type = StoryFlowVariableType.Map,
+                    KeyType = StoryFlowVariableType.String, ValueType = StoryFlowVariableType.String,
+                    Value = new() { Type = StoryFlowVariableType.Map, MapValue = new()
+                    {
+                        new() { Key = StoryFlowVariant.String("a.b"), Value = StoryFlowVariant.String("data.child.map.value.a.b") }
+                    } }
+                };
+            var label = assetId + " " + manager.GetLanguage();
+            AssertEqual(expected, StoryFlowEvaluator.EvaluateStringFromNode(context, script.GetNode("V")), label + ": map lookup");
+            AssertEqual(expected, StoryFlowEvaluator.EvaluateStringFromNode(context, script.GetNode("E")), label + ": projected array element");
+            AssertEqual(expected, StoryFlowEvaluator.EvaluateStringFromNode(context, script.GetNode("E")), label + ": cached array element");
+            var component = new StoryFlowComponent();
+            typeof(StoryFlowComponent).GetField("_context", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(component, context);
+            MapNodeHandler.HandleForEachMap(component, script.GetNode("L"));
+            context.LastSourceHandle = "source-L-string-value";
+            AssertEqual(expected, StoryFlowEvaluator.EvaluateStringFromNode(context, script.GetNode("L")), label + ": map loop value");
+        }
+
+        private static void DataAssetMapConsumersResolveTextOnce()
+        {
+            WithDataAssetLocalizationExport(DataAssetLocalizationExport(), (_, project) =>
+            {
+                var manager = StoryFlowManager.Instance;
+                AssertMapConsumerText(project, "Child map");
+                manager.SetLanguage("fr");
+                AssertMapConsumerText(project, "text.value");
+                AssertMapConsumerText(project, "text.value", "base");
+                AssertTrue(StoryFlowDataAssetStore.TryResolve(manager.GetDataAssetStore().Seed,
+                    manager.GetDataAssetStore().Overlay, "leaf", "map", out var stored), "authored map resolves");
+                AssertEqual("data.child.map.value.a.b", stored.MapValue[0].Value.GetString(), "read does not rewrite the seed");
+                AssertTrue(!stored.MapValue[0].Value.IsLiteralString, "read does not mark the authored seed as literal");
+                manager.SetLanguage("en");
+                AssertMapConsumerText(project, "Child map");
+            }, @"{ 'schemaVersion': '1', 'sourceLanguage': 'en', 'languages': [{ 'code': 'fr', 'name': 'French' }],
+                'strings': { 'fr': { 'data.child.map.value.a.b': 'text.value', 'map.value.a.b': 'text.value',
+                    'text.value': 'Must not resolve twice' } } }");
+        }
+
+        private static void DataAssetMapConsumersKeepLiteralValues()
+        {
+            foreach (var mode in new[] { "legacy", "opt-out", "session" })
+            {
+                var export = DataAssetLocalizationExport();
+                if (mode == "legacy") export.Remove("localizationVersion");
+                if (mode == "opt-out") export["dataAssets"]["base"]["variables"][2]["localizable"] = false;
+                WithDataAssetLocalizationExport(export, (_, project) =>
+                {
+                    var manager = StoryFlowManager.Instance;
+                    if (mode == "session")
+                    {
+                        AssertTrue(manager.SetDataAssetMapVariable(project.DataAssets["leaf"], "Map",
+                            new() { StoryFlowVariant.String("a.b") }, new() { StoryFlowVariant.String("data.child.map.value.a.b") }),
+                            "key-looking session map writes");
+                        var saved = manager.ExportState();
+                        manager.SetProject(project);
+                        AssertTrue(manager.ImportState(saved), "session map restores");
+                    }
+                    foreach (var language in new[] { "en", "fr" })
+                    {
+                        manager.SetLanguage(language);
+                        AssertMapConsumerText(project, "data.child.map.value.a.b");
+                        if (mode == "opt-out") AssertMapConsumerText(project, "map.value.a.b", "base");
+                    }
+                });
+            }
+        }
+
+        private static void AuthoredMapConsumersStillLocalize()
+        {
+            WithDataAssetLocalizationExport(DataAssetLocalizationExport(), (_, project) =>
+            {
+                AssertMapConsumerText(project, "Child map", ordinaryMap: true);
+                StoryFlowManager.Instance.SetLanguage("fr");
+                AssertMapConsumerText(project, "Carte enfant", ordinaryMap: true);
+            });
+        }
+
+        private static void DataAssetLocalizationOptOutIsInherited()
+        {
+            var export = DataAssetLocalizationExport();
+            foreach (var declaration in export["dataAssets"]["base"]["variables"])
+                declaration["localizable"] = false;
+            WithDataAssetLocalizationExport(export, (_, project) =>
+            {
+                StoryFlowManager.Instance.SetLanguage("fr");
+                AssertEqual("text.value", ReadLocalizedDataAsset("base", "text").GetString(), "opted-out declaration scalar stays literal");
+                AssertEqual("array.value.0", ReadLocalizedDataAsset("base", "array").ArrayValue[0].GetString(), "opted-out declaration array stays literal");
+                AssertEqual("map.value.a.b", ReadLocalizedDataAsset("base", "map").MapValue[0].Value.GetString(), "opted-out declaration map stays literal");
+                AssertEqual("data.child.text.value", ReadLocalizedDataAsset("leaf", "text").GetString(), "ancestor override inherits scalar opt-out");
+                AssertEqual("data.child.array.value.0", ReadLocalizedDataAsset("leaf", "array").ArrayValue[0].GetString(), "ancestor override inherits array opt-out");
+                AssertEqual("data.child.map.value.a.b", ReadLocalizedDataAsset("leaf", "map").MapValue[0].Value.GetString(), "ancestor override inherits map opt-out");
+            });
+        }
+
+        private static void DataAssetLegacyOverridesRemainLiteral()
+        {
+            foreach (var version in new object[] { 0, 1, 3, 2.1, "2", true })
+            {
+                var export = DataAssetLocalizationExport();
+                if (version is int number && number == 0) export.Remove("localizationVersion");
+                else export["localizationVersion"] = Newtonsoft.Json.Linq.JToken.FromObject(version);
+                WithDataAssetLocalizationExport(export, (_, project) =>
+                {
+                    StoryFlowManager.Instance.SetLanguage("fr");
+                    AssertEqual("Texte de base", ReadLocalizedDataAsset("base", "text").GetString(), "legacy declaration still localizes");
+                    AssertEqual("data.child.text.value", ReadLocalizedDataAsset("leaf", "text").GetString(), "legacy override scalar stays literal");
+                    AssertEqual("data.child.array.value.0", ReadLocalizedDataAsset("leaf", "array").ArrayValue[0].GetString(), "legacy override array stays literal");
+                    AssertEqual("data.child.map.value.a.b", ReadLocalizedDataAsset("leaf", "map").MapValue[0].Value.GetString(), "legacy override map stays literal");
+                });
+            }
+        }
+
+        private static void DataAssetLocalizationVersionReimport()
+        {
+            var export = DataAssetLocalizationExport();
+            export["localizationVersion"] = 1;
+            WithDataAssetLocalizationExport(export, (buildDirectory, project) =>
+            {
+                foreach (var version in new[] { 2, 1, 2, 0 })
+                {
+                    var previousHash = project.ImportedSourceHash;
+                    if (version == 0) export.Remove("localizationVersion");
+                    else export["localizationVersion"] = version;
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(buildDirectory, "data-assets.json"), export.ToString());
+                    var reimported = StoryFlow.Editor.StoryFlowImporter.ImportProject(
+                        buildDirectory, "Assets/DataLocalization", out var report, force: false);
+                    AssertTrue(object.ReferenceEquals(project, reimported), "reimport updates the cached project asset");
+                    AssertTrue(!report.HasFailures && project.ImportedSourceHash != previousHash, "version-only changes invalidate the project hash");
+                    StoryFlowManager.Instance.SetProject(reimported);
+                    StoryFlowManager.Instance.SetLanguage("fr");
+                    AssertEqual(version == 2 ? "Texte enfant" : "data.child.text.value",
+                        ReadLocalizedDataAsset("leaf", "text").GetString(), "reimport applies current version including removed metadata");
+                }
+
+                export["localizationVersion"] = 2;
+                export["dataAssets"]["child"]["name"] = "Renamed child";
+                var declaration = export["dataAssets"]["base"]["variables"][0];
+                foreach (var localizable in new[] { false, true })
+                {
+                    declaration["localizable"] = localizable;
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(buildDirectory, "data-assets.json"), export.ToString());
+                    var reimported = StoryFlow.Editor.StoryFlowImporter.ImportProject(
+                        buildDirectory, "Assets/DataLocalization", out var report, force: false);
+                    AssertTrue(!report.HasFailures, "declaration setting reimports");
+                    StoryFlowManager.Instance.SetProject(reimported);
+                    StoryFlowManager.Instance.SetLanguage("fr");
+                    AssertEqual(localizable ? "Texte enfant" : "data.child.text.value",
+                        ReadLocalizedDataAsset("leaf", "text").GetString(), "declaration setting survives reimport and seed copying after rename");
+                }
+            });
         }
 
         static StoryFlowScriptAsset.SerializedNode DaN(string id, StoryFlowNodeType type, params (string, string)[] data)
