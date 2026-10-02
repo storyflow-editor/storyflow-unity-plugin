@@ -13,6 +13,7 @@ namespace StoryFlow.Tests
         {
             RunLocalizationHardeningTests();
             RunDataReferenceTests();
+            RunScriptNestingTests();
             return failures == 0 ? 0 : 1;
         }
 

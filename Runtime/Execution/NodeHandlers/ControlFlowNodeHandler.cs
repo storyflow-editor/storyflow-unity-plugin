@@ -197,10 +197,10 @@ namespace StoryFlow.Execution.NodeHandlers
             }
 
             // Check call stack depth
-            if (context.CallStackDepth >= StoryFlowExecutionContext.MaxCallDepth)
+            if (context.CallStackDepth >= context.ScriptNestingLimit)
             {
-                Debug.LogError($"[StoryFlow] Call stack overflow: max depth {StoryFlowExecutionContext.MaxCallDepth} exceeded.");
-                component.BroadcastError("Call stack overflow: too many nested script calls.");
+                Debug.LogError($"[StoryFlow] Call stack overflow: max depth {context.ScriptNestingLimit} exceeded.");
+                component.BroadcastError($"Call stack overflow: maximum script nesting of {context.ScriptNestingLimit} exceeded.");
                 return;
             }
 

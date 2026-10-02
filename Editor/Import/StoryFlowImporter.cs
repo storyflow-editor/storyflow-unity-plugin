@@ -881,6 +881,8 @@ namespace StoryFlow.Editor
                 projectAsset.ApiVersion = apiVersion;
                 projectAsset.Title = title;
                 projectAsset.Description = description;
+                // Always assign: reimporting an older export must clear any previous custom limit.
+                projectAsset.MaxScriptNesting = ParseMaxScriptNesting(metadata?["maxScriptNesting"]);
                 // Resolve startup script reference from imported scripts
                 projectAsset.StartupScript = null;
                 if (!string.IsNullOrEmpty(startupScript))
@@ -2496,7 +2498,19 @@ namespace StoryFlow.Editor
         /// </summary>
         // Version 6 adds the Data variable type and its complete node family.
         // Version 7 persists Data Asset override localization and declaration opt-out metadata.
-        private const string ParseSchemaVersion = "7";
+        // Version 8 persists the project's maximum script nesting setting.
+        private const string ParseSchemaVersion = "8";
+
+        private static int ParseMaxScriptNesting(JToken value)
+        {
+            if (value != null && (value.Type == JTokenType.Integer || value.Type == JTokenType.Float)
+                && double.TryParse(value.ToString(Newtonsoft.Json.Formatting.None), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var limit)
+                && limit >= 1 && limit <= 100 && Math.Truncate(limit) == limit)
+                return (int)limit;
+
+            return StoryFlowProjectAsset.DefaultMaxScriptNesting;
+        }
 
         /// <summary>
         /// Test seam: the harness advances this to stand in for a plugin upgrade whose parser

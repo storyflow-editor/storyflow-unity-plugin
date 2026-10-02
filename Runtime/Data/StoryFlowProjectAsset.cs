@@ -6,11 +6,16 @@ namespace StoryFlow.Data
 {
     public class StoryFlowProjectAsset : ScriptableObject
     {
+        public const int DefaultMaxScriptNesting = 20;
+
         [Header("Metadata")]
         public string Version;
         public string ApiVersion;
         public string Title;
         public string Description;
+
+        /// <summary>Maximum nested RunScript calls. Legacy projects default to 20.</summary>
+        public int MaxScriptNesting = DefaultMaxScriptNesting;
 
         /// <summary>
         /// SHA-256 of project.json, global-variables.json and characters.json together with

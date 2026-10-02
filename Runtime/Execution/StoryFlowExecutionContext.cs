@@ -17,7 +17,8 @@ namespace StoryFlow.Execution
         // Constants
         // =====================================================================
 
-        public const int MaxCallDepth = 20;
+        // Kept as the legacy default for API compatibility. Runtime checks use ScriptNestingLimit.
+        public const int MaxCallDepth = StoryFlowProjectAsset.DefaultMaxScriptNesting;
         public const int MaxFlowDepth = 50;
         public const int MaxEvaluationDepth = 100;
         public const int MaxProcessingDepth = 1000;
@@ -31,6 +32,10 @@ namespace StoryFlow.Execution
 
         /// <summary>The project asset that owns all scripts and global data.</summary>
         public StoryFlowProjectAsset Project { get; set; }
+
+        /// <summary>The configured script limit, with a legacy fallback for invalid serialized assets.</summary>
+        public int ScriptNestingLimit => Project != null && Project.MaxScriptNesting >= 1 && Project.MaxScriptNesting <= 100
+            ? Project.MaxScriptNesting : MaxCallDepth;
 
         /// <summary>ID of the node currently being processed or waiting at.</summary>
         public string CurrentNodeId { get; set; }
@@ -787,9 +792,9 @@ namespace StoryFlow.Execution
         /// </summary>
         public bool PushCallFrame(string returnNodeId)
         {
-            if (callStack.Count >= MaxCallDepth)
+            if (callStack.Count >= ScriptNestingLimit)
             {
-                Debug.LogWarning($"[StoryFlow] Call stack overflow: max depth {MaxCallDepth} exceeded.");
+                Debug.LogWarning($"[StoryFlow] Call stack overflow: max depth {ScriptNestingLimit} exceeded.");
                 return false;
             }
 
