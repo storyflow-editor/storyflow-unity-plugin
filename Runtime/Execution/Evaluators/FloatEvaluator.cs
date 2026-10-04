@@ -136,10 +136,10 @@ namespace StoryFlow.Execution
                     float b = EvaluatorHelpers.EvaluateFloatInput2(ctx, node);
                     float min = Mathf.Min(a, b);
                     float max = Mathf.Max(a, b);
-                    // Unity Random.Range(float,float) is exclusive on max.
+                    // Unity ctx.RandomRange(float,float) is exclusive on max.
                     // Other runtimes (Editor/Godot/Unreal) are inclusive.
                     // Difference is one ULP — negligible in practice.
-                    return Random.Range(min, max);
+                    return ctx.RandomRange(min, max);
                 }
 
                 case StoryFlowNodeType.IntToFloat:
@@ -169,7 +169,7 @@ namespace StoryFlow.Execution
                 {
                     var arr = ArrayEvaluator.EvaluateFloatArray(ctx, node.Id, StoryFlowHandles.In_FloatArray);
                     if (arr == null || arr.Count == 0) return 0f;
-                    int idx = Random.Range(0, arr.Count);
+                    int idx = ctx.RandomRange(0, arr.Count);
                     return arr[idx].GetFloat();
                 }
 

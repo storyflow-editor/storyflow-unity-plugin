@@ -16,7 +16,7 @@ namespace StoryFlow
     [AddComponentMenu("StoryFlow/StoryFlow Manager")]
     [DefaultExecutionOrder(-100)]
     [DisallowMultipleComponent]
-    public class StoryFlowManager : MonoBehaviour
+    public partial class StoryFlowManager : MonoBehaviour
     {
         public static StoryFlowManager Instance { get; private set; }
 
@@ -187,14 +187,17 @@ namespace StoryFlow
         /// </summary>
         public void SetProject(StoryFlowProjectAsset project)
         {
-            if (project == null)
+            using (BeginContentUpdate(Project))
             {
-                Debug.LogWarning("[StoryFlow] SetProject called with null project.");
-                return;
-            }
+                if (project == null)
+                {
+                    Debug.LogWarning("[StoryFlow] SetProject called with null project.");
+                    return;
+                }
 
-            Project = project;
-            InitializeProject();
+                Project = project;
+                InitializeProject();
+            }
         }
 
         /// <summary>
@@ -492,6 +495,7 @@ namespace StoryFlow
         /// </summary>
         public bool SetDataAssetArrayVariable(StoryFlowDataAssetAsset asset, string variableName, List<StoryFlowVariant> elements)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetArray(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, elements);
         }
@@ -504,6 +508,7 @@ namespace StoryFlow
         public bool SetDataAssetMapVariable(StoryFlowDataAssetAsset asset, string variableName,
             List<StoryFlowVariant> keys, List<StoryFlowVariant> values)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetMap(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, keys, values);
         }
@@ -531,6 +536,7 @@ namespace StoryFlow
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
         public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetBool(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
@@ -538,6 +544,7 @@ namespace StoryFlow
         /// <summary>Writes an integer .sfd variable.</summary>
         public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetInt(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
@@ -545,6 +552,7 @@ namespace StoryFlow
         /// <summary>Writes a float .sfd variable.</summary>
         public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetFloat(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
@@ -555,6 +563,7 @@ namespace StoryFlow
         /// </summary>
         public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetString(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
@@ -562,6 +571,7 @@ namespace StoryFlow
         /// <summary>Writes an enum .sfd variable by value name.</summary>
         public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
+            using var mutation = BeginHostMutation();
             return StoryFlowDataAssetAccess.SetEnum(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value);
         }
@@ -702,6 +712,7 @@ namespace StoryFlow
         /// </summary>
         public void SetCharacterVariableById(string characterId, string variableName, StoryFlowVariant value)
         {
+            using var mutation = BeginHostMutation();
             var character = GetCharacterById(characterId, out var found);
             if (!found)
             {
@@ -1171,6 +1182,7 @@ namespace StoryFlow
         /// </summary>
         public void ResetGlobalVariables()
         {
+            using var mutation = BeginHostMutation();
             if (Project == null)
             {
                 Debug.LogWarning("[StoryFlow] Cannot reset global variables: no project assigned.");
@@ -1186,6 +1198,7 @@ namespace StoryFlow
         /// </summary>
         public void ResetRuntimeCharacters()
         {
+            using var mutation = BeginHostMutation();
             if (Project == null)
             {
                 Debug.LogWarning("[StoryFlow] Cannot reset runtime characters: no project assigned.");
@@ -1201,6 +1214,7 @@ namespace StoryFlow
         /// </summary>
         public void ResetAllState()
         {
+            using var mutation = BeginHostMutation();
             if (Project == null)
             {
                 Debug.LogWarning("[StoryFlow] Cannot reset state: no project assigned.");
@@ -1224,6 +1238,7 @@ namespace StoryFlow
         public void NotifyDialogueStarted()
         {
             _activeDialogueCount++;
+            if (_activeDialogueCount > 1) InvalidateRollback("multipleSessions");
         }
 
         /// <summary>Called by StoryFlowComponent when a dialogue session ends.</summary>

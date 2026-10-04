@@ -242,6 +242,7 @@ namespace StoryFlow.Data
         DataAssetArrayContains,
         FindInDataAssetArray,
         ForEachDataAssetLoop,
+        BlockRollback,
     }
 
     public enum StoryFlowVariableType

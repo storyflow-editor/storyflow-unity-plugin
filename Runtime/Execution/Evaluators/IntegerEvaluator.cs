@@ -137,7 +137,7 @@ namespace StoryFlow.Execution
                     int b = EvaluatorHelpers.EvaluateIntegerInput2(ctx, node);
                     int min = Mathf.Min(a, b);
                     int max = Mathf.Max(a, b);
-                    return Random.Range(min, max + 1);
+                    return ctx.RandomRange(min, max + 1);
                 }
 
                 case StoryFlowNodeType.StringToInt:
@@ -300,7 +300,7 @@ namespace StoryFlow.Execution
                 {
                     var arr = ArrayEvaluator.EvaluateIntArray(ctx, node.Id, StoryFlowHandles.In_IntArray);
                     if (arr == null || arr.Count == 0) return 0;
-                    int idx = Random.Range(0, arr.Count);
+                    int idx = ctx.RandomRange(0, arr.Count);
                     return arr[idx].GetInt();
                 }
 

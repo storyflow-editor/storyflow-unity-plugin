@@ -6,6 +6,7 @@ namespace StoryFlow.Data
 {
     public class StoryFlowProjectAsset : ScriptableObject
     {
+        public StoryFlowRollbackSettings DialogueRollback = new StoryFlowRollbackSettings();
         public const int DefaultMaxScriptNesting = 20;
 
         [Header("Metadata")]

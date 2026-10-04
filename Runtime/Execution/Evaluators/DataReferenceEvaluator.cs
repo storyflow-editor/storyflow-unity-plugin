@@ -55,7 +55,7 @@ namespace StoryFlow.Execution
                     case StoryFlowNodeType.GetRandomDataAssetArrayElement:
                         var array = ArrayEvaluator.EvaluateTypedArray(ctx, node.Id, "dataAsset-array", StoryFlowVariableType.DataAsset);
                         int index = node.Type == StoryFlowNodeType.GetRandomDataAssetArrayElement
-                            ? UnityEngine.Random.Range(0, array.Count)
+                            ? ctx.RandomRange(0, array.Count)
                             : StoryFlowEvaluator.EvaluateIntegerWithDefault(ctx, node.Id, "integer", node.GetDataInt("value"));
                         if (index >= 0 && index < array.Count) value = array[index];
                         break;

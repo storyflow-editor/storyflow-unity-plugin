@@ -40,6 +40,7 @@ namespace StoryFlow.Execution.NodeHandlers
             // ================================================================
             // Control Flow
             // ================================================================
+            Handlers[StoryFlowNodeType.BlockRollback] = (component, node) => component.HandleRollbackBarrier(node);
             Handlers[StoryFlowNodeType.Start] = ControlFlowNodeHandler.HandleStart;
             Handlers[StoryFlowNodeType.End] = ControlFlowNodeHandler.HandleEnd;
             Handlers[StoryFlowNodeType.RunScript] = ControlFlowNodeHandler.HandleRunScript;

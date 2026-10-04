@@ -11,7 +11,7 @@ namespace StoryFlow.Execution
     /// One instance per StoryFlowComponent. Manages script switching, variable lookup,
     /// call/flow stacks, loop contexts, and per-node evaluation caching.
     /// </summary>
-    public class StoryFlowExecutionContext
+    public partial class StoryFlowExecutionContext
     {
         // =====================================================================
         // Constants
@@ -839,6 +839,13 @@ namespace StoryFlow.Execution
 
             callStack.Add(frame);
 
+            frame.SavedLoopStack.AddRange(loopStack);
+            foreach (var pair in nodeRuntimeStates) frame.SavedNodeStates.Add(pair.Key, pair.Value);
+            frame.SavedLastDialogueNodeId = LastDialogueNodeId;
+            loopStack.Clear();
+            nodeRuntimeStates.Clear();
+            LastDialogueNodeId = null;
+
             // Clear flow stack for the new script context
             flowCallStack.Clear();
 
@@ -855,6 +862,12 @@ namespace StoryFlow.Execution
 
             var frame = callStack[callStack.Count - 1];
             callStack.RemoveAt(callStack.Count - 1);
+
+            loopStack.Clear();
+            loopStack.AddRange(frame.SavedLoopStack);
+            nodeRuntimeStates.Clear();
+            foreach (var pair in frame.SavedNodeStates) nodeRuntimeStates.Add(pair.Key, pair.Value);
+            LastDialogueNodeId = frame.SavedLastDialogueNodeId;
 
             // Restore flow call stack
             flowCallStack.Clear();
@@ -895,6 +908,8 @@ namespace StoryFlow.Execution
                 }
                 localVariables[kvp.Key] = copy;
             }
+
+            ClearDerivedNodeCaches();
 
             // Invalidate name index since we swapped local variables
             localVariableNameIndex = null;

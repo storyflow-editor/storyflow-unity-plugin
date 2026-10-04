@@ -288,6 +288,15 @@ namespace StoryFlow.Lipsync
             if (_smoothed != null) Array.Clear(_smoothed, 0, _smoothed.Length);
         }
 
+        // Restored, fully revealed dialogue releases its pose synchronously, including at zero delta time.
+        internal void ResetPose()
+        {
+            ResetLevel();
+            Centroid = 0f;
+            ClearTarget();
+            Array.Clear(_weights, 0, _weights.Length);
+        }
+
         // 7. the vowel axis, and 8. the closing breath.
         private void BuildAxisPose(float centroid, float amp, float gate)
         {

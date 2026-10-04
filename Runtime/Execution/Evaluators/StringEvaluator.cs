@@ -163,7 +163,7 @@ namespace StoryFlow.Execution
                 {
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, StoryFlowHandles.In_StringArray);
                     if (arr == null || arr.Count == 0) return "";
-                    int idx = Random.Range(0, arr.Count);
+                    int idx = ctx.RandomRange(0, arr.Count);
                     ctx.GetNodeRuntimeState(node.Id).CachedOutput = new StoryFlowVariant(arr[idx]);
                     return ctx.ResolveArrayString(arr[idx]);
                 }
@@ -242,7 +242,7 @@ namespace StoryFlow.Execution
                     string arraySuffix = EvaluatorHelpers.GetArrayHandleSuffix(node.Type);
                     var arr = ArrayEvaluator.EvaluateStringArray(ctx, node.Id, arraySuffix);
                     if (arr == null || arr.Count == 0) return "";
-                    int idx = Random.Range(0, arr.Count);
+                    int idx = ctx.RandomRange(0, arr.Count);
                     return arr[idx].GetString();
                 }
 

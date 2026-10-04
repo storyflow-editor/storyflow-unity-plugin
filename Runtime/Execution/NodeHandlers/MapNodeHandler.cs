@@ -207,6 +207,8 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(keyType) || string.IsNullOrEmpty(valueType))
             {
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopCompleted);
+                if (context.NextNode == null && context.PeekLoop() != null)
+                    ArrayNodeHandler.ContinueForEachLoop(component, context.PeekLoop().NodeId);
                 return;
             }
 
@@ -260,6 +262,8 @@ namespace StoryFlow.Execution.NodeHandlers
 
                 // Follow completed edge
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopCompleted);
+                if (context.NextNode == null && context.PeekLoop() != null)
+                    ArrayNodeHandler.ContinueForEachLoop(component, context.PeekLoop().NodeId);
             }
         }
 

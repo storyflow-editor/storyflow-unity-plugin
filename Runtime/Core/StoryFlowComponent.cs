@@ -32,7 +32,7 @@ namespace StoryFlow
     /// </summary>
     [AddComponentMenu("StoryFlow/StoryFlow Component")]
     [DisallowMultipleComponent]
-    public class StoryFlowComponent : MonoBehaviour
+    public partial class StoryFlowComponent : MonoBehaviour
     {
         // =====================================================================
         // Inspector Fields
@@ -271,11 +271,14 @@ namespace StoryFlow
 
         private void StartDialogueInternal(StoryFlowScriptAsset script)
         {
+            var generation = ++dialogueLifecycleGeneration;
             // If a dialogue is already active, stop it first
             if (_isDialogueActive)
             {
                 Debug.LogWarning("[StoryFlow] Starting new dialogue while one is already active. Stopping previous dialogue.");
                 StopDialogue();
+                if (dialogueLifecycleGeneration != generation + 1 || _isDialogueActive) return;
+                generation = dialogueLifecycleGeneration;
             }
 
             var manager = StoryFlowManager.Instance;
@@ -306,23 +309,32 @@ namespace StoryFlow
             _context.IsExecuting = true;
 
             // Notify manager
+            dialogueSessionManager = manager;
             manager.NotifyDialogueStarted();
+            if (!IsCurrentDialogueSession(generation)) return;
+            BeginRollback(manager);
+            if (!IsCurrentDialogueSession(generation)) return;
 
             // Auto-create fallback UI if none assigned (unless explicitly disabled via UIStyle = None)
             if (DialogueUI == null && UIStyle != BuiltInUIStyle.None)
             {
                 CreateFallbackUI();
             }
+            if (!IsCurrentDialogueSession(generation)) return;
 
             // Auto-initialize UI binding if not already bound
             if (DialogueUI != null && !DialogueUI.IsBoundTo(this))
                 DialogueUI.InitializeWithComponent(this);
+            if (!IsCurrentDialogueSession(generation)) return;
 
             // Fire events (after UI is created and bound so it receives them)
             OnDialogueStarted?.Invoke();
+            if (!IsCurrentDialogueSession(generation)) return;
             OnDialogueStartedEvent?.Invoke();
+            if (!IsCurrentDialogueSession(generation)) return;
 
             NotifyScriptStarted(script.ScriptPath);
+            if (!IsCurrentDialogueSession(generation)) return;
 
             // Begin execution from the start node
             var startNode = script.GetNode(script.StartNodeId ?? "0");
@@ -335,6 +347,7 @@ namespace StoryFlow
 
             ProcessNode(startNode);
         }
+        private bool IsCurrentDialogueSession(ulong generation) => _isDialogueActive && dialogueLifecycleGeneration == generation;
 
         /// <summary>
         /// Selects a dialogue option by its ID, advancing execution along the option's edge.
@@ -358,6 +371,14 @@ namespace StoryFlow
                 Debug.LogWarning("[StoryFlow] SelectOption called with null or empty option ID.");
                 return;
             }
+
+            var inputGeneration = dialogueLifecycleGeneration;
+            var inputEntry = DialogueEntrySerial;
+            var inputContext = _context;
+            var inputOwner = rollback;
+            inputOwner?.BeforeLeave();
+            if (!IsCurrentDialogueSession(inputGeneration) || DialogueEntrySerial != inputEntry ||
+                !ReferenceEquals(_context, inputContext) || !ReferenceEquals(rollback, inputOwner) || !_context.IsWaitingForInput) return;
 
             // Check if this option is once-only and mark it
             if (_context.CurrentDialogueState?.Options != null)
@@ -430,6 +451,13 @@ namespace StoryFlow
                 _audioAdvanceAllowSkip = false;
             }
 
+            var inputGeneration = dialogueLifecycleGeneration;
+            var inputEntry = DialogueEntrySerial;
+            var inputContext = _context;
+            var inputOwner = rollback;
+            inputOwner?.BeforeLeave();
+            if (!IsCurrentDialogueSession(inputGeneration) || DialogueEntrySerial != inputEntry ||
+                !ReferenceEquals(_context, inputContext) || !ReferenceEquals(rollback, inputOwner) || !_context.IsWaitingForInput) return;
             _context.IsWaitingForInput = false;
             _context.ShouldPause = false;
 
@@ -456,6 +484,8 @@ namespace StoryFlow
         /// </summary>
         public void StopDialogue()
         {
+            var generation = ++dialogueLifecycleGeneration;
+            mediaGeneration++;
             if (!_isDialogueActive)
                 return;
 
@@ -476,10 +506,12 @@ namespace StoryFlow
             }
 
             // Notify manager
-            StoryFlowManager.Instance?.NotifyDialogueEnded();
+            EndRollback();
+            if (dialogueLifecycleGeneration != generation) return;
 
             // Fire events
             OnDialogueEnded?.Invoke();
+            if (dialogueLifecycleGeneration != generation) return;
             OnDialogueEndedEvent?.Invoke();
         }
 
@@ -525,14 +557,16 @@ namespace StoryFlow
         /// </summary>
         public Coroutine PauseExecutionFor(float seconds)
         {
+            BlockRollback("hostDelay");
             PauseExecution();
             return StartCoroutine(ResumeAfterDelay(seconds));
         }
 
         private IEnumerator ResumeAfterDelay(float seconds)
         {
+            var generation = mediaGeneration;
             yield return new WaitForSeconds(seconds);
-            ResumeExecution();
+            if (generation == mediaGeneration) ResumeExecution();
         }
 
         // =====================================================================
@@ -758,6 +792,7 @@ namespace StoryFlow
         /// <summary>Sets a boolean variable by its display name. When global is true, targets only global scope.</summary>
         public void SetBoolVariable(string name, bool value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindVariableByName(name, global);
             if (v != null)
             {
@@ -781,6 +816,7 @@ namespace StoryFlow
         /// <summary>Sets an integer variable by its display name. When global is true, targets only global scope.</summary>
         public void SetIntVariable(string name, int value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindVariableByName(name, global);
             if (v != null)
             {
@@ -804,6 +840,7 @@ namespace StoryFlow
         /// <summary>Sets a float variable by its display name. When global is true, targets only global scope.</summary>
         public void SetFloatVariable(string name, float value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindVariableByName(name, global);
             if (v != null)
             {
@@ -828,6 +865,7 @@ namespace StoryFlow
         /// <summary>Sets a string variable by its display name. When global is true, targets only global scope.</summary>
         public void SetStringVariable(string name, string value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindVariableByName(name, global);
             if (v != null)
             {
@@ -851,6 +889,7 @@ namespace StoryFlow
         /// <summary>Sets an enum variable by its display name. When global is true, targets only global scope.</summary>
         public void SetEnumVariable(string name, string value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindVariableByName(name, global);
             if (v != null)
             {
@@ -908,6 +947,7 @@ namespace StoryFlow
         /// </summary>
         public void SetCharacterVariable(string charPath, string varName, StoryFlowVariant value)
         {
+            using var mutation = BeforeHostMutation();
             var characterData = FindCharacter(charPath);
             if (characterData == null)
             {
@@ -1066,6 +1106,7 @@ namespace StoryFlow
         /// </summary>
         public void SetCharacterVariableById(string characterId, string variableName, StoryFlowVariant value)
         {
+            using var mutation = BeforeHostMutation();
             SetCharacterVariable(characterId, variableName, value);
         }
 
@@ -1155,6 +1196,7 @@ namespace StoryFlow
         /// </summary>
         public bool SetDataAssetArrayVariable(StoryFlowDataAssetAsset asset, string variableName, List<StoryFlowVariant> elements)
         {
+            using var mutation = BeforeHostMutation();
             return StoryFlowDataAssetAccess.SetArray(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, elements);
         }
@@ -1167,6 +1209,7 @@ namespace StoryFlow
         public bool SetDataAssetMapVariable(StoryFlowDataAssetAsset asset, string variableName,
             List<StoryFlowVariant> keys, List<StoryFlowVariant> values)
         {
+            using var mutation = BeforeHostMutation();
             return StoryFlowDataAssetAccess.SetMap(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, keys, values);
         }
@@ -1194,6 +1237,7 @@ namespace StoryFlow
         /// <summary>Writes a boolean .sfd variable at the referenced asset's own level.</summary>
         public bool SetDataAssetBool(StoryFlowDataAssetAsset asset, string variableName, bool value)
         {
+            using var mutation = BeforeHostMutation();
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetBool(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
@@ -1201,6 +1245,7 @@ namespace StoryFlow
         /// <summary>Writes an integer .sfd variable.</summary>
         public bool SetDataAssetInt(StoryFlowDataAssetAsset asset, string variableName, int value)
         {
+            using var mutation = BeforeHostMutation();
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetInt(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
@@ -1208,6 +1253,7 @@ namespace StoryFlow
         /// <summary>Writes a float .sfd variable.</summary>
         public bool SetDataAssetFloat(StoryFlowDataAssetAsset asset, string variableName, float value)
         {
+            using var mutation = BeforeHostMutation();
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetFloat(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
@@ -1218,6 +1264,7 @@ namespace StoryFlow
         /// </summary>
         public bool SetDataAssetString(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
+            using var mutation = BeforeHostMutation();
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetString(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
@@ -1225,6 +1272,7 @@ namespace StoryFlow
         /// <summary>Writes an enum .sfd variable by value name.</summary>
         public bool SetDataAssetEnum(StoryFlowDataAssetAsset asset, string variableName, string value)
         {
+            using var mutation = BeforeHostMutation();
             return AfterDataAssetWrite(StoryFlowDataAssetAccess.SetEnum(
                 GetDataAssetStore(), DataAssetRefusals, GetCharacterStore(), asset, variableName, value));
         }
@@ -1951,6 +1999,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetStringToBoolMap(string variableName, Dictionary<string, bool> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetStringToBoolMap), variableName, global);
             if (v == null) return;
             if (!IsStringKeyFamily(v))
@@ -1984,6 +2033,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetStringToIntMap(string variableName, Dictionary<string, int> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetStringToIntMap), variableName, global);
             if (v == null) return;
             if (!IsStringKeyFamily(v))
@@ -2017,6 +2067,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetStringToFloatMap(string variableName, Dictionary<string, float> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetStringToFloatMap), variableName, global);
             if (v == null) return;
             if (!IsStringKeyFamily(v))
@@ -2057,6 +2108,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetStringToStringMap(string variableName, Dictionary<string, string> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetStringToStringMap), variableName, global);
             if (v == null) return;
             if (!IsStringKeyFamily(v))
@@ -2094,6 +2146,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetIntToBoolMap(string variableName, Dictionary<int, bool> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetIntToBoolMap), variableName, global);
             if (v == null) return;
             if (v.KeyType != StoryFlowVariableType.Integer)
@@ -2126,6 +2179,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetIntToIntMap(string variableName, Dictionary<int, int> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetIntToIntMap), variableName, global);
             if (v == null) return;
             if (v.KeyType != StoryFlowVariableType.Integer)
@@ -2158,6 +2212,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetIntToFloatMap(string variableName, Dictionary<int, float> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetIntToFloatMap), variableName, global);
             if (v == null) return;
             if (v.KeyType != StoryFlowVariableType.Integer)
@@ -2192,6 +2247,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetIntToStringMap(string variableName, Dictionary<int, string> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var v = FindMapVariableForAccess(nameof(SetIntToStringMap), variableName, global);
             if (v == null) return;
             if (v.KeyType != StoryFlowVariableType.Integer)
@@ -2295,6 +2351,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetBoolArrayVariable(string variableName, List<bool> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2334,6 +2391,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetIntArrayVariable(string variableName, List<int> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2373,6 +2431,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetFloatArrayVariable(string variableName, List<float> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2419,6 +2478,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetStringArrayVariable(string variableName, List<string> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2464,6 +2524,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetEnumArrayVariable(string variableName, List<string> values, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2504,6 +2565,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetImageArrayVariable(string variableName, List<string> assetKeys, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2544,6 +2606,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetAudioArrayVariable(string variableName, List<string> assetKeys, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2584,6 +2647,7 @@ namespace StoryFlow
         /// </remarks>
         public void SetCharacterArrayVariable(string variableName, List<string> characterPaths, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2623,6 +2687,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddBoolArrayElement(string variableName, bool value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2657,6 +2722,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddIntArrayElement(string variableName, int value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2691,6 +2757,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddFloatArrayElement(string variableName, float value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2732,6 +2799,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddStringArrayElement(string variableName, string value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2772,6 +2840,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddEnumArrayElement(string variableName, string value, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2807,6 +2876,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddImageArrayElement(string variableName, string assetKey, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2842,6 +2912,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddAudioArrayElement(string variableName, string assetKey, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2877,6 +2948,7 @@ namespace StoryFlow
         /// </remarks>
         public void AddCharacterArrayElement(string variableName, string characterPath, bool global = false)
         {
+            using var mutation = BeforeHostMutation();
             var variable = FindVariableByName(variableName, global);
             if (variable == null)
             {
@@ -2930,6 +3002,7 @@ namespace StoryFlow
         /// </summary>
         public void ResetVariables()
         {
+            using var mutation = BeforeHostMutation();
             _context?.ClearNodeRuntimeStates();
 
             // Re-initialize local variables from the current script
@@ -2968,6 +3041,13 @@ namespace StoryFlow
         /// (dialogue waiting, end reached, error) or no next node is set.
         /// </summary>
         internal void ProcessNode(StoryFlowNode node)
+        {
+            var controller = rollback;
+            controller?.EnterExecution();
+            try { ProcessNodeCore(node); } finally { controller?.ExitExecution(); }
+        }
+
+        private void ProcessNodeCore(StoryFlowNode node)
         {
             if (node == null)
             {
@@ -3096,6 +3176,11 @@ namespace StoryFlow
         {
             if (_context?.CurrentDialogueState == null) return;
 
+            if (IsCurrentDialogueRestored)
+            {
+                _context.CurrentDialogueState.AudioAdvanceOnEnd = false;
+                _context.CurrentDialogueState.AudioAllowSkip = false;
+            }
             OnDialogueUpdated?.Invoke(_context.CurrentDialogueState);
             OnDialogueUpdatedEvent?.Invoke(_context.CurrentDialogueState);
         }
@@ -3348,6 +3433,8 @@ namespace StoryFlow
             // Clear all C# event subscribers to prevent memory leaks
             OnDialogueStarted = null;
             OnDialogueUpdated = null;
+            OnDialogueRestored = null;
+            OnRollbackAvailabilityChanged = null;
             OnDialogueTagReached = null;
             OnDialogueEnded = null;
             OnVariableChanged = null;

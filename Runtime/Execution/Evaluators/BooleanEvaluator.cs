@@ -349,7 +349,7 @@ namespace StoryFlow.Execution
                 {
                     var arr = ArrayEvaluator.EvaluateBoolArray(ctx, node.Id, StoryFlowHandles.In_BoolArray);
                     if (arr == null || arr.Count == 0) return false;
-                    int idx = Random.Range(0, arr.Count);
+                    int idx = ctx.RandomRange(0, arr.Count);
                     return arr[idx].GetBool();
                 }
 

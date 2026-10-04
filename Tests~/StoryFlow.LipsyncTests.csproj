@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <LangVersion>9.0</LangVersion>
+    <DefineConstants>$(DefineConstants);STORYFLOW_ROLLBACK_TESTS</DefineConstants>
     <OutputType>Exe</OutputType>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>

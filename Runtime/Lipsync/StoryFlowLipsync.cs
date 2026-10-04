@@ -196,6 +196,7 @@ namespace StoryFlow.Lipsync
             _boundSource = Source;
             _boundSource.OnDialogueUpdated += HandleDialogueUpdated;
             _boundSource.OnDialogueEnded += HandleDialogueEnded;
+            _boundSource.OnDialogueRestored += HandleDialogueRestored;
 
             // A line may already be on screen — this component was enabled mid-dialogue, or its actor was
             // spawned by the line itself. Without this it waits for the next one with a dead face.
@@ -212,6 +213,7 @@ namespace StoryFlow.Lipsync
             {
                 _boundSource.OnDialogueUpdated -= HandleDialogueUpdated;
                 _boundSource.OnDialogueEnded -= HandleDialogueEnded;
+                _boundSource.OnDialogueRestored -= HandleDialogueRestored;
             }
             _boundSource = null;
         }
@@ -414,6 +416,11 @@ namespace StoryFlow.Lipsync
 
         private void HandleDialogueUpdated(StoryFlowDialogueState state)
         {
+            if (_boundSource != null && _boundSource.IsCurrentDialogueRestored)
+            {
+                HandleDialogueRestored(state);
+                return;
+            }
             if (state == null)
             {
                 StopLipsync();
@@ -473,6 +480,19 @@ namespace StoryFlow.Lipsync
                 _speaking = null;
                 _lineClip = null;
             }
+        }
+
+        private void HandleDialogueRestored(StoryFlowDialogueState state)
+        {
+            // Manual host playback remains independent. Automatic playback must release even an
+            // audible tail, and then surrender shape writes until a fresh dialogue entry arrives.
+            // Notification delivery is reentrant: an earlier listener can advance, restart or
+            // rebind this face before our turn. Only the currently restored entry is ours to release.
+            if (_manual || _boundSource == null || _boundSource != Source || !_boundSource.IsCurrentDialogueRestored) return;
+            StopLipsync();
+            _driver?.ResetPose();
+            if (!_atRest) ZeroOwnedShapes();
+            _atRest = true;
         }
 
         /// <summary>

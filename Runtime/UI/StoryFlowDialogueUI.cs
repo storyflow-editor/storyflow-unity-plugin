@@ -1,5 +1,7 @@
+using System;
 using StoryFlow.Data;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace StoryFlow.UI
 {
@@ -11,6 +13,33 @@ namespace StoryFlow.UI
     public abstract class StoryFlowDialogueUI : MonoBehaviour, IStoryFlowDialogueUI
     {
         protected StoryFlowComponent storyFlowComponent;
+
+        [Tooltip("Optional reusable Back button. Leave empty to keep the existing dialogue controls.")]
+        public Button backButton;
+        private Button boundBackButton;
+        private bool authorAllowsBack;
+        private Action<StoryFlowDialogueState> restoredHandler;
+        private ulong bindingSerial;
+
+        /// <summary>Changes the author's Back permission without overriding history availability.</summary>
+        public void SetBackAllowed(bool allowed)
+        {
+            authorAllowsBack = allowed;
+            UpdateBackAvailability(default);
+        }
+
+        private void BindBackButton()
+        {
+            if (boundBackButton == backButton) return;
+            if (boundBackButton != null) boundBackButton.onClick.RemoveListener(GoBack);
+            boundBackButton = backButton;
+            if (boundBackButton == null) return;
+            authorAllowsBack = boundBackButton.interactable;
+            boundBackButton.onClick.AddListener(GoBack);
+        }
+        private void GoBack() { if (authorAllowsBack) storyFlowComponent?.GoBack(); }
+        private void UpdateBackAvailability(StoryFlowRollbackAvailability availability)
+        { if (boundBackButton != null) boundBackButton.interactable = authorAllowsBack && storyFlowComponent != null && storyFlowComponent.CanGoBack(); }
 
         /// <summary>
         /// Returns true if this UI is already bound to the given component.
@@ -34,17 +63,20 @@ namespace StoryFlow.UI
             }
 
             // Unsubscribe from previous component if switching
-            if (storyFlowComponent != null && storyFlowComponent != component)
+            if (storyFlowComponent != null)
             {
                 UnsubscribeFromComponent(storyFlowComponent);
             }
 
             storyFlowComponent = component;
             SubscribeToComponent(storyFlowComponent);
+            BindBackButton();
+            UpdateBackAvailability(component.GetRollbackAvailability());
         }
 
         protected virtual void OnDestroy()
         {
+            if (boundBackButton != null) boundBackButton.onClick.RemoveListener(GoBack);
             if (storyFlowComponent != null)
             {
                 UnsubscribeFromComponent(storyFlowComponent);
@@ -58,6 +90,14 @@ namespace StoryFlow.UI
             component.OnDialogueEnded += OnDialogueEnded;
             component.OnVariableChanged += OnVariableChanged;
             component.OnBackgroundImageChanged += OnBackgroundImageChanged;
+            component.OnRollbackAvailabilityChanged += UpdateBackAvailability;
+            var binding = ++bindingSerial;
+            restoredHandler = state => {
+                if (binding != bindingSerial || storyFlowComponent != component || !component.IsDialogueActive() ||
+                    !component.IsCurrentDialogueRestored || !ReferenceEquals(state, component.GetCurrentDialogue())) return;
+                HandleDialogueRestored(state);
+            };
+            component.OnDialogueRestored += restoredHandler;
         }
 
         private void UnsubscribeFromComponent(StoryFlowComponent component)
@@ -67,6 +107,10 @@ namespace StoryFlow.UI
             component.OnDialogueEnded -= OnDialogueEnded;
             component.OnVariableChanged -= OnVariableChanged;
             component.OnBackgroundImageChanged -= OnBackgroundImageChanged;
+            component.OnRollbackAvailabilityChanged -= UpdateBackAvailability;
+            component.OnDialogueRestored -= restoredHandler;
+            restoredHandler = null;
+            bindingSerial++;
         }
 
         // -------------------------------------------------------------------
@@ -81,6 +125,15 @@ namespace StoryFlow.UI
         /// This is the primary method to override for displaying dialogue content.
         /// </summary>
         public virtual void HandleDialogueUpdated(StoryFlowDialogueState state) { }
+
+        /// <summary>Optional presentation-only restore hook. No normal story events are replayed.</summary>
+        public virtual void HandleDialogueRestored(StoryFlowDialogueState state)
+        {
+            StopAllCoroutines();
+            HandleDialogueUpdated(state);
+            OnBackgroundImageChanged(storyFlowComponent?.GetContext()?.PersistentBackgroundImage);
+            UpdateBackAvailability(storyFlowComponent.GetRollbackAvailability());
+        }
 
         /// <summary>Called when dialogue execution finishes (end node reached or stopped).</summary>
         public virtual void OnDialogueEnded() { }

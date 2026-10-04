@@ -48,6 +48,14 @@ internal static class LipsyncComponentTests
         Run(nameof(RebindingAnInactiveSourcePreservesManualAudio), RebindingAnInactiveSourcePreservesManualAudio);
         Run(nameof(DestroyedDialogueSourceIsRediscovered), DestroyedDialogueSourceIsRediscovered);
         Run(nameof(DisableClosesTheOwnedMouth), DisableClosesTheOwnedMouth);
+        Run(nameof(BackReleasesAutomaticMouthUntilFreshSameNodeEntry), BackReleasesAutomaticMouthUntilFreshSameNodeEntry);
+        Run(nameof(RestoredLineStaysReleasedAfterEnableAndLateBinding), RestoredLineStaysReleasedAfterEnableAndLateBinding);
+        Run(nameof(BackReleasesAudioTailAndPendingAcquisition), BackReleasesAudioTailAndPendingAcquisition);
+        Run(nameof(BackPreservesManualAudio), BackPreservesManualAudio);
+        Run(nameof(FailedBackPreservesAutomaticOwnership), FailedBackPreservesAutomaticOwnership);
+        Run(nameof(AvailabilityCallbackStartsFreshEntry), AvailabilityCallbackStartsFreshEntry);
+        Run(nameof(EarlierRestoredListenerStartsFreshEntry), EarlierRestoredListenerStartsFreshEntry);
+        Run(nameof(AvailabilityCallbackRestartsSession), AvailabilityCallbackRestartsSession);
         Console.WriteLine($"{_passed} passed, {_failed} failed");
         return _failed == 0 ? 0 : 1;
     }
@@ -539,5 +547,141 @@ internal static class LipsyncComponentTests
         f.Speak();
         Call(f.Lip, "OnDisable");
         Require(f.Head.GetBlendShapeWeight(0) == 0, "disabling a speaking component must release its open jaw immediately");
+    }
+
+    private static StoryFlowScriptAsset StartRollbackLoop(Face f, AudioClip clip = null)
+    {
+        var script = Script("rollback.sfe", clip);
+        if (clip == null) script.SetNodes(new List<StoryFlowScriptAsset.SerializedNode>
+        { Node("0", StoryFlowNodeType.Start), Node("1", StoryFlowNodeType.Dialogue) });
+        InstallScripts(script);
+        StoryFlowManager.Instance.Project.DialogueRollback = new StoryFlowRollbackSettings { Enabled = true };
+        f.Source.StartDialogue(script);
+        f.Source.AdvanceDialogue();
+        Require(f.Source.CanGoBack(), "fixture must retain two real dialogue entries");
+        return script;
+    }
+
+    private static void BackReleasesAutomaticMouthUntilFreshSameNodeEntry()
+    {
+        using var f = new Face();
+        var script = StartRollbackLoop(f);
+        Tick(f.Lip, 90);
+        Require(f.Lip.IsLipsyncActive && f.Head.GetBlendShapeWeight(0) > 0, "text-only dialogue must animate before Back");
+        int normal = 0, restored = 0;
+        f.Source.OnDialogueUpdated += _ => normal++;
+        f.Source.OnDialogueRestored += _ => restored++;
+        Require(f.Source.GoBack().Ok, "real Back must succeed");
+        Require(!f.Lip.IsLipsyncActive && f.Head.GetBlendShapeWeight(0) == 0 && f.Lip.Level == 0,
+            "Back must release ownership and close the mouth synchronously");
+        Require(normal == 0 && restored == 1, "Back must emit only the dedicated restored event");
+        f.Head.SetBlendShapeWeight(0, 42f);
+        StoryFlow.Execution.NodeHandlers.DialogueNodeHandler.Handle(f.Source, script.GetNode("1"));
+        Tick(f.Lip, 180);
+        Require(!f.Lip.IsLipsyncActive && f.Head.GetBlendShapeWeight(0) == 42f, "restored redraw must surrender writes to host expressions");
+        f.Source.AdvanceDialogue(); Tick(f.Lip, 90);
+        Require(f.Lip.IsLipsyncActive && f.Head.GetBlendShapeWeight(0) > 0, "fresh same-node traversal must resume automatic lipsync");
+    }
+
+    private static void RestoredLineStaysReleasedAfterEnableAndLateBinding()
+    {
+        using var f = new Face(); StartRollbackLoop(f);
+        Require(f.Source.GoBack().Ok, "Back must succeed");
+        Call(f.Lip, "OnDisable"); Call(f.Lip, "OnEnable"); Tick(f.Lip, 90);
+        Require(!f.Lip.IsLipsyncActive && f.Head.GetBlendShapeWeight(0) == 0, "re-enable must not adopt a revealed restored line");
+        var late = new StoryFlowLipsync { Source = f.Source, FaceRoot = f.Root };
+        try
+        {
+            Call(late, "OnEnable"); Tick(late, 90);
+            Require(!late.IsLipsyncActive, "newly spawned consumer must recognize the restored entry");
+            var handlers = (Delegate)typeof(StoryFlowComponent).GetField("OnDialogueRestored", Private).GetValue(f.Source);
+            Require(Array.FindAll(handlers.GetInvocationList(), h => h.Target == late).Length == 1, "restored handler must bind once");
+            Call(late, "OnDisable");
+            handlers = (Delegate)typeof(StoryFlowComponent).GetField("OnDialogueRestored", Private).GetValue(f.Source);
+            Require(Array.FindAll(handlers.GetInvocationList(), h => h.Target == late).Length == 0, "disable must detach restored handler");
+        }
+        finally { Call(late, "OnDisable"); }
+    }
+
+    private static void BackReleasesAudioTailAndPendingAcquisition()
+    {
+        using var f = new Face();
+        var clip = new AudioClip(); StartRollbackLoop(f, clip);
+        var custom = OtherPlaying(clip);
+        Call(f.Lip, "OnDisable"); Call(f.Lip, "OnEnable");
+        Tick(f.Lip, 30);
+        Require(f.Lip.Level > 0, "fixture must analyse speech");
+        Require(f.Source.GoBack().Ok, "Back must succeed");
+        Require(custom.isPlaying && !f.Lip.IsLipsyncActive && f.Lip.Level == 0, "Back must release automatic audio even while custom tail plays");
+        Require(typeof(StoryFlowLipsync).GetField("_speaking", Private).GetValue(f.Lip) == null &&
+            typeof(StoryFlowLipsync).GetField("_lineClip", Private).GetValue(f.Lip) == null,
+            "Back must release source and clip references");
+        f.Source.AdvanceDialogue(); f.Source.StopDialogueAudio(); custom.Stop();
+        Call(f.Lip, "OnDisable"); Call(f.Lip, "OnEnable");
+        Require((bool)typeof(StoryFlowLipsync).GetField("_awaitingAudioSource", Private).GetValue(f.Lip), "fixture must search for delayed voice");
+        Require(f.Source.GoBack().Ok, "second Back must succeed");
+        custom.Play(); Tick(f.Lip, 90);
+        Require(!f.Lip.IsLipsyncActive && !(bool)typeof(StoryFlowLipsync).GetField("_awaitingAudioSource", Private).GetValue(f.Lip), "restored line must cancel pending audio search");
+    }
+
+    private static void BackPreservesManualAudio()
+    {
+        using var f = new Face(); StartRollbackLoop(f);
+        var manual = OtherPlaying(new AudioClip()); f.Lip.StartLipsyncFor(manual); Tick(f.Lip, 30);
+        Require(f.Source.GoBack().Ok, "Back must succeed"); Tick(f.Lip, 30);
+        Require(f.Lip.IsLipsyncActive && f.Lip.Level > 0 && manual.isPlaying, "Back must preserve explicit manual lipsync");
+        f.Source.BroadcastDialogueUpdate(); Tick(f.Lip, 30);
+        Require(f.Lip.Level > 0, "redraw of restored line must not replace manual playback");
+    }
+
+    private static void FailedBackPreservesAutomaticOwnership()
+    {
+        using var f = new Face(); StartRollbackLoop(f, new AudioClip()); Tick(f.Lip, 30);
+        var source = typeof(StoryFlowLipsync).GetField("_speaking", Private).GetValue(f.Lip);
+        int restored = 0; f.Source.OnDialogueRestored += _ => restored++;
+        StoryFlowManager.CommitFault = () => { StoryFlowManager.CommitFault = null; throw new InvalidOperationException("lipsync recovery probe"); };
+        try
+        {
+            Require(!f.Source.GoBack().Ok, "fault seam must fail commit"); Tick(f.Lip, 30);
+            Require(restored == 0 && f.Lip.IsLipsyncActive && f.Lip.Level > 0 &&
+                ReferenceEquals(source, typeof(StoryFlowLipsync).GetField("_speaking", Private).GetValue(f.Lip)),
+                "failed Back must recover audio without releasing automatic lipsync");
+        }
+        finally { StoryFlowManager.CommitFault = null; }
+    }
+
+    private static void AvailabilityCallbackStartsFreshEntry()
+    {
+        using var f = new Face(); StartRollbackLoop(f);
+        bool advanced = false;
+        f.Source.OnRollbackAvailabilityChanged += availability => {
+            if (!availability.CanGoBack && !advanced) { advanced = true; f.Source.AdvanceDialogue(); }
+        };
+        Require(f.Source.GoBack().Ok, "Back succeeds");
+        Require(advanced && !f.Source.IsCurrentDialogueRestored, "availability listener entered fresh entry");
+        Require(f.Lip.IsLipsyncActive, "fresh entry from availability callback must retain automatic lipsync");
+    }
+
+    private static void EarlierRestoredListenerStartsFreshEntry()
+    {
+        using var f = new Face(); StartRollbackLoop(f);
+        Call(f.Lip, "OnDisable");
+        f.Source.OnDialogueRestored += _ => f.Source.AdvanceDialogue();
+        Call(f.Lip, "OnEnable");
+        Require(f.Source.GoBack().Ok, "Back succeeds");
+        Require(!f.Source.IsCurrentDialogueRestored, "earlier restored listener entered fresh entry");
+        Require(f.Lip.IsLipsyncActive, "fresh entry from earlier restored listener must retain automatic lipsync");
+    }
+
+    private static void AvailabilityCallbackRestartsSession()
+    {
+        using var f = new Face(); var script = StartRollbackLoop(f);
+        bool restarted = false;
+        f.Source.OnRollbackAvailabilityChanged += availability => {
+            if (!availability.CanGoBack && !restarted) { restarted = true; f.Source.StopDialogue(); f.Source.StartDialogue(script); }
+        };
+        Require(f.Source.GoBack().Ok, "Back succeeds");
+        Require(restarted && f.Source.IsDialogueActive() && !f.Source.IsCurrentDialogueRestored, "availability listener started new session");
+        Require(f.Lip.IsLipsyncActive, "replacement session must retain automatic lipsync");
     }
 }

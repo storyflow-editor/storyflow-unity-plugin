@@ -126,7 +126,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
 
                 // Pick a random value in [0, totalWeight)
-                int roll = UnityEngine.Random.Range(0, totalWeight);
+                int roll = context.RandomRange(0, totalWeight);
                 int cumulative = 0;
                 string selectedOptionId = null;
 

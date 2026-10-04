@@ -24,6 +24,9 @@ namespace StoryFlow.Execution
 
         /// <summary>Saved flow call stack from the calling script context.</summary>
         public List<FlowFrame> SavedFlowStack;
+        public List<LoopContext> SavedLoopStack = new List<LoopContext>();
+        public Dictionary<string, NodeRuntimeState> SavedNodeStates = new Dictionary<string, NodeRuntimeState>();
+        public string SavedLastDialogueNodeId;
 
         public CallFrame()
         {

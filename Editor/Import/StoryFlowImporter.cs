@@ -33,6 +33,7 @@ namespace StoryFlow.Editor
             { "end", StoryFlowNodeType.End },
             { "branch", StoryFlowNodeType.Branch },
             { "runScript", StoryFlowNodeType.RunScript },
+            { "blockRollback", StoryFlowNodeType.BlockRollback },
             { "runFlow", StoryFlowNodeType.RunFlow },
             { "entryFlow", StoryFlowNodeType.EntryFlow },
 
@@ -367,6 +368,7 @@ namespace StoryFlow.Editor
             MediaContentHashes.Clear();
             SettledMediaDestinations.Clear();
             ForceRewrite = force;
+            IDisposable contentUpdate = null;
 
             try
             {
@@ -410,6 +412,8 @@ namespace StoryFlow.Editor
                 string globalVariablesCondensed = string.Empty;
                 string charactersCondensed = string.Empty;
                 string dataAssetsCondensed = string.Empty;
+
+                contentUpdate = StoryFlowManager.Instance?.BeginContentUpdate(AssetDatabase.LoadAssetAtPath<StoryFlowProjectAsset>(CombineAssetPath(outputPath, "Project.asset")));
 
                 // --- Read global variables ---
                 var globalVariableEntries = new List<StoryFlowProjectAsset.GlobalVariableEntry>();
@@ -883,6 +887,7 @@ namespace StoryFlow.Editor
                 projectAsset.Description = description;
                 // Always assign: reimporting an older export must clear any previous custom limit.
                 projectAsset.MaxScriptNesting = ParseMaxScriptNesting(metadata?["maxScriptNesting"]);
+                projectAsset.DialogueRollback = StoryFlowRollbackSettings.Normalize(metadata?["dialogueRollback"]);
                 // Resolve startup script reference from imported scripts
                 projectAsset.StartupScript = null;
                 if (!string.IsNullOrEmpty(startupScript))
@@ -974,6 +979,7 @@ namespace StoryFlow.Editor
             }
             finally
             {
+                contentUpdate?.Dispose();
                 ForceRewrite = previousForce;
 
                 MediaContentHashes.Clear();
@@ -2499,7 +2505,7 @@ namespace StoryFlow.Editor
         // Version 6 adds the Data variable type and its complete node family.
         // Version 7 persists Data Asset override localization and declaration opt-out metadata.
         // Version 8 persists the project's maximum script nesting setting.
-        private const string ParseSchemaVersion = "8";
+        private const string ParseSchemaVersion = "9";
 
         private static int ParseMaxScriptNesting(JToken value)
         {

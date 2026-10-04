@@ -61,7 +61,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 max = temp;
             }
 
-            int result = UnityEngine.Random.Range(min, max + 1);
+            int result = context.RandomRange(min, max + 1);
 
             // Store result in node runtime state for lazy evaluation
             var runtimeState = context.GetNodeRuntimeState(node.Id);
