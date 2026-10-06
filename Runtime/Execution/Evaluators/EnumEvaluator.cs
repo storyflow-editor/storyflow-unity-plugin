@@ -85,11 +85,11 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetEnum:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.Enum, false);
+                    var variable = ctx.ReadVariable(node, StoryFlowVariableType.Enum, false);
                     string val = variable?.Value?.GetEnum() ?? "";
                     if (ctx.TraceEnabled && variable != null)
                     {
-                        bool isGlobal = !ctx.LocalVariables.ContainsKey(variable.Id);
+                        bool isGlobal = ctx.IsGlobal(variable);
                         Debug.Log($"[SF-TRACE] VAR GET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={val}");
                     }
                     return val;

@@ -237,7 +237,9 @@ namespace StoryFlow.Tests
                 DaN("REMOVE", StoryFlowNodeType.RemoveDataAssetArrayElement, ("value", "0")),
                 DaN("CLEAR", StoryFlowNodeType.ClearDataAssetArray),
                 DaN("LOOP", StoryFlowNodeType.ForEachDataAssetLoop)
-            }, new() { DaE("A", "S", "dataAsset-array-1"), DaE("A", "SET", "dataAsset-array-2"), DaE("A", "RANDOM", "dataAsset-array-1"), DaE("A", "REMOVE", "dataAsset-array-2"), DaE("A", "CLEAR", "dataAsset-array-2"), DaE("A", "LOOP", "dataAsset-array-1") }, new());
+            }, new() { DaE("A", "S", "dataAsset-array-1"), DaE("A", "SET", "dataAsset-array-2"), DaE("A", "RANDOM", "dataAsset-array-1"), DaE("A", "REMOVE", "dataAsset-array-2"), DaE("A", "CLEAR", "dataAsset-array-2"), DaE("A", "LOOP", "dataAsset-array-1"),
+                // A wired Loop Body holds the loop on its element. With nothing connected it runs on to Completed.
+                new() { Source = "LOOP", Target = "CLEAR", SourceHandle = "source-LOOP-loopBody", TargetHandle = "target-CLEAR-0" } }, new());
             ctx.LocalVariables["a"] = new() { Id = "a", Type = type, IsArray = true, Value = StoryFlowVariant.DeserializeArrayFromJson(type, "[\"first\"]") };
             ctx.LocalVariables["b"] = new() { Id = "b", Type = type, IsArray = true, Value = StoryFlowVariant.DeserializeArrayFromJson(type, "[]") };
             StoryFlowNodeDispatcher.ProcessNode(component, ctx.CurrentScript.GetNode("S"));

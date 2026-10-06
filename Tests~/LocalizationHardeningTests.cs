@@ -50,7 +50,7 @@ namespace StoryFlow.Tests
                 ctx.CurrentScript.SetNodes(new()
                 {
                     new() { Id = "map", Type = StoryFlowNodeType.GetMap,
-                        Data = new() { new() { Key = "variable", Value = "map" } } },
+                        Data = new() { new() { Key = "variable", Value = "map" }, new() { Key = "isGlobal", Value = "true" } } },
                     new() { Id = "keys", Type = StoryFlowNodeType.MapKeys, Data = new()
                     {
                         new() { Key = "keyType", Value = "string" }, new() { Key = "valueType", Value = "string" }
@@ -265,7 +265,7 @@ namespace StoryFlow.Tests
         {
             var script = ScriptableObject.CreateInstance<StoryFlowScriptAsset>();
             script.SetNodes(new() { new() { Id = "get", Type = StoryFlowNodeType.GetStringArray,
-                Data = new() { new() { Key = "variable", Value = "items" } } } });
+                Data = new() { new() { Key = "variable", Value = "items" }, new() { Key = "isGlobal", Value = "true" } } } });
             script.SetConnections(new() { new() { Source = "get", Target = "search",
                 SourceHandle = StoryFlowHandles.Source("get", "string-array"),
                 TargetHandle = StoryFlowHandles.Target("search", StoryFlowHandles.In_StringArray + "-1") } });

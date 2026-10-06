@@ -20,7 +20,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var context = component.GetContext();
 
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable == null || variable.Type != StoryFlowVariableType.Map)
             {
                 // HTML returns early without trace/dispatch but still continues exec
@@ -67,7 +67,7 @@ namespace StoryFlow.Execution.NodeHandlers
             }
 
             // Trace shape pinned by the cross-runtime fixture: size=, not value=
-            bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = context.IsGlobal(variable);
             component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} size={variable.Value.GetMap().Count}");
             component.BroadcastVariableChanged(variable, isGlobal);
 
@@ -207,8 +207,6 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(keyType) || string.IsNullOrEmpty(valueType))
             {
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopCompleted);
-                if (context.NextNode == null && context.PeekLoop() != null)
-                    ArrayNodeHandler.ContinueForEachLoop(component, context.PeekLoop().NodeId);
                 return;
             }
 
@@ -260,10 +258,9 @@ namespace StoryFlow.Execution.NodeHandlers
                 if (top != null && top.NodeId == node.Id)
                     context.PopLoop();
 
-                // Follow completed edge
+                // Follow completed edge. With nothing connected, ProcessNextNode continues the
+                // enclosing loop
                 component.ProcessNextNodeFromSource(node.Id, StoryFlowHandles.Out_LoopCompleted);
-                if (context.NextNode == null && context.PeekLoop() != null)
-                    ArrayNodeHandler.ContinueForEachLoop(component, context.PeekLoop().NodeId);
             }
         }
 

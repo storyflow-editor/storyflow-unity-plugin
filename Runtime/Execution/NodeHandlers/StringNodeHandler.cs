@@ -19,11 +19,11 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 variable.Value.SetString(value);
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = context.IsGlobal(variable);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={value}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }

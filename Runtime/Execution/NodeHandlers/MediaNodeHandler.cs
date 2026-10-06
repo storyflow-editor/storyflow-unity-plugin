@@ -25,12 +25,12 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 variable.Value.Type = StoryFlowVariableType.Image;
                 variable.Value.StringValue = imageKey ?? "";
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = context.IsGlobal(variable);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={imageKey ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
@@ -114,12 +114,12 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 variable.Value.Type = StoryFlowVariableType.Audio;
                 variable.Value.StringValue = audioKey ?? "";
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = context.IsGlobal(variable);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={audioKey ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
@@ -198,12 +198,12 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 variable.Value.Type = StoryFlowVariableType.Character;
                 variable.Value.StringValue = characterPath ?? "";
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = context.IsGlobal(variable);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={characterPath ?? ""}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }

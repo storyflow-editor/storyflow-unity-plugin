@@ -20,11 +20,11 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Find and update the variable
             var variableId = node.GetData("variable");
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 variable.Value.SetEnum(value);
-                bool isGlobal = !context.LocalVariables.ContainsKey(variable.Id);
+                bool isGlobal = context.IsGlobal(variable);
                 component.Trace($"VAR SET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={value}");
                 component.BroadcastVariableChanged(variable, isGlobal);
             }
@@ -54,7 +54,7 @@ namespace StoryFlow.Execution.NodeHandlers
             var variableId = node.GetData("variable");
             string enumValue = "";
 
-            var variable = context.FindVariable(variableId);
+            var variable = context.FindVariable(node);
             if (variable != null)
             {
                 enumValue = variable.Value.GetEnum();
@@ -69,7 +69,9 @@ namespace StoryFlow.Execution.NodeHandlers
             var outputHandle = StoryFlowHandles.Source(node.Id, enumValue);
             var edge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
 
-            if (edge != null)
+            // An unconnected output at the end of a ForEach body is a finished iteration:
+            // ProcessNextNode continues the loop
+            if (edge != null || context.PeekLoop() != null)
             {
                 component.ProcessNextNode(outputHandle);
             }
@@ -147,7 +149,9 @@ namespace StoryFlow.Execution.NodeHandlers
 
                 var outputHandle = StoryFlowHandles.Source(node.Id, selectedOptionId);
                 var edge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
-                if (edge != null)
+                // An unconnected output at the end of a ForEach body is a finished iteration:
+                // ProcessNextNode continues the loop
+                if (edge != null || context.PeekLoop() != null)
                 {
                     component.ProcessNextNode(outputHandle);
                 }

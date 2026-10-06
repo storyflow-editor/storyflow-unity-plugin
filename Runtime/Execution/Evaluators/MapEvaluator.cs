@@ -139,7 +139,7 @@ namespace StoryFlow.Execution
                 {
                     // Resolve the bound variable (locals first, then globals) and return it
                     // with LIVE map storage established — never hand out a copy here.
-                    var variable = ctx.ReadVariable(sourceNode.GetData("variable"), StoryFlowVariableType.Map, false);
+                    var variable = ctx.ReadVariable(sourceNode, StoryFlowVariableType.Map, false);
                     if (variable != null && variable.Type == StoryFlowVariableType.Map)
                     {
                         if (variable.Value.MapValue == null)
@@ -148,7 +148,7 @@ namespace StoryFlow.Execution
                             // type so the returned storage is correctly typed for mutation.
                             variable.Value.SetMap(new List<StoryFlowMapEntry>());
                         }
-                        sourceKind = ctx.LocalVariables.ContainsKey(variable.Id)
+                        sourceKind = !ctx.IsGlobal(variable)
                             ? MapSourceKind.ScriptVariable
                             : MapSourceKind.GlobalVariable;
                         return variable;

@@ -120,7 +120,7 @@ namespace StoryFlow.Execution
             var variableId = sourceNode.GetData("variable");
             if (!string.IsNullOrEmpty(variableId))
             {
-                var variable = ctx.ReadVariable(variableId, null, true);
+                var variable = ctx.ReadVariable(sourceNode, null, true);
                 if (variable?.Value?.ArrayValue != null)
                     return variable.Value.ArrayValue;
             }
@@ -259,7 +259,7 @@ namespace StoryFlow.Execution
                 var variableId = node.GetData("variable");
                 if (!string.IsNullOrEmpty(variableId))
                 {
-                    var variable = ctx.ReadVariable(variableId, expectedType, true);
+                    var variable = ctx.ReadVariable(node, expectedType, true);
                     if (variable?.Value?.ArrayValue != null)
                         return variable.Value.ArrayValue;
                 }

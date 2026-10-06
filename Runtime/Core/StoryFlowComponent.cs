@@ -404,10 +404,14 @@ namespace StoryFlow
             var handle = StoryFlowHandles.SourceOption(_context.CurrentDialogueState.NodeId, optionId);
             _context.LastSourceHandle = handle;
             var edge = _context.CurrentScript?.FindEdgeBySourceHandle(handle);
-            if (edge == null) return;
-
-            var targetNode = _context.CurrentScript.GetNode(edge.Target);
-            if (targetNode == null) return;
+            var targetNode = edge != null ? _context.CurrentScript.GetNode(edge.Target) : null;
+            if (targetNode == null)
+            {
+                // Nothing to walk: the line stays up and keeps taking input (HTML handleOptionClick)
+                _context.IsWaitingForInput = true;
+                _context.ShouldPause = true;
+                return;
+            }
 
             if (targetNode.Type == Data.StoryFlowNodeType.Dialogue)
                 _context.EnteringDialogueViaEdge = true;
@@ -468,10 +472,14 @@ namespace StoryFlow
             var handle = StoryFlowHandles.Source(_context.CurrentDialogueState.NodeId, "");
             _context.LastSourceHandle = handle;
             var edge = _context.CurrentScript?.FindEdgeBySourceHandle(handle);
-            if (edge == null) return;
-
-            var targetNode = _context.CurrentScript.GetNode(edge.Target);
-            if (targetNode == null) return;
+            var targetNode = edge != null ? _context.CurrentScript.GetNode(edge.Target) : null;
+            if (targetNode == null)
+            {
+                // Nothing to walk: the line stays up and keeps taking input (HTML handleOptionClick)
+                _context.IsWaitingForInput = true;
+                _context.ShouldPause = true;
+                return;
+            }
 
             if (targetNode.Type == Data.StoryFlowNodeType.Dialogue)
                 _context.EnteringDialogueViaEdge = true;
@@ -797,7 +805,7 @@ namespace StoryFlow
             if (v != null)
             {
                 v.Value.SetBool(value);
-                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || _context.IsGlobal(v);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -821,7 +829,7 @@ namespace StoryFlow
             if (v != null)
             {
                 v.Value.SetInt(value);
-                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || _context.IsGlobal(v);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -845,7 +853,7 @@ namespace StoryFlow
             if (v != null)
             {
                 v.Value.SetFloat(value);
-                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || _context.IsGlobal(v);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -870,7 +878,7 @@ namespace StoryFlow
             if (v != null)
             {
                 v.Value.SetString(value);
-                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || _context.IsGlobal(v);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -894,7 +902,7 @@ namespace StoryFlow
             if (v != null)
             {
                 v.Value.SetEnum(value);
-                bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(v.Id);
+                bool isGlobal = _context == null || _context.IsGlobal(v);
                 BroadcastVariableChanged(v, isGlobal);
             }
             else
@@ -2293,7 +2301,7 @@ namespace StoryFlow
         private void ApplyMapSet(StoryFlowVariable variable, List<StoryFlowMapEntry> entries, bool global)
         {
             variable.Value.SetMap(entries);
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
             RefreshCurrentDialogueAfterArraySet();
         }
@@ -2373,7 +2381,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2413,7 +2421,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2453,7 +2461,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2501,7 +2509,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2546,7 +2554,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2587,7 +2595,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2628,7 +2636,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2669,7 +2677,7 @@ namespace StoryFlow
             }
 
             variable.Value.ArrayValue = newArray;
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2704,7 +2712,7 @@ namespace StoryFlow
                 BoolValue = value
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2739,7 +2747,7 @@ namespace StoryFlow
                 IntValue = value
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2774,7 +2782,7 @@ namespace StoryFlow
                 FloatValue = value
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2817,7 +2825,7 @@ namespace StoryFlow
                 StringValue = value ?? ""
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2857,7 +2865,7 @@ namespace StoryFlow
                 EnumValue = value ?? ""
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2893,7 +2901,7 @@ namespace StoryFlow
                 StringValue = assetKey ?? ""
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2929,7 +2937,7 @@ namespace StoryFlow
                 StringValue = assetKey ?? ""
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -2965,7 +2973,7 @@ namespace StoryFlow
                 StringValue = characterPath ?? ""
             });
 
-            bool isGlobal = _context == null || !_context.LocalVariables.ContainsKey(variable.Id);
+            bool isGlobal = _context == null || _context.IsGlobal(variable);
             BroadcastVariableChanged(variable, isGlobal);
 
             RefreshCurrentDialogueAfterArraySet();
@@ -3047,6 +3055,9 @@ namespace StoryFlow
             try { ProcessNodeCore(node); } finally { controller?.ExitExecution(); }
         }
 
+        // Upper bound on the nodes one walk may process when its loops keep making progress.
+        private const int MaxProcessedNodes = 1000000;
+
         private void ProcessNodeCore(StoryFlowNode node)
         {
             if (node == null)
@@ -3058,17 +3069,23 @@ namespace StoryFlow
             if (!_isDialogueActive || _context == null) return;
             if (_context.IsPaused) return;
 
+            var context = _context;
             _context.NextNode = node;
             _context.ShouldPause = false;
-            int iterationCount = 0;
+            int iterationCount = 0, totalCount = 0;
+            long loopSteps = context.LoopSteps;
 
             while (_context.NextNode != null && !_context.ShouldPause)
             {
                 var current = _context.NextNode;
                 _context.NextNode = null;
 
-                iterationCount++;
-                if (iterationCount > StoryFlowExecutionContext.MaxProcessingDepth)
+                // A ForEach that moved on to its next element is progress, not a runaway walk: the
+                // guard counts the nodes since the last such step, under a total that still stops a
+                // graph that re-enters its loops forever.
+                if (loopSteps != _context.LoopSteps) { loopSteps = _context.LoopSteps; iterationCount = 0; }
+                iterationCount++; totalCount++;
+                if (iterationCount > StoryFlowExecutionContext.MaxProcessingDepth || totalCount > MaxProcessedNodes)
                 {
                     BroadcastError($"Processing depth exceeded {StoryFlowExecutionContext.MaxProcessingDepth}. " +
                                    "Possible infinite loop detected. Stopping dialogue.");
@@ -3102,6 +3119,17 @@ namespace StoryFlow
                     StopDialogue();
                     return;
                 }
+
+                // The walk ended without reaching a line, outside any loop: the line it started from
+                // stays up and keeps taking input, as in the HTML runtime. Re-render it like the Set*
+                // fallthrough does.
+                if (_context.NextNode == null && !_context.ShouldPause && ReferenceEquals(_context, context) && _isDialogueActive &&
+                    !context.IsWaitingForInput && context.LoopStackDepth == 0 && !string.IsNullOrEmpty(context.LastDialogueNodeId) &&
+                    current.Type != Data.StoryFlowNodeType.Dialogue)
+                {
+                    context.NextNode = context.CurrentScript?.GetNode(context.LastDialogueNodeId);
+                    context.EnteringDialogueViaEdge = false;
+                }
             }
 
             // The loop has drained: execution paused at a dialogue awaiting input, ended, or
@@ -3120,7 +3148,14 @@ namespace StoryFlow
 
             _context.LastSourceHandle = sourceHandle;
             var edge = _context.CurrentScript.FindEdgeBySourceHandle(sourceHandle);
-            if (edge == null) return;
+            if (edge == null)
+            {
+                // Nothing connected. Inside a ForEach body that is a finished iteration, whichever
+                // node the body ends on: the loop moves on to its next element (HTML processNextNode).
+                var loop = _context.PeekLoop();
+                if (loop != null) ArrayNodeHandler.ContinueForEachLoop(this, loop.NodeId);
+                return;
+            }
 
             var targetNodeId = edge.Target;
             if (string.IsNullOrEmpty(targetNodeId)) return;

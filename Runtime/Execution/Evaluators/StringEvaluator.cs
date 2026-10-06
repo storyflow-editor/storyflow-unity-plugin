@@ -103,11 +103,11 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetString:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.String, false);
+                    var variable = ctx.ReadVariable(node, StoryFlowVariableType.String, false);
                     string val = variable?.Value?.GetString() ?? "";
                     if (ctx.TraceEnabled && variable != null)
                     {
-                        bool isGlobal = !ctx.LocalVariables.ContainsKey(variable.Id);
+                        bool isGlobal = ctx.IsGlobal(variable);
                         Debug.Log($"[SF-TRACE] VAR GET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={val}");
                     }
                     return val;
@@ -192,7 +192,7 @@ namespace StoryFlow.Execution
                         ? StoryFlowVariableType.Image
                         : node.Type == StoryFlowNodeType.GetAudio || node.Type == StoryFlowNodeType.SetAudio
                             ? StoryFlowVariableType.Audio : StoryFlowVariableType.Character;
-                    var variable = ctx.ReadVariable(variableId, expected, false);
+                    var variable = ctx.ReadVariable(node, expected, false);
                     return variable?.Value?.GetString() ?? "";
                 }
 

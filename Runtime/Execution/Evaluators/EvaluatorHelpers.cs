@@ -293,7 +293,7 @@ namespace StoryFlow.Execution
                             targetNode.Type == StoryFlowNodeType.SetEnum)
                         {
                             var varId = targetNode.GetData("variable");
-                            var variable = ctx.FindVariable(varId);
+                            var variable = ctx.FindVariable(targetNode);
                             if (variable?.EnumValues != null && variable.EnumValues.Count > 0)
                                 return variable.EnumValues;
                         }

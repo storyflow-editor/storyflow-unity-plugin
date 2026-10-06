@@ -85,11 +85,11 @@ namespace StoryFlow.Execution
                 case StoryFlowNodeType.SetFloat:
                 {
                     var variableId = node.GetData("variable");
-                    var variable = ctx.ReadVariable(variableId, StoryFlowVariableType.Float, false);
+                    var variable = ctx.ReadVariable(node, StoryFlowVariableType.Float, false);
                     float val = variable?.Value?.GetFloat() ?? 0f;
                     if (ctx.TraceEnabled && variable != null)
                     {
-                        bool isGlobal = !ctx.LocalVariables.ContainsKey(variable.Id);
+                        bool isGlobal = ctx.IsGlobal(variable);
                         Debug.Log($"[SF-TRACE] VAR GET \"{variable.Name}\" global={isGlobal.ToString().ToLower()} value={val.ToString(CultureInfo.InvariantCulture)}");
                     }
                     return val;

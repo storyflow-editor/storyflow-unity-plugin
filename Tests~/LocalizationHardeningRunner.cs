@@ -14,6 +14,7 @@ namespace StoryFlow.Tests
             RunLocalizationHardeningTests();
             RunDataReferenceTests();
             RunScriptNestingTests(); RunRollbackTests();
+            RunLoopParityTests(); RunHandlerParityTests();
             return failures == 0 ? 0 : 1;
         }
 

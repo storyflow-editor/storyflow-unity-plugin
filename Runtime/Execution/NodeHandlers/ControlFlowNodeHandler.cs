@@ -16,6 +16,11 @@ namespace StoryFlow.Execution.NodeHandlers
 
         public static void HandleStart(StoryFlowComponent component, StoryFlowNode node)
         {
+            if (component.GetContext().CurrentScript.GetEdgesFromSource(node.Id).Count == 0)
+            {
+                component.BroadcastError("Start node is not connected");
+                return;
+            }
             component.ProcessNextNodeFromSource(node.Id);
         }
 
@@ -26,9 +31,6 @@ namespace StoryFlow.Execution.NodeHandlers
         public static void HandleEnd(StoryFlowComponent component, StoryFlowNode node)
         {
             var context = component.GetContext();
-
-            // Clear the loop stack when reaching an End node
-            context.ClearLoopStack();
 
             // Pop flow call stack for depth tracking; check if the flow is an exit route
             string exitFlowId = null;
@@ -52,13 +54,25 @@ namespace StoryFlow.Execution.NodeHandlers
                         }
                     }
 
-                    if (isExitFlow)
+                    if (isExitFlow && context.CallStackDepth > 0)
                     {
                         exitFlowId = flowFrame.FlowId;
                     }
                 }
 
                 context.PopFlowFrame();
+            }
+
+            // An exit flow whose route is not connected on the Run Script does not return: the walk
+            // ends here and the called script stays current (HTML end handler)
+            if (exitFlowId != null)
+            {
+                var caller = context.PeekCallFrame();
+                StoryFlowScriptAsset callerScript = null;
+                if (caller.Script == null || !caller.Script.TryGetTarget(out callerScript))
+                    callerScript = component.GetProject()?.GetScriptByPath(caller.ScriptPath);
+                if (callerScript?.FindEdgeBySourceHandle(StoryFlowHandles.SourceExit(caller.ReturnNodeId, exitFlowId)) == null)
+                    return;
             }
 
             // Check script call stack
@@ -139,23 +153,14 @@ namespace StoryFlow.Execution.NodeHandlers
                         }
                     }
 
-                    // Default output edge
-                    var outputHandle = StoryFlowHandles.Source(callFrame.ReturnNodeId, "output");
-                    var outputEdge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
-                    if (outputEdge != null)
-                    {
-                        component.ProcessNextNode(outputHandle);
-                    }
+                    // Default output edge. With nothing connected to the Run Script, ProcessNextNode
+                    // continues the ForEach loop whose body ends on it
+                    component.ProcessNextNode(StoryFlowHandles.Source(callFrame.ReturnNodeId, "output"));
                 }
-            }
-            else if (context.FlowStackDepth > 0)
-            {
-                // Exiting a flow - the flow stack was already popped above.
-                // Nothing else to do for flow exits since flows are jumps, not calls.
             }
             else
             {
-                // No more frames - dialogue is finished
+                // End in the startup script finishes the dialogue, inside a flow or not
                 component.StopDialogue();
             }
         }
@@ -226,6 +231,9 @@ namespace StoryFlow.Execution.NodeHandlers
                             {
                                 var handleSuffix = paramType + "-array-param-" + paramId;
                                 value = StoryFlowEvaluator.EvaluateTypedArray(context, node.Id, handleSuffix, paramType);
+                                // An unwired array parameter passes an empty array (HTML getArrayInput)
+                                if (value == null && StoryFlowWireTypes.TryParseWireType(paramType, out var elementType))
+                                    value = new StoryFlowVariant { Type = elementType, ArrayValue = new List<StoryFlowVariant>() };
                             }
                             else
                             {
@@ -334,7 +342,11 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Process the start node
             var startNode = targetScript.GetNode(targetScript.StartNodeId);
-            if (startNode != null)
+            if (startNode != null && targetScript.GetEdgesFromSource(startNode.Id).Count == 0)
+            {
+                component.BroadcastError("Script's Start node is not connected");
+            }
+            else if (startNode != null)
             {
                 context.NextNode = startNode;
             }
@@ -442,7 +454,13 @@ namespace StoryFlow.Execution.NodeHandlers
                 }
             }
 
-            Debug.LogWarning($"[StoryFlow] EntryFlow node for flowId '{flowId}' not found.");
+            // No such flow: an error, and no frame is left behind (HTML pushes after validation)
+            context.PopFlowFrame();
+            var flowName = flowId;
+            if (context.CurrentScript.Flows != null)
+                foreach (var flow in context.CurrentScript.Flows)
+                    if (flow.Id == flowId && !string.IsNullOrEmpty(flow.Name)) flowName = flow.Name;
+            component.BroadcastError($"Flow \"{flowName}\" not found");
         }
 
         // =====================================================================

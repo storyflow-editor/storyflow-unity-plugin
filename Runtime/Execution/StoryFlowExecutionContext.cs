@@ -308,7 +308,11 @@ namespace StoryFlow.Execution
 
         internal StoryFlowVariable ReadVariable(string id, StoryFlowVariableType? expected = null, bool? array = null)
         {
-            var variable = FindVariable(id);
+            return CheckVariable(FindVariable(id), expected, array);
+        }
+
+        private StoryFlowVariable CheckVariable(StoryFlowVariable variable, StoryFlowVariableType? expected, bool? array)
+        {
             if (variable == null || (expected.HasValue && !ReadTypesMatch(variable.Type, expected.Value, array == true)) ||
                 (array.HasValue && variable.IsArray != array.Value))
             {
@@ -317,6 +321,27 @@ namespace StoryFlow.Execution
             }
             return variable;
         }
+
+        /// <summary>
+        /// THE lookup for a node's bound variable. Exported ids derive from the variable NAME alone, so a
+        /// local and a global with one name share an id and the node's isGlobal flag tells them apart, as
+        /// in the HTML runtime: the flag alone picks the scope. Every editor release has written it on
+        /// nodes bound to a global, so an unflagged node never reaches one.
+        /// </summary>
+        internal StoryFlowVariable FindVariable(StoryFlowNode node)
+        {
+            var id = node?.GetData("variable");
+            if (string.IsNullOrEmpty(id)) return null;
+            if (!node.GetDataBool("isGlobal")) return localVariables.TryGetValue(id, out var local) ? local : null;
+            return externalGlobalVariables != null && externalGlobalVariables.TryGetValue(id, out var global) ? global : null;
+        }
+
+        /// <summary>True when the variable is the global of its id, not a local sharing that id.</summary>
+        internal bool IsGlobal(StoryFlowVariable variable) =>
+            variable == null || !localVariables.TryGetValue(variable.Id ?? "", out var local) || !ReferenceEquals(local, variable);
+
+        internal StoryFlowVariable ReadVariable(StoryFlowNode node, StoryFlowVariableType? expected = null, bool? array = null) =>
+            CheckVariable(FindVariable(node), expected, array);
 
         /// <summary>Finds a variable by ID, checking locals before globals.</summary>
         public StoryFlowVariable FindVariable(string id)
@@ -916,6 +941,12 @@ namespace StoryFlow.Execution
 
             return frame;
         }
+
+        /// <summary>The frame End returns through, or null at the root.</summary>
+        internal CallFrame PeekCallFrame() => callStack.Count > 0 ? callStack[callStack.Count - 1] : null;
+
+        /// <summary>Counts ForEach steps to a next element. The processing guard reads it as progress.</summary>
+        internal long LoopSteps;
 
         /// <summary>Current depth of the script call stack.</summary>
         public int CallStackDepth => callStack.Count;
