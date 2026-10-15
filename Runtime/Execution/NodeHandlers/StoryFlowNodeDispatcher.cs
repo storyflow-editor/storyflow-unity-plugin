@@ -119,6 +119,7 @@ namespace StoryFlow.Execution.NodeHandlers
             Handlers[StoryFlowNodeType.GetEnum] = NoOp;
             Handlers[StoryFlowNodeType.EqualEnum] = NoOp;
             Handlers[StoryFlowNodeType.SwitchOnEnum] = EnumNodeHandler.HandleSwitchOnEnum;
+            Handlers[StoryFlowNodeType.SwitchOnEnumValue] = EnumNodeHandler.HandleSwitchOnEnumValue;
             Handlers[StoryFlowNodeType.RandomBranch] = EnumNodeHandler.HandleRandomBranch;
 
             // ================================================================

@@ -298,11 +298,21 @@ namespace StoryFlow.Execution
                                 return variable.EnumValues;
                         }
 
-                        // Check node data for enumValues
+                        // Check node data for enumValues (a Switch on Enum Value's list). The importer
+                        // keeps the exported array as JSON text, so it is parsed, not split on commas
                         var enumValuesStr = targetNode.GetData("enumValues");
                         if (!string.IsNullOrEmpty(enumValuesStr))
                         {
-                            var values = new List<string>(enumValuesStr.Split(','));
+                            var values = new List<string>();
+                            try
+                            {
+                                foreach (var value in Newtonsoft.Json.Linq.JArray.Parse(enumValuesStr))
+                                    values.Add(value.ToString());
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogWarning($"[StoryFlow] Failed to parse enumValues for node {targetNode.Id}: {e.Message}");
+                            }
                             if (values.Count > 0) return values;
                         }
                     }

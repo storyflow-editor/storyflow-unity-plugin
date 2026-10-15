@@ -69,6 +69,7 @@ namespace StoryFlow.Tests
                 yield return Tail("Set " + type[2] + " Array", "{'type':'set" + type[0] + "Array','variable':'scratch" + type[0] + "'}");
             yield return Tail("Random Branch whose selected output is unconnected", "{'type':'randomBranch','options':[{'id':'only','weight':1}]}");
             yield return Tail("Switch On Enum with no output for the value", "{'type':'switchOnEnum','variable':'mode','enumValues':['x']}");
+            yield return Tail("Switch on Enum with a value pin and no output for the value", "{'type':'switchOnEnumValue','enumValues':['x']}");
             yield return Tail("Run Script whose output is unconnected", "{'type':'runScript','script':'empty.json'}");
 
             // Every other handler that can end a body.

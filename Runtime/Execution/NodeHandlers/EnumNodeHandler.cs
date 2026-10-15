@@ -5,7 +5,7 @@ using UnityEngine;
 namespace StoryFlow.Execution.NodeHandlers
 {
     /// <summary>
-    /// Handles SetEnum, SwitchOnEnum, and RandomBranch nodes. GetEnum and EqualEnum
+    /// Handles SetEnum, SwitchOnEnum, SwitchOnEnumValue, and RandomBranch nodes. GetEnum and EqualEnum
     /// are evaluated lazily by StoryFlowEvaluator.
     /// </summary>
     public static class EnumNodeHandler
@@ -78,6 +78,30 @@ namespace StoryFlow.Execution.NodeHandlers
             else
             {
                 Debug.LogWarning($"[StoryFlow] SwitchOnEnum: no output for enum value '{enumValue}' (node {node.Id}).");
+            }
+        }
+
+        public static void HandleSwitchOnEnumValue(StoryFlowComponent component, StoryFlowNode node)
+        {
+            var context = component.GetContext();
+
+            // The value arrives on the enum pin, so a character's enum variable or a Data Asset
+            // enum field can drive it as well as an enum variable. Unwired, it is ""
+            string enumValue = StoryFlowEvaluator.EvaluateEnum(context, node.Id, StoryFlowHandles.In_Enum1);
+
+            // The edge lookup is exact: "Act1" never leaves through "Act10", and "" matches no output
+            var outputHandle = StoryFlowHandles.Source(node.Id, enumValue);
+            var edge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
+
+            // An unconnected output at the end of a ForEach body is a finished iteration:
+            // ProcessNextNode continues the loop
+            if (edge != null || context.PeekLoop() != null)
+            {
+                component.ProcessNextNode(outputHandle);
+            }
+            else
+            {
+                Debug.LogWarning($"[StoryFlow] SwitchOnEnumValue: no output for enum value '{enumValue}' (node {node.Id}).");
             }
         }
 

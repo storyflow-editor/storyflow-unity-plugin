@@ -96,6 +96,7 @@ namespace StoryFlow.Editor
             { "setEnum", StoryFlowNodeType.SetEnum },
             { "equalEnum", StoryFlowNodeType.EqualEnum },
             { "switchOnEnum", StoryFlowNodeType.SwitchOnEnum },
+            { "switchOnEnumValue", StoryFlowNodeType.SwitchOnEnumValue },
             { "randomBranch", StoryFlowNodeType.RandomBranch },
 
             // Type Conversion
@@ -2505,7 +2506,8 @@ namespace StoryFlow.Editor
         // Version 6 adds the Data variable type and its complete node family.
         // Version 7 persists Data Asset override localization and declaration opt-out metadata.
         // Version 8 persists the project's maximum script nesting setting.
-        private const string ParseSchemaVersion = "9";
+        // Version 10 maps switchOnEnumValue, which an older import left serialized as Unknown.
+        private const string ParseSchemaVersion = "10";
 
         private static int ParseMaxScriptNesting(JToken value)
         {
