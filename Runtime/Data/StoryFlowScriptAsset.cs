@@ -316,12 +316,13 @@ namespace StoryFlow.Data
                 // the suffix "string" from incorrectly matching "string-array-1" / "string-array-array"
                 // (the array-input handles), or "string-array" from matching "string-array-param-XXX"
                 // (the runScript-param handles, which are resolved via exact match instead).
+                // The token may be empty: a pin with no option ID is exported as "string-" (the
+                // input of every conversion, Not and the single-input string ops).
                 var prefix = targetHandle + "-";
                 foreach (var edge in edges)
                 {
                     if (edge.TargetHandle == null || !edge.TargetHandle.StartsWith(prefix)) continue;
                     var rest = edge.TargetHandle.Substring(prefix.Length);
-                    if (rest.Length == 0) continue;
                     if (rest.IndexOf('-') >= 0) continue;
                     return edge;
                 }

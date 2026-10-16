@@ -110,9 +110,7 @@ namespace StoryFlow.Tests
                 ? "[{'id':'v_level','name':'Level','type':'integer','value':2}]" : "[{'id':'v_label','name':'Label','type':'string','value':'Lover'}]");
             var main = story["main.json"];
             main["nodes"]["input"] = JObject.Parse(fromInt ? "{'id':'input','type':'getInt','variable':'v_level'}" : "{'id':'input','type':'getString','variable':'v_label'}");
-            // Wired as integer-1 / string-1, which both runtimes read. FindInputEdge does not match the bare
-            // integer- / string- handle the editor writes on a conversion's input, a gap outside this node.
-            ((JArray)main["connections"]).Add(fromInt ? RegressionEdge("input", "convert", "integer-", "integer-1") : RegressionEdge("input", "convert", "string-", "string-1"));
+            ((JArray)main["connections"]).Add(fromInt ? RegressionEdge("input", "convert", "integer-", "integer-") : RegressionEdge("input", "convert", "string-", "string-"));
             AssertEqual("Lover", SwitchValueLine(story), "the line for Lover");
         }
 
