@@ -17,6 +17,7 @@ namespace StoryFlow.Tests
             RunLoopParityTests(); RunHandlerParityTests();
             RunSwitchOnEnumValueTests();
             RunSingleInputPinTests();
+            RunReadAfterWriteTests();
             return failures == 0 ? 0 : 1;
         }
 

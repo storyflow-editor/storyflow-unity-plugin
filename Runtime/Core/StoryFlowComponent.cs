@@ -3231,10 +3231,15 @@ namespace StoryFlow
         }
 
         /// <summary>
-        /// Broadcasts a variable change notification.
+        /// Broadcasts a variable change notification. Every variable write by a node or by this component's
+        /// public setters reaches here, so it first drops the node results kept for the rest of the
+        /// processing pass: a later read in the same pass sees the new value, as in the HTML runtime, whose
+        /// set* functions end in clearNotBoolCache.
         /// </summary>
         internal void BroadcastVariableChanged(StoryFlowVariable variable, bool isGlobal)
         {
+            _context?.ClearDerivedNodeCaches();
+
             var settings = StoryFlowSettings.Instance;
             if (settings != null && settings.LogVariableChanges && variable != null)
             {
@@ -3248,10 +3253,12 @@ namespace StoryFlow
         /// <summary>
         /// Broadcasts a character variable change notification. Fires alongside (not instead of)
         /// <see cref="OnVariableChanged"/> when a SetCharacterVar node mutates the built-in
-        /// "Name"/"Image" fields or a custom character variable.
+        /// "Name"/"Image" fields or a custom character variable. Drops the kept node results like
+        /// <see cref="BroadcastVariableChanged"/>, which the Name and Image writes do not go through.
         /// </summary>
         internal void BroadcastCharacterVariableChanged(string characterPath, string variableName, StoryFlowVariant value)
         {
+            _context?.ClearDerivedNodeCaches();
             OnCharacterVariableChanged?.Invoke(characterPath, variableName, value);
         }
 
