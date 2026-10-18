@@ -16,6 +16,29 @@ namespace StoryFlow.Tests
             Run("A Run Flow loop that shows its line again through a Set node runs 60 laps with no error", RunFlowLoopThroughReshownLine);
             Run("A Run Flow loop with no line in it still stops at the limit", RunFlowLoopWithoutLine);
             Run("An exit flow reached after a line in a called script still leaves through the caller's exit output", RunFlowExitAfterLine);
+            Run("A line whose option runs a flow ending in Play Audio with nothing after it keeps the line for 60 picks with no error",
+                () => RunFlowDeadEndKeepsLine("'type':'playAudio'"));
+            Run("A line whose option runs a flow with nothing after its Entry Flow keeps the line for 60 picks with no error",
+                () => RunFlowDeadEndKeepsLine(null));
+        }
+
+        // Start -> Shop (Buy) -> Run Flow (Voice) -> Entry Flow (Voice) -> `tail`, with nothing after it, as in the
+        // example project's purchases: the walk ends without reaching a line and the shop line stays up.
+        private static void RunFlowDeadEndKeepsLine(string tail)
+        {
+            var nodes = "[{'id':'Shop','type':'dialogue','choices':[{'id':'buy','text':'buy'}]},{'id':'voice','type':'runFlow','flowId':'voice'}," +
+                "{'id':'entry','type':'entryFlow','flowId':'voice'}" + (tail != null ? ",{'id':'tail'," + tail + "}" : "") + "]";
+            var edges = new List<JObject> { RegressionEdge("0", "Shop"), RegressionEdge("Shop", "voice", "buy") };
+            if (tail != null) edges.Add(RegressionEdge("entry", "tail"));
+            WithLoopStory(false, new Dictionary<string, JObject> { ["main.json"] = LoopScript(nodes, edges, "[]",
+                "[{'id':'voice','name':'Play Random Voice'}]") }, (c, errors) =>
+            {
+                for (int pick = 0; pick < 60; pick++) c.SelectOption("buy");
+                AssertEqual(0, errors.Count, "no error");
+                AssertEqual("main.json:Shop", LoopAt(c), "the shop line stays up");
+                AssertTrue(c.IsWaitingForInput(), "the line keeps taking input");
+                AssertEqual(0, c.GetContext().FlowStackDepth, "the count starts over at the line");
+            });
         }
 
         // Start -> Menu (Again) -> Run Flow (Start) -> Menu.
