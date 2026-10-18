@@ -311,6 +311,19 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// Called after a host write to the globals, the characters or the language. Every live
+        /// context drops the node results it kept for the rest of its processing pass before it
+        /// next evaluates, so a read later in the same pass sees the write, as one after a node's
+        /// write does. The signal is the revision the .sfd writes already advance, which every
+        /// context checks (StoryFlowExecutionContext.GetNodeRuntimeState). A project install and
+        /// ResetAllState reach it through the overlay reset above.
+        /// </summary>
+        private void NotifySharedStateChanged()
+        {
+            StoryFlowDataAssetStore.NotifyChanged(DataAssetOverlay);
+        }
+
+        /// <summary>
         /// The Data Asset store as one reference, for an execution context to hold. Minted
         /// per call rather than cached, so it can never outlive or disagree with the maps
         /// it points at.
@@ -601,9 +614,9 @@ namespace StoryFlow
         //    key, exactly as ExportState and the .sfd surface's character branch answer
         //    it. Language resolution is a component concern (LanguageCode lives there), so
         //    the component's GetCharacterVariable/ById is the language-aware door.
-        //  - NO EVENTS: the manager has none to raise, the same way its .sfd setters
-        //    invalidate no caches (and amendment A2(b) keeps OnCharacterVariableChanged
-        //    node-lane only regardless).
+        //  - NO EVENTS: the manager has none to raise (and amendment A2(b) keeps
+        //    OnCharacterVariableChanged node-lane only regardless). A write still drops
+        //    what live passes kept, as its .sfd setters do (NotifySharedStateChanged).
         //  - LIVE VARIANTS out of the variable getter: a declared variable's variant
         //    comes back LIVE — mutating it writes through to the character — and only
         //    the builtin arms build fresh ones. Unlike the .sfd surface above, this
@@ -730,6 +743,7 @@ namespace StoryFlow
                 v.Value = value ?? new StoryFlowVariant();
                 // Also update the quick-lookup dictionary, as the component's twin does.
                 character.Variables[variableName] = v.Value;
+                NotifySharedStateChanged();
                 return;
             }
 
@@ -822,6 +836,8 @@ namespace StoryFlow
                 // BEFORE the event, for the same reason the assignment is: a handler must see the
                 // new state, and a speaker label is part of it.
                 RefreshRuntimeCharacterNames();
+                // What a pass kept was read in the old language.
+                NotifySharedStateChanged();
                 Debug.Log($"[StoryFlow] Language set to \"{_currentLanguage}\".");
                 OnLanguageChanged?.Invoke(_currentLanguage);
             }
@@ -1190,6 +1206,7 @@ namespace StoryFlow
             }
 
             DeepCopyGlobalVariables();
+            NotifySharedStateChanged();
             Debug.Log("[StoryFlow] Global variables reset to project defaults.");
         }
 
@@ -1206,6 +1223,7 @@ namespace StoryFlow
             }
 
             DeepCopyRuntimeCharacters();
+            NotifySharedStateChanged();
             Debug.Log("[StoryFlow] Runtime characters reset to project defaults.");
         }
 

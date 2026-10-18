@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
+using StoryFlow.Data;
 
 namespace StoryFlow.Tests
 {
@@ -17,14 +18,31 @@ namespace StoryFlow.Tests
             Run("Array Length answers the Add To Array written after its first read", ReadAfterWriteArray);
             Run("Plus on a Get Map Value answers the Set Map Value written after its first read", ReadAfterWriteMap);
             Run("A pass with no write computes a value it reads twice only once", ReadAfterWriteNoWrite);
+            Run("A character variable answers the SetCharacterVariableById a host made during the pass", ReadAfterManagerCharacterWrite);
+            Run("Get Int on a global answers the ResetGlobalVariables a host made during the pass",
+                () => ReadAfterManagerGlobalReset(() => StoryFlowManager.Instance.ResetGlobalVariables()));
+            Run("Get Int on a global answers the ResetAllState a host made during the pass",
+                () => ReadAfterManagerGlobalReset(() => StoryFlowManager.Instance.ResetAllState()));
+            Run("A character variable answers the ResetRuntimeCharacters a host made during the pass", ReadAfterManagerCharacterReset);
+            Run("To Upper Case on a localized string answers the SetLanguage a host made during the pass", ReadAfterManagerLanguageSwitch);
         }
 
         private const string ReadAfterWriteLines = "{'id':'Fresh','type':'dialogue','choices':[]},{'id':'Stale','type':'dialogue','choices':[]},{'id':'Other','type':'dialogue','choices':[]}";
 
-        // Line A, option Go -> `nodes`, in one pass. Answers the line the pass stopped on; `evaluated` collects the
-        // id of every node computed in it, a value served from what the pass kept being left out.
+        // Alice's Mood, Calm or Angry, and the Get Character Variable that reads it, as the exporter writes them.
+        private static Dictionary<string, JObject> ReadAfterWriteAliceFiles() => new Dictionary<string, JObject> {
+            ["characters.json"] = JObject.Parse(@"{'characters':{'characters\\alice.sfc':{'name':'Alice','image':'','variables':{
+                'var-mood':{'id':'var-mood','name':'Mood','type':'enum','value':'Calm','enumValues':['Calm','Angry']}}}},'strings':{'en':{}},'assets':{}}"),
+            ["character-index.json"] = JObject.Parse(@"{'schemaVersion':'1','characters':{'da_alice0001':'characters\\alice.sfc'}}") };
+
+        private const string ReadAfterWriteMood = @"{'id':'mood','type':'getCharacterVar','characterPath':'characters\\alice.sfc','variable':'Mood',
+            'variableType':'enum','characterId':'da_alice0001'}";
+
+        // Line A, option Go -> `nodes`, in one pass, `prepare` run on the component first. Answers the line the pass
+        // stopped on; `evaluated` collects the id of every node computed in it, a value served from what the pass kept
+        // being left out.
         private static string ReadAfterWriteLine(string nodes, IEnumerable<JObject> edges, string variables = "[]",
-            Dictionary<string, JObject> files = null, List<string> evaluated = null)
+            Dictionary<string, JObject> files = null, List<string> evaluated = null, System.Action<StoryFlowComponent> prepare = null)
         {
             var story = new Dictionary<string, JObject> { ["main.json"] = LoopScript(
                 "[{'id':'A','type':'dialogue','choices':[{'id':'go','text':'go'}]}," + ReadAfterWriteLines + "," + nodes + "]",
@@ -42,6 +60,7 @@ namespace StoryFlow.Tests
                 WithLoopStory(false, story, (c, errors) =>
                 {
                     c.GetContext().TraceEnabled = evaluated != null;
+                    prepare?.Invoke(c);
                     c.SelectOption("go");
                     reached = c.GetCurrentDialogue()?.NodeId;
                     AssertEqual(0, errors.Count, "no error");
@@ -81,18 +100,13 @@ namespace StoryFlow.Tests
         // -> Switch B on the same read. Both nodes as the exporter writes them.
         private static void ReadAfterWriteCharacter()
         {
-            var files = new Dictionary<string, JObject> {
-                ["characters.json"] = JObject.Parse(@"{'characters':{'characters\\alice.sfc':{'name':'Alice','image':'','variables':{
-                    'var-mood':{'id':'var-mood','name':'Mood','type':'enum','value':'Calm','enumValues':['Calm','Angry']}}}},'strings':{'en':{}},'assets':{}}"),
-                ["character-index.json"] = JObject.Parse(@"{'schemaVersion':'1','characters':{'da_alice0001':'characters\\alice.sfc'}}") };
-            AssertEqual("Fresh", ReadAfterWriteLine(@"{'id':'mood','type':'getCharacterVar','characterPath':'characters\\alice.sfc','variable':'Mood',
-                'variableType':'enum','characterId':'da_alice0001'},{'id':'switchA','type':'switchOnEnumValue','enumValues':['Calm','Angry']},
+            AssertEqual("Fresh", ReadAfterWriteLine(ReadAfterWriteMood + @",{'id':'switchA','type':'switchOnEnumValue','enumValues':['Calm','Angry']},
                 {'id':'set','type':'setCharacterVar','characterPath':'characters\\alice.sfc','variable':'Mood','variableType':'enum','value':'Angry',
                 'characterId':'da_alice0001'},{'id':'switchB','type':'switchOnEnumValue','enumValues':['Calm','Angry']}",
                 new[] { RegressionEdge("A", "switchA", "go"), RegressionEdge("switchA", "set", "Calm"), RegressionEdge("switchA", "Other", "Angry", ""),
                     RegressionEdge("set", "switchB", "1"), RegressionEdge("switchB", "Fresh", "Angry", ""), RegressionEdge("switchB", "Stale", "Calm", ""),
                     RegressionEdge("mood", "switchA", "enum-output", "enum-1"), RegressionEdge("mood", "switchB", "enum-output", "enum-1") },
-                files: files), "Switch B leaves through Angry");
+                files: ReadAfterWriteAliceFiles()), "Switch B leaves through Angry");
         }
 
         // Go -> Branch (Array Length (Numbers) == 2): true -> Add To Array (Numbers, 7) -> Branch (the same Length == 3).
@@ -141,6 +155,72 @@ namespace StoryFlow.Tests
                 "[{'id':'v_x','name':'X','type':'integer','value':5}]", evaluated: evaluated), "both Branches see X + 1 = 6");
             AssertEqual(1, evaluated.Count(id => id == "x"), "Get Int computed once");
             AssertEqual(1, evaluated.Count(id => id == "plus"), "Plus computed once");
+        }
+
+        // The host writes below run inside the pass, from the event Set Background Image raises.
+        private static System.Action<StoryFlowComponent> OnBackgroundImage(System.Action write) =>
+            c => c.OnBackgroundImageChanged += _ => write();
+
+        // Go -> Switch A on Alice's Mood: Calm -> Set Background Image, whose event the host answers with
+        // SetCharacterVariableById (Alice's Mood = Angry) -> Switch B on the same read.
+        private static void ReadAfterManagerCharacterWrite()
+        {
+            AssertEqual("Fresh", ReadAfterWriteLine(ReadAfterWriteMood + @",{'id':'switchA','type':'switchOnEnumValue','enumValues':['Calm','Angry']},
+                {'id':'bg','type':'setBackgroundImage'},{'id':'switchB','type':'switchOnEnumValue','enumValues':['Calm','Angry']}",
+                new[] { RegressionEdge("A", "switchA", "go"), RegressionEdge("switchA", "bg", "Calm"), RegressionEdge("switchA", "Other", "Angry", ""),
+                    RegressionEdge("bg", "switchB", "output"), RegressionEdge("switchB", "Fresh", "Angry", ""), RegressionEdge("switchB", "Stale", "Calm", ""),
+                    RegressionEdge("mood", "switchA", "enum-output", "enum-1"), RegressionEdge("mood", "switchB", "enum-output", "enum-1") },
+                files: ReadAfterWriteAliceFiles(), prepare: OnBackgroundImage(() =>
+                    StoryFlowManager.Instance.SetCharacterVariableById("da_alice0001", "Mood", StoryFlowVariant.Enum("Angry")))),
+                "Switch B leaves through Angry");
+        }
+
+        // Go -> Set Int (global Done = 5) -> Branch (Done == 5): true -> Set Background Image, whose event the host
+        // answers with `reset` -> Branch (the same Done == 5), false once Done is back at 0.
+        private static void ReadAfterManagerGlobalReset(System.Action reset)
+        {
+            AssertEqual("Fresh", ReadAfterWriteLine(@"{'id':'set','type':'setInt','variable':'done','value':5,'isGlobal':true},
+                {'id':'done','type':'getInt','variable':'done','isGlobal':true},{'id':'is5','type':'equalInt','value2':5},{'id':'gate1','type':'branch'},
+                {'id':'bg','type':'setBackgroundImage'},{'id':'gate2','type':'branch'}",
+                new[] { RegressionEdge("A", "set", "go"), RegressionEdge("set", "gate1", "1"), RegressionEdge("gate1", "bg", "true"),
+                    RegressionEdge("gate1", "Other", "false", ""), RegressionEdge("bg", "gate2", "output"), RegressionEdge("gate2", "Fresh", "false", ""),
+                    RegressionEdge("gate2", "Stale", "true", ""), RegressionEdge("done", "is5", "integer-", "integer-1"),
+                    RegressionEdge("is5", "gate1", "boolean-", "boolean-condition"), RegressionEdge("is5", "gate2", "boolean-", "boolean-condition") },
+                prepare: OnBackgroundImage(reset)), "the second Branch sees Done back at 0");
+        }
+
+        // Go -> Set Character Variable (Alice's Mood = Angry) -> Switch A on Alice's Mood: Angry -> Set Background Image,
+        // whose event the host answers with ResetRuntimeCharacters -> Switch B on the same read.
+        private static void ReadAfterManagerCharacterReset()
+        {
+            AssertEqual("Fresh", ReadAfterWriteLine(ReadAfterWriteMood + @",{'id':'set','type':'setCharacterVar','characterPath':'characters\\alice.sfc',
+                'variable':'Mood','variableType':'enum','value':'Angry','characterId':'da_alice0001'},
+                {'id':'switchA','type':'switchOnEnumValue','enumValues':['Calm','Angry']},{'id':'bg','type':'setBackgroundImage'},
+                {'id':'switchB','type':'switchOnEnumValue','enumValues':['Calm','Angry']}",
+                new[] { RegressionEdge("A", "set", "go"), RegressionEdge("set", "switchA", "1"), RegressionEdge("switchA", "bg", "Angry"),
+                    RegressionEdge("switchA", "Other", "Calm", ""), RegressionEdge("bg", "switchB", "output"), RegressionEdge("switchB", "Fresh", "Calm", ""),
+                    RegressionEdge("switchB", "Stale", "Angry", ""), RegressionEdge("mood", "switchA", "enum-output", "enum-1"),
+                    RegressionEdge("mood", "switchB", "enum-output", "enum-1") },
+                files: ReadAfterWriteAliceFiles(), prepare: OnBackgroundImage(() => StoryFlowManager.Instance.ResetRuntimeCharacters())),
+                "Switch B leaves through Calm");
+        }
+
+        // Go -> Branch (To Upper Case (Get String Word) == "HELLO"): true -> Set Background Image, whose event the host
+        // answers with SetLanguage("fr") -> Branch (the same To Upper Case == "BONJOUR"). Word holds a string-table key.
+        private static void ReadAfterManagerLanguageSwitch()
+        {
+            var files = new Dictionary<string, JObject> {
+                ["global-variables.json"] = JObject.Parse("{'variables':{'word':{'id':'word','name':'Word','type':'string','value':'word'}},'strings':{'en':{'word':'Hello'}},'assets':{}}"),
+                ["localization.json"] = JObject.Parse("{'schemaVersion':'1','sourceLanguage':'en','languages':[{'code':'fr','name':'French'}],'strings':{'fr':{'word':'Bonjour'}}}") };
+            AssertEqual("Fresh", ReadAfterWriteLine(@"{'id':'word','type':'getString','variable':'word','isGlobal':true},{'id':'upper','type':'toUpperCase'},
+                {'id':'isHello','type':'equalString','value2':'HELLO'},{'id':'gate1','type':'branch'},{'id':'bg','type':'setBackgroundImage'},
+                {'id':'isBonjour','type':'equalString','value2':'BONJOUR'},{'id':'gate2','type':'branch'}",
+                new[] { RegressionEdge("A", "gate1", "go"), RegressionEdge("gate1", "bg", "true"), RegressionEdge("gate1", "Other", "false", ""),
+                    RegressionEdge("bg", "gate2", "output"), RegressionEdge("gate2", "Fresh", "true", ""), RegressionEdge("gate2", "Stale", "false", ""),
+                    RegressionEdge("word", "upper", "string-", "string-"), RegressionEdge("upper", "isHello", "string-", "string-1"),
+                    RegressionEdge("upper", "isBonjour", "string-", "string-1"), RegressionEdge("isHello", "gate1", "boolean-", "boolean-condition"),
+                    RegressionEdge("isBonjour", "gate2", "boolean-", "boolean-condition") },
+                files: files, prepare: OnBackgroundImage(() => StoryFlowManager.Instance.SetLanguage("fr"))), "the second Branch reads the French word");
         }
     }
 }
