@@ -29,6 +29,13 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
+            // A line ends the walk that led to it, shown fresh or again. Run Flow is a jump, so the flow
+            // frames pushed on the way are never returned to, and a story that loops back through Run Flow
+            // (a menu's Back, a shop) piled them up until the 50-frame limit stopped it. That limit is for
+            // loops with no pause, so the count restarts here, as in the HTML runtime. Exit flows push and
+            // end in one step, and a called script's caller keeps its own stack in the call frame.
+            context.ClearFlowFrames();
+
             // Track the last dialogue node so Set* nodes with no outgoing edge can return here
             context.LastDialogueNodeId = node.Id;
 

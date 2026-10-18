@@ -20,6 +20,7 @@ namespace StoryFlow.Tests
             RunReadAfterWriteTests();
             RunWiredEnumTests();
             RunConversionTests();
+            RunRunFlowDepthTests();
             return failures == 0 ? 0 : 1;
         }
 

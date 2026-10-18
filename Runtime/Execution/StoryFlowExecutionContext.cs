@@ -980,6 +980,15 @@ namespace StoryFlow.Execution
         }
 
         /// <summary>
+        /// Empties the flow call stack. Showing a line does this (DialogueNodeHandler): the flows that led
+        /// to it are never returned to, and the depth limit is for Run Flow loops with no pause.
+        /// </summary>
+        internal void ClearFlowFrames()
+        {
+            flowCallStack.Clear();
+        }
+
+        /// <summary>
         /// Returns the most recent flow frame without removing it, or null if the stack is empty.
         /// </summary>
         public FlowFrame PeekFlowFrame()
