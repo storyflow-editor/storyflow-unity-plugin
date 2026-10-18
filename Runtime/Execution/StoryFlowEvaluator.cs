@@ -281,6 +281,24 @@ namespace StoryFlow.Execution
             return result;
         }
 
+        /// <summary>
+        /// Evaluate enum with fallback to a default value when no input edge is connected. The wire
+        /// is read as an enum, so every enum producer can feed it. Enum values are exported verbatim,
+        /// so unlike the string fallback the default is not looked up in the string tables.
+        /// </summary>
+        public static string EvaluateEnumWithDefault(StoryFlowExecutionContext ctx, string nodeId, string targetHandleSuffix, string defaultValue)
+        {
+            var edge = ctx?.CurrentScript?.FindInputEdge(nodeId, targetHandleSuffix);
+            if (edge == null) return defaultValue;
+            var sourceNode = ctx.ResolveInputNode(edge);
+            if (sourceNode == null) return defaultValue;
+            var prevHandle = ctx.LastSourceHandle;
+            ctx.LastSourceHandle = edge.SourceHandle;
+            string result = EnumEvaluator.EvaluateFromNode(ctx, sourceNode);
+            ctx.LastSourceHandle = prevHandle;
+            return result;
+        }
+
         // =====================================================================
         // EvaluateTyped — used by ControlFlowNodeHandler for RunScript params
         // =====================================================================

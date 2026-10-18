@@ -206,7 +206,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 case "enum":
                 {
                     string fallback = node.GetData("value", targetVar.Value.GetEnum());
-                    string val = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
+                    string val = StoryFlowEvaluator.EvaluateEnumWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
                     targetVar.Value.SetEnum(val);
                     break;
                 }

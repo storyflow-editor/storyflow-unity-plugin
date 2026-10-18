@@ -16,7 +16,7 @@ namespace StoryFlow.Execution.NodeHandlers
 
             // Evaluate the enum input (use inline value as fallback when no input edge)
             string fallback = node.GetData("value");
-            string value = StoryFlowEvaluator.EvaluateStringWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
+            string value = StoryFlowEvaluator.EvaluateEnumWithDefault(context, node.Id, StoryFlowHandles.In_Enum, fallback);
 
             // Find and update the variable
             var variableId = node.GetData("variable");

@@ -18,6 +18,7 @@ namespace StoryFlow.Tests
             RunSwitchOnEnumValueTests();
             RunSingleInputPinTests();
             RunReadAfterWriteTests();
+            RunWiredEnumTests();
             return failures == 0 ? 0 : 1;
         }
 
