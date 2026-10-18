@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using StoryFlow.Data;
 
@@ -7,6 +8,7 @@ namespace StoryFlow.Tests
     // Switch on Enum with a value pin against the StoryFlow Editor runtime, which is the reference
     // (switch-on-enum-value.test.ts). The enum arrives on a wire, so an enum variable, a character's enum
     // variable or a conversion can drive it, and an output is taken only when its handle names the value exactly.
+    // A value with no output wired of its own leaves through Default, the output on handle source-<id>-.
     internal static partial class Program
     {
         private static void RunSwitchOnEnumValueTests()
@@ -14,8 +16,11 @@ namespace StoryFlow.Tests
             Run("Switch on Enum Value leaves through the output named by the enum variable wired into it", SwitchValueFromVariable);
             Run("Switch on Enum Value leaves through the output named by a character's enum variable", SwitchValueFromCharacter);
             Run("Switch on Enum Value takes the output that matches the value exactly, not a longer value that starts with it", SwitchValueExactMatch);
-            Run("Switch on Enum Value stops when nothing is wired into the value pin, instead of taking the first output", SwitchValueUnwired);
-            Run("Switch on Enum Value stops when the output for the value is not connected", SwitchValueUnconnectedOutput);
+            Run("Switch on Enum Value stops when nothing is wired into the value pin or Default, instead of taking the first output", SwitchValueUnwired);
+            Run("Switch on Enum Value stops when neither the output for the value nor Default is connected", SwitchValueUnconnectedOutput);
+            Run("Switch on Enum Value leaves through Default when the value has no output wired of its own", SwitchValueDefault);
+            Run("Switch on Enum Value leaves through the value's own output, not a Default wired before it", SwitchValueOwnOutputBeforeDefault);
+            Run("Switch on Enum Value leaves through Default when nothing is wired into the value pin", SwitchValueUnwiredDefault);
             foreach (var conversion in new[] { "intToEnum", "stringToEnum" })
                 Run(conversion + " feeding Switch on Enum Value maps into the switch's value list", () => SwitchValueFromConversion(conversion));
             Run("Import keeps the Switch on Enum Value type and its value list", SwitchValueImport);
@@ -43,6 +48,20 @@ namespace StoryFlow.Tests
                 edges.Add(RegressionEdge("sw", value, value));
             }
             return new Dictionary<string, JObject> { ["main.json"] = LoopScript(nodes.ToString(), edges, variables) };
+        }
+
+        // SwitchValueStory plus a line Default on the Default output, wired FIRST so a lookup by prefix or by the
+        // first wire would take it, with the outputs in `unwired` left without a wire.
+        private static Dictionary<string, JObject> SwitchDefaultStory(string source, string[] outputs, string variables, params string[] unwired)
+        {
+            var story = SwitchValueStory(source, outputs, variables);
+            var main = story["main.json"];
+            main["nodes"]["Default"] = JObject.Parse("{'id':'Default','type':'dialogue','choices':[]}");
+            var connections = (JArray)main["connections"];
+            foreach (var edge in connections.Where(edge => (string)edge["source"] == "sw" && unwired.Any(value => (string)edge["sourceHandle"] == "source-sw-" + value)).ToList())
+                edge.Remove();
+            connections.Insert(0, RegressionEdge("sw", "Default", "", ""));
+            return story;
         }
 
         // Starts the story and returns the line it stopped on, "" when it stopped before reaching one.
@@ -99,6 +118,26 @@ namespace StoryFlow.Tests
             var warnings = new List<string>();
             AssertEqual("", SwitchValueLine(SwitchValueStory(SwitchMood, new[] { "Happy" }, SwitchMoodVariable("Sad", "Happy", "Sad")), warnings), "no line is reached");
             AssertTrue(warnings.Contains("[StoryFlow] SwitchOnEnumValue: no output for enum value 'Sad' (node sw)."), "the value is reported");
+        }
+
+        // Happy and Sad are both outputs, only Happy has a wire.
+        private static void SwitchValueDefault()
+        {
+            var warnings = new List<string>();
+            AssertEqual("Default", SwitchValueLine(SwitchDefaultStory(SwitchMood, new[] { "Happy", "Sad" }, SwitchMoodVariable("Sad", "Happy", "Sad"), "Sad"), warnings), "the Default line");
+            AssertEqual(0, warnings.Count(warning => warning.Contains("SwitchOnEnumValue")), "nothing is reported");
+        }
+
+        private static void SwitchValueOwnOutputBeforeDefault()
+        {
+            AssertEqual("Happy", SwitchValueLine(SwitchDefaultStory(SwitchMood, new[] { "Happy", "Sad" }, SwitchMoodVariable("Happy", "Happy", "Sad"))), "the line for Happy");
+        }
+
+        private static void SwitchValueUnwiredDefault()
+        {
+            var warnings = new List<string>();
+            AssertEqual("Default", SwitchValueLine(SwitchDefaultStory(null, new[] { "Happy", "Sad" }, "[]"), warnings), "the Default line");
+            AssertEqual(0, warnings.Count(warning => warning.Contains("SwitchOnEnumValue")), "nothing is reported");
         }
 
         // Level 2 -> Int to Enum, or "Lover" -> String to Enum, -> Switch. The conversion has no list of its own and

@@ -89,9 +89,16 @@ namespace StoryFlow.Execution.NodeHandlers
             // enum field can drive it as well as an enum variable. Unwired, it is ""
             string enumValue = StoryFlowEvaluator.EvaluateEnum(context, node.Id, StoryFlowHandles.In_Enum1);
 
-            // The edge lookup is exact: "Act1" never leaves through "Act10", and "" matches no output
+            // The edge lookups are exact: "Act1" never leaves through "Act10". A value with no output
+            // wired of its own leaves through Default, the output with the empty suffix, where the ""
+            // of an unwired value pin also lands
             var outputHandle = StoryFlowHandles.Source(node.Id, enumValue);
             var edge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
+            if (edge == null)
+            {
+                outputHandle = StoryFlowHandles.Source(node.Id, StoryFlowHandles.Out_Default);
+                edge = context.CurrentScript.FindEdgeBySourceHandle(outputHandle);
+            }
 
             // An unconnected output at the end of a ForEach body is a finished iteration:
             // ProcessNextNode continues the loop
