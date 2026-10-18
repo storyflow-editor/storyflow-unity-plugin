@@ -36,7 +36,7 @@ namespace StoryFlow.UI
         {
             // EventSystem
 #if UNITY_2023_1_OR_NEWER
-            if (Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
+            if (Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
 #else
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
 #endif

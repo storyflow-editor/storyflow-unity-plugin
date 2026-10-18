@@ -73,7 +73,7 @@ namespace StoryFlow
 
             // Check if one already exists in the scene
 #if UNITY_2023_1_OR_NEWER
-            var existing = UnityEngine.Object.FindFirstObjectByType<StoryFlowManager>();
+            var existing = UnityEngine.Object.FindAnyObjectByType<StoryFlowManager>();
 #else
             var existing = UnityEngine.Object.FindObjectOfType<StoryFlowManager>();
 #endif

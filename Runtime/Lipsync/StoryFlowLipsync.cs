@@ -147,8 +147,9 @@ namespace StoryFlow.Lipsync
             var table = VisemeMap != null ? VisemeMap.ToTable() : StoryFlowVisemeTable.Default();
 
             // Seeded per component: Unity's Mono seeds a bare `new Random()` from TickCount, so a crowd built
-            // in one frame would idle in lockstep.
-            _driver = new StoryFlowLipsyncDriver(table, GetInstanceID());
+            // in one frame would idle in lockstep. GetHashCode is the instance id on 2022.3 and the entity
+            // id's hash on Unity 6, where GetInstanceID no longer compiles.
+            _driver = new StoryFlowLipsyncDriver(table, GetHashCode());
             _atRest = false;
             ResolveFace();
             BindSource();
