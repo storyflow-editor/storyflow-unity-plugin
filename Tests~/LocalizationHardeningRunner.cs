@@ -19,6 +19,7 @@ namespace StoryFlow.Tests
             RunSingleInputPinTests();
             RunReadAfterWriteTests();
             RunWiredEnumTests();
+            RunConversionTests();
             return failures == 0 ? 0 : 1;
         }
 

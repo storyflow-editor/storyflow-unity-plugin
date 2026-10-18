@@ -148,8 +148,12 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.FloatToInt:
                 {
+                    // The nearest integer, a value exactly halfway rounding toward +infinity, as the
+                    // editor's Math.round does: 2.5 -> 3, -2.5 -> -2. Mathf.RoundToInt and Math.Round
+                    // round halves to even instead.
                     float f = FloatEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Float);
-                    return Mathf.FloorToInt(f);
+                    int floor = Mathf.FloorToInt(f);
+                    return f - floor >= 0.5f ? floor + 1 : floor;
                 }
 
                 // Array length nodes
