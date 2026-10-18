@@ -169,9 +169,12 @@ namespace StoryFlow.Execution
                 node.Type == StoryFlowNodeType.ClearDataAssetArray;
             if (node.Type == StoryFlowNodeType.MapKeys || node.Type == StoryFlowNodeType.MapValues)
                 compatible = node.GetData(node.Type == StoryFlowNodeType.MapKeys ? "keyType" : "valueType") == "dataAsset";
-            if (EvaluatorHelpers.IsDataAssetAccessor(node.Type) ||
-                node.Type == StoryFlowNodeType.GetCharacterVar || node.Type == StoryFlowNodeType.SetCharacterVar)
+            if (EvaluatorHelpers.IsDataAssetAccessor(node.Type))
                 compatible = node.GetData("variableType") == "dataAsset" && node.GetDataBool("isArray");
+            // The export writes isArray on Set Character Variable only; the read below refuses a
+            // character variable that is not an array.
+            if (node.Type == StoryFlowNodeType.GetCharacterVar || node.Type == StoryFlowNodeType.SetCharacterVar)
+                compatible = node.GetData("variableType") == "dataAsset";
             if (!compatible)
             {
                 ctx.FailResolution();

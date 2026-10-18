@@ -210,7 +210,8 @@ namespace StoryFlow.Execution.NodeHandlers
                 ? context.CurrentScript.GetNode(clearInputEdge.Source)
                 : null;
             if (!DataAssetNodeHandler.TryRouteArrayOpToDataAsset(
-                    component, context, null, clearInputSource, new List<StoryFlowVariant>()))
+                    component, context, null, clearInputSource, new List<StoryFlowVariant>()) &&
+                !TryWriteCharacterArray(context, component, clearInputSource, elementType, new List<StoryFlowVariant>()))
             {
                 if (elementType == StoryFlowVariableType.DataAsset)
                 {
@@ -490,6 +491,9 @@ namespace StoryFlow.Execution.NodeHandlers
                     component, context, node, sourceNode, newArray))
                 return;
 
+            if (TryWriteCharacterArray(context, component, sourceNode, elementType, newArray))
+                return;
+
             if (elementType == StoryFlowVariableType.DataAsset)
             {
                 // Only the immediate source is writable. Modifier outputs are snapshots;
@@ -501,21 +505,6 @@ namespace StoryFlow.Execution.NodeHandlers
                     {
                         variable.Value.ArrayValue = newArray;
                         component.BroadcastVariableChanged(variable, sourceNode.GetDataBool("isGlobal"));
-                    }
-                }
-                else if ((sourceNode.Type == StoryFlowNodeType.GetCharacterVar ||
-                          sourceNode.Type == StoryFlowNodeType.SetCharacterVar) &&
-                         sourceNode.GetData("variableType") == "dataAsset" && sourceNode.GetDataBool("isArray"))
-                {
-                    var characterPath = EvaluatorHelpers.ResolveCharacterPath(context, sourceNode);
-                    var character = context.FindCharacter(characterPath);
-                    var variable = character?.FindVariableByName(sourceNode.GetData("variableName"));
-                    if (variable != null && variable.Type == StoryFlowVariableType.DataAsset && variable.IsArray)
-                    {
-                        variable.Value.ArrayValue = newArray;
-                        character.Variables[variable.Name] = variable.Value;
-                        component.BroadcastVariableChanged(variable, false);
-                        component.BroadcastCharacterVariableChanged(characterPath, variable.Name, variable.Value);
                     }
                 }
                 return;
@@ -530,6 +519,37 @@ namespace StoryFlow.Execution.NodeHandlers
                 component.Trace($"VAR SET \"{sourceVar.Name}\" global={isGlobal.ToString().ToLower()} value=[{newArray.Count} elements]");
                 component.BroadcastVariableChanged(sourceVar, isGlobal);
             }
+        }
+
+        /// <summary>
+        /// Writes an array op's result into the character array a Get or Set Character Variable on
+        /// its array input reads, any element type, as the editor does (setCharacterVariableValue).
+        /// The export writes isArray on Set Character Variable only, so the variable's declaration
+        /// decides whether it is an array. As in the editor, a variable that is missing or whose type
+        /// is not the one the node names is left alone; so is one of another element type than the
+        /// op's, a wire the editor would not draw, where its runtime would store the mixed array.
+        /// True when the source is a character variable node, so the caller writes nothing else.
+        /// </summary>
+        private static bool TryWriteCharacterArray(
+            StoryFlowExecutionContext context, StoryFlowComponent component,
+            StoryFlowNode sourceNode, StoryFlowVariableType elementType, List<StoryFlowVariant> newArray)
+        {
+            if (sourceNode == null || (sourceNode.Type != StoryFlowNodeType.GetCharacterVar &&
+                                       sourceNode.Type != StoryFlowNodeType.SetCharacterVar))
+                return false;
+
+            var characterPath = EvaluatorHelpers.ResolveCharacterPath(context, sourceNode);
+            var character = context.FindCharacter(characterPath);
+            var variable = character?.FindVariableByName(sourceNode.GetData("variableName"));
+            if (variable != null && variable.IsArray && variable.Type == elementType &&
+                StoryFlowWireTypes.TryParseWireType(sourceNode.GetData("variableType"), out var named) && named == variable.Type)
+            {
+                variable.Value.ArrayValue = newArray;
+                character.Variables[variable.Name] = variable.Value;
+                component.BroadcastVariableChanged(variable, false);
+                component.BroadcastCharacterVariableChanged(characterPath, variable.Name, variable.Value);
+            }
+            return true;
         }
     }
 }

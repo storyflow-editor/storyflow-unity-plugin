@@ -30,6 +30,52 @@ namespace StoryFlow.Tests
             Run("Run Script returning to an unconnected output keeps a usable line", ParityReturnToUnconnectedOutput);
             foreach (bool global in new[] { true, false })
                 Run("Local and global sharing an id resolve by the node scope flag, global " + global, () => ParityScopeFlag(global));
+            foreach (var type in ParityCharacterArrays)
+                Run("Add To " + type[2] + " Array writes back into the character's array it reads", () => AssertEqual(type[5],
+                    ParityCharacterArray(type[1], type[3], "{'id':'op','type':'addTo" + type[0] + "Array','value':" + type[4] + "}"), "Alice's List"));
+            Run("Set String Array Element writes back into the character's array it reads", () => AssertEqual("a,z",
+                ParityCharacterArray("string", "['a','b']", "{'id':'op','type':'setStringArrayElement','value1':1,'value2':'z'}"), "Alice's List"));
+            Run("Remove From String Array writes back into the character's array it reads", () => AssertEqual("b",
+                ParityCharacterArray("string", "['a','b']", "{'id':'op','type':'removeFromStringArray','value':0}"), "Alice's List"));
+            foreach (var type in new[] { new[] { "String", "string", "['a','b']" }, new[] { "DataAsset", "dataAsset", "['asset_a']" } })
+                Run("Clear " + type[0] + " Array empties the character's array it reads", () => AssertEqual("",
+                    ParityCharacterArray(type[1], type[2], "{'id':'op','type':'clear" + type[0] + "Array'}"), "Alice's List"));
+            Run("Add To Int Array leaves a character's array alone when its Get Character Variable names another type", () => AssertEqual("1,2",
+                ParityCharacterArray("integer", "[1,2]", "{'id':'op','type':'addToIntArray','value':3}", null, "string"), "Alice's List"));
+            // A wire the editor would not draw. Its runtime stores the mixed array; this one keeps the integer array whole.
+            Run("Add To String Array keeps a string out of a character's integer array", () => AssertEqual("1,2",
+                ParityCharacterArray("integer", "[1,2]", "{'id':'op','type':'addToStringArray','value':'c'}", "string"), "Alice's List"));
+        }
+
+        // Node type token, element type, label, Alice's List, the element Add To Array appends, and List read back after it.
+        private static readonly string[][] ParityCharacterArrays =
+        {
+            new[] { "Bool", "boolean", "Bool", "[true]", "false", "True,False" }, new[] { "Int", "integer", "Int", "[1,2]", "3", "1,2,3" },
+            new[] { "Float", "float", "Float", "[1.5]", "2.5", "1.5,2.5" }, new[] { "String", "string", "String", "['a','b']", "'c'", "a,b,c" },
+            new[] { "Image", "image", "Image", "['img_a']", "'img_b'", "img_a,img_b" }, new[] { "Character", "character", "Character", "['bob']", "'carol'", "bob,carol" },
+            new[] { "DataAsset", "dataAsset", "Data Asset", "['asset_a']", "'asset_b'", "asset_a,asset_b" }, new[] { "Audio", "audio", "Audio", "['snd_a']", "'snd_b'", "snd_a,snd_b" },
+        };
+
+        // Start -> `op` -> line Done, the op's array pin wired from Get Character Variable (Alice's List, an array of
+        // `elementType`), the node as the exporter writes it: with no isArray. `pin` is the op's element type and
+        // `nodeType` the type the node names, when they differ. Answers List afterwards.
+        private static string ParityCharacterArray(string elementType, string initial, string op, string pin = null, string nodeType = null)
+        {
+            var story = new Dictionary<string, JObject> {
+                ["main.json"] = LoopScript("[{'id':'Done','type':'dialogue','choices':[]}," + op + @",{'id':'list','type':'getCharacterVar',
+                    'characterPath':'characters\\alice.sfc','variable':'List','variableType':'" + (nodeType ?? elementType) + "','characterId':'da_alice0001'}]",
+                    new[] { RegressionEdge("0", "op"), RegressionEdge("op", "Done", "1", ""),
+                        RegressionEdge("list", "op", (nodeType ?? elementType) + "-array-output", (pin ?? elementType) + "-array-2") }),
+                ["characters.json"] = JObject.Parse(@"{'characters':{'characters\\alice.sfc':{'name':'Alice','image':'','variables':{'var-list':{
+                    'id':'var-list','name':'List','type':'" + elementType + "','isArray':true,'value':" + initial + "}}}},'strings':{'en':{}},'assets':{}}"),
+                ["character-index.json"] = JObject.Parse(@"{'schemaVersion':'1','characters':{'da_alice0001':'characters\\alice.sfc'}}") };
+            string list = null;
+            WithLoopStory(false, story, (c, errors) =>
+            {
+                AssertEqual("Done", c.GetCurrentDialogue()?.NodeId, "the walk reaches the line"); AssertEqual(0, errors.Count, "no error");
+                list = string.Join(",", c.GetCharacterVariable("characters/alice.sfc", "List").ArrayValue.Select(value => value.ToString()));
+            });
+            return list;
         }
 
         private const string ParityLine = "{'id':'A','type':'dialogue','choices':[{'id':'go','text':'go'},{'id':'next','text':'next'},{'id':'idle','text':'idle'}]},{'id':'B','type':'dialogue','choices':[]}";
