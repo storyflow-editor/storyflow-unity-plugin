@@ -97,6 +97,10 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.IntToEnum:
                 {
+                    // Unwired, the empty value rather than the list's first: the editor runtime
+                    // answers '' before it looks for a list
+                    if (ctx.CurrentScript?.FindInputEdge(node.Id, StoryFlowHandles.In_Integer) == null)
+                        return "";
                     int intValue = IntegerEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_Integer);
                     // Need to find the enum values list — look at the variable connected downstream
                     var enumValues = EvaluatorHelpers.GetEnumValuesFromNode(ctx, node);
@@ -175,6 +179,9 @@ namespace StoryFlow.Execution
 
                 case StoryFlowNodeType.StringToEnum:
                 {
+                    // Unwired, the empty value, as for Int to Enum above
+                    if (ctx.CurrentScript?.FindInputEdge(node.Id, StoryFlowHandles.In_String) == null)
+                        return "";
                     string strVal = StringEvaluator.Evaluate(ctx, node.Id, StoryFlowHandles.In_String);
                     // Validate against the enum values list (resolved downstream, like
                     // IntToEnum): pass a matching value through, otherwise fall back to
