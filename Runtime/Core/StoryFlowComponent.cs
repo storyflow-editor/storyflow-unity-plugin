@@ -3139,6 +3139,16 @@ namespace StoryFlow
         }
 
         /// <summary>
+        /// A node set up wrong runs nothing after it, so inside a ForEach body it ends the iteration,
+        /// as a node with nothing connected after it does. Stopping instead would leave the loop open.
+        /// </summary>
+        internal void EndLoopBody()
+        {
+            var loop = _context?.PeekLoop();
+            if (loop != null) ArrayNodeHandler.ContinueForEachLoop(this, loop.NodeId);
+        }
+
+        /// <summary>
         /// Finds the edge connected to the given source handle and sets the next node
         /// for the iterative loop to pick up.
         /// </summary>

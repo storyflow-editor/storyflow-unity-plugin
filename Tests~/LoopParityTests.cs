@@ -71,6 +71,10 @@ namespace StoryFlow.Tests
             yield return Tail("Switch On Enum with no output for the value", "{'type':'switchOnEnum','variable':'mode','enumValues':['x']}");
             yield return Tail("Switch on Enum with a value pin and no output for the value", "{'type':'switchOnEnumValue','enumValues':['x']}");
             yield return Tail("Run Script whose output is unconnected", "{'type':'runScript','script':'empty.json'}");
+            // A node set up wrong runs nothing, so it ends the body as an unconnected one does.
+            yield return Tail("Run Script with no script", "{'type':'runScript'}");
+            yield return Tail("Run Flow with no flow", "{'type':'runFlow'}");
+            yield return Tail("Random Branch with no options", "{'type':'randomBranch','options':[]}");
 
             // Every other handler that can end a body.
             yield return Tail("Branch whose taken output is unconnected", "{'type':'branch','value':true}");
@@ -390,13 +394,13 @@ namespace StoryFlow.Tests
         }
 
         // chapter: For Each [1, 2, 3] -> Branch(Stop): false -> Set Bool(Stop = true),
-        // true -> Set Int(Seen = element) -> Run Script with no script selected, where the walk stops.
+        // true -> Set Int(Seen = element) -> a line, where the walk stops on "Dialogue nodes cannot be used inside ForEach loops".
         private static void LoopAfterStoppedWalk(bool rollback)
         {
             var scripts = LoopStoryAround(LoopScript(
                 @"[{'id':'array','type':'getIntArray','variable':'numbers'},{'id':'loop','type':'forEachIntLoop'},{'id':'stop','type':'getBool','variable':'stop'},
                     {'id':'gate','type':'branch'},{'id':'arm','type':'setBool','variable':'stop','value':true},
-                    {'id':'seen','type':'setInt','variable':'seen','isGlobal':true},{'id':'halt','type':'runScript'}]",
+                    {'id':'seen','type':'setInt','variable':'seen','isGlobal':true},{'id':'halt','type':'dialogue','choices':[]}]",
                 new[] { RegressionEdge("0", "loop"), RegressionEdge("loop", "gate", "loopBody"), RegressionEdge("gate", "arm", "false"), RegressionEdge("gate", "seen", "true"),
                     RegressionEdge("seen", "halt", "1"), RegressionEdge("array", "loop", "integer-array-", "integer-array-array"),
                     RegressionEdge("stop", "gate", "boolean-", "boolean-condition"), RegressionEdge("loop", "seen", "integer-element", "integer-2") },
@@ -407,10 +411,12 @@ namespace StoryFlow.Tests
                 c.AdvanceDialogue();
                 AssertEqual("chapter.json", c.GetContext().CurrentScript.ScriptPath, "the walk stopped in the called script");
                 AssertEqual(2, c.GetIntVariable("Seen", true), "on the second element");
+                AssertEqual(1, errors.Count, "the line in the loop body stops the walk"); errors.Clear();
                 c.StopDialogue(); AssertTrue(StoryFlowManager.Instance.ImportState(save), "stopped Load"); c.StartDialogue();
                 AssertEqual("main.json:A", LoopAt(c), "story starts again"); AssertEqual(0, c.GetIntVariable("Seen", true), "loaded state");
                 c.AdvanceDialogue();
-                AssertEqual(2, c.GetIntVariable("Seen", true), "the loop starts at its first element"); AssertEqual(0, errors.Count, "no error");
+                AssertEqual(2, c.GetIntVariable("Seen", true), "the loop starts at its first element");
+                AssertEqual(1, errors.Count, "the line in the loop body stops the walk again");
             });
         }
 

@@ -184,6 +184,7 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(scriptId))
             {
                 Debug.LogWarning($"[StoryFlow] RunScript node {node.Id} has no script selected.");
+                component.EndLoopBody();
                 return;
             }
 
@@ -381,6 +382,7 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(flowId))
             {
                 Debug.LogWarning($"[StoryFlow] RunFlow node {node.Id} has no flowId.");
+                component.EndLoopBody();
                 return;
             }
 

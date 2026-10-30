@@ -121,6 +121,7 @@ namespace StoryFlow.Execution.NodeHandlers
             if (string.IsNullOrEmpty(optionsJson))
             {
                 Debug.LogWarning($"[StoryFlow] RandomBranch: no options defined (node {node.Id}).");
+                component.EndLoopBody();
                 return;
             }
 
@@ -130,6 +131,7 @@ namespace StoryFlow.Execution.NodeHandlers
                 if (options.Count == 0)
                 {
                     Debug.LogWarning($"[StoryFlow] RandomBranch: empty options array (node {node.Id}).");
+                    component.EndLoopBody();
                     return;
                 }
 
