@@ -28,6 +28,8 @@ namespace StoryFlow.Tests
             Run("Diagnostics use the editor wording", ParityDiagnostics);
             Run("Global variable node without the scope flag does not reach the global", ParityStrictScope);
             Run("Run Script returning to an unconnected output keeps a usable line", ParityReturnToUnconnectedOutput);
+            foreach (bool rollback in new[] { false, true })
+                Run("Random Branch whose options all weigh 0 takes the first option, rollback " + rollback, () => ParityZeroWeightRandomBranch(rollback));
             foreach (bool global in new[] { true, false })
                 Run("Local and global sharing an id resolve by the node scope flag, global " + global, () => ParityScopeFlag(global));
             foreach (var type in ParityCharacterArrays)
@@ -112,6 +114,18 @@ namespace StoryFlow.Tests
                 AssertEqual("main.json:A waiting log=[1,2] done=0 loops=0 errors=0", LoopState(c, errors), "the line still takes input");
                 c.SelectOption("next");
                 AssertEqual("main.json:B waiting log=[1,2] done=0 loops=0 errors=0", LoopState(c, errors), "Next leaves the line");
+            });
+        }
+
+        // Start -> Random Branch(a: 0, b: 0): a -> line First, b -> line Second.
+        private static void ParityZeroWeightRandomBranch(bool rollback)
+        {
+            var story = new Dictionary<string, JObject> { ["main.json"] = LoopScript(@"[{'id':'pick','type':'randomBranch','options':[{'id':'a','weight':0},{'id':'b','weight':0}]},
+                {'id':'First','type':'dialogue','choices':[]},{'id':'Second','type':'dialogue','choices':[]}]",
+                new[] { RegressionEdge("0", "pick"), RegressionEdge("pick", "First", "a"), RegressionEdge("pick", "Second", "b") }) };
+            WithLoopStory(rollback, story, (c, errors) =>
+            {
+                AssertEqual("main.json:First", LoopAt(c), "the first option is taken"); AssertEqual(0, errors.Count, "no error");
             });
         }
 

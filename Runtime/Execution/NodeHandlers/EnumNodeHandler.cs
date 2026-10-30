@@ -154,13 +154,8 @@ namespace StoryFlow.Execution.NodeHandlers
                     totalWeight += weight;
                 }
 
-                if (totalWeight <= 0)
-                {
-                    Debug.LogWarning($"[StoryFlow] RandomBranch: total weight is 0 (node {node.Id}).");
-                    return;
-                }
-
-                // Pick a random value in [0, totalWeight)
+                // Pick a random value in [0, totalWeight). With every weight 0 no option matches the roll
+                // and the first is taken, as in the HTML runtime.
                 int roll = context.RandomRange(0, totalWeight);
                 int cumulative = 0;
                 string selectedOptionId = null;

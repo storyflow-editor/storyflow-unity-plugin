@@ -75,6 +75,7 @@ namespace StoryFlow.Tests
             yield return Tail("Run Script with no script", "{'type':'runScript'}");
             yield return Tail("Run Flow with no flow", "{'type':'runFlow'}");
             yield return Tail("Random Branch with no options", "{'type':'randomBranch','options':[]}");
+            yield return Tail("Random Branch whose options all weigh 0", "{'type':'randomBranch','options':[{'id':'a','weight':0},{'id':'b','weight':0}]}");
 
             // Every other handler that can end a body.
             yield return Tail("Branch whose taken output is unconnected", "{'type':'branch','value':true}");
