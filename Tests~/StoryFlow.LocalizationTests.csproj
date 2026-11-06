@@ -25,9 +25,9 @@
     <Compile Include="WiredEnumTests.cs" />
     <Compile Include="ConversionTests.cs" />
     <Compile Include="RunFlowDepthTests.cs" />
+    <Compile Include="BuildCheckStubs.cs" /><Compile Include="BuildCheckTests.cs" />
     <Compile Include="LocalizationHardeningRunner.cs" />
     <Compile Remove="../Runtime/UI/StoryFlowRuntimeUI.cs" />
     <Compile Remove="../Runtime/UI/StoryFlowRuntimeUIPortrait.cs" />
-    <Compile Remove="../Editor/Build/StoryFlowBuildCheck.cs" />
   </ItemGroup>
 </Project>

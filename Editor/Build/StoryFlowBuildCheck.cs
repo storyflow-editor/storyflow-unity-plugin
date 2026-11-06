@@ -30,11 +30,12 @@ namespace StoryFlow.Editor
             if (settings != null && settings.DefaultProject != null)
                 return;
 
-            // Anchor 2: a project asset inside any Resources folder
+            // Anchor 2: the asset the runtime's Resources.Load("Project") finds, one named Project directly
+            // inside a Resources folder. Under another name or in a subfolder it ships but is never loaded.
             foreach (string guid in projectGuids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid).Replace("\\", "/");
-                if (path.Contains("/Resources/"))
+                if (path.EndsWith("/Resources/Project.asset", System.StringComparison.Ordinal))
                     return;
             }
 
