@@ -22,6 +22,7 @@ namespace StoryFlow.Tests
             RunConversionTests();
             RunRunFlowDepthTests();
             RunBuildCheckTests();
+            RunMenuPathTests();
             return failures == 0 ? 0 : 1;
         }
 

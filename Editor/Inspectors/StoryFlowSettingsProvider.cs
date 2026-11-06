@@ -39,8 +39,8 @@ namespace StoryFlow.Editor
             if (settings == null)
             {
                 EditorGUILayout.HelpBox(
-                    "Could not find or create the StoryFlowSettings asset.\n" +
-                    "Try creating one manually: Assets > Create > StoryFlow > Settings",
+                    "Could not find or create the StoryFlowSettings asset at " + SettingsAssetPath + ".\n" +
+                    "Check that " + ResourcesFolder + " can be written to.",
                     MessageType.Error);
                 return;
             }
