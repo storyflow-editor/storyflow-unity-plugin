@@ -77,6 +77,7 @@ namespace StoryFlow.Editor
         /// <summary>
         /// Finds or creates the StoryFlowSettings asset.
         /// Creates it at Assets/Resources/StoryFlowSettings.asset if missing.
+        /// Returns null if it could not be created.
         /// </summary>
         public static StoryFlowSettings FindOrCreateSettings()
         {
@@ -84,14 +85,40 @@ namespace StoryFlow.Editor
             if (settings != null)
                 return settings;
 
-            // Create the asset
+            return CreateSettingsAsset();
+        }
+
+        /// <summary>
+        /// Creates the StoryFlowSettings asset at Assets/Resources/StoryFlowSettings.asset.
+        /// Logs an error and returns null when Unity could not create it, rather than
+        /// handing back a copy that was never saved.
+        /// </summary>
+        internal static StoryFlowSettings CreateSettingsAsset()
+        {
             EnsureFolderExists(ResourcesFolder);
 
-            settings = ScriptableObject.CreateInstance<StoryFlowSettings>();
-            AssetDatabase.CreateAsset(settings, SettingsAssetPath);
-            // SaveAssetIfDirty, not SaveAssets: this runs in the middle of an import, and a
-            // blanket SaveAssets would flush every asset the importer deliberately left
-            // untouched, defeating the skip-if-unchanged pass.
+            var settings = ScriptableObject.CreateInstance<StoryFlowSettings>();
+            try
+            {
+                AssetDatabase.CreateAsset(settings, SettingsAssetPath);
+            }
+            catch (UnityException)
+            {
+                // Unity throws when it cannot create the asset. The check below reports it.
+            }
+
+            // Settings with no asset path were never saved, so anything set on them would be lost.
+            if (string.IsNullOrEmpty(AssetDatabase.GetAssetPath(settings)))
+            {
+                Object.DestroyImmediate(settings);
+                Debug.LogError("[StoryFlow] Could not create the StoryFlowSettings asset at " + SettingsAssetPath +
+                               ". Check that " + ResourcesFolder + " can be written to.");
+                return null;
+            }
+
+            // SaveAssetIfDirty, not SaveAssets: an import calls this midway, and a blanket
+            // SaveAssets would flush every asset the importer deliberately left untouched,
+            // defeating the skip-if-unchanged pass.
             AssetDatabase.SaveAssetIfDirty(settings);
 
             Debug.Log("[StoryFlow] Created StoryFlowSettings asset at: " + SettingsAssetPath);

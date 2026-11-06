@@ -27,6 +27,7 @@
     <Compile Include="RunFlowDepthTests.cs" />
     <Compile Include="BuildCheckStubs.cs" /><Compile Include="BuildCheckTests.cs" />
     <Compile Include="MenuPathTests.cs" />
+    <Compile Include="SettingsAssetTests.cs" />
     <Compile Include="LiveSyncMessageTests.cs" />
     <Compile Include="LocalizationHardeningRunner.cs" />
     <Compile Remove="../Runtime/UI/StoryFlowRuntimeUI.cs" />

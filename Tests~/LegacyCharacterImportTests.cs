@@ -80,7 +80,8 @@ namespace StoryFlow.Tests
             }
         }
 
-        private static void WithImportedLegacyFixture(bool includeIndex, Action<StoryFlowProjectAsset> assertion)
+        // arrange runs on the freshly reset asset stubs, just before the import.
+        private static void WithImportedLegacyFixture(bool includeIndex, Action<StoryFlowProjectAsset> assertion, Action arrange = null)
         {
             var originalDirectory = Directory.GetCurrentDirectory();
             var fixtureSource = Path.Combine(originalDirectory, "Tests~", "Fixtures", "pre-character-index");
@@ -95,6 +96,7 @@ namespace StoryFlow.Tests
 
                 Directory.SetCurrentDirectory(projectRoot);
                 EditorStubs.Reset();
+                arrange?.Invoke();
                 var project = StoryFlowImporter.ImportProject(
                     fixtureCopy, "Assets/LegacyCharacterProbe", out var report, force: true);
 

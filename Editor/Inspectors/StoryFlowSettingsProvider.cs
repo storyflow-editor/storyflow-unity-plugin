@@ -14,6 +14,10 @@ namespace StoryFlow.Editor
         private const string ResourcesFolder = "Assets/Resources";
         private const string SettingsAssetPath = "Assets/Resources/StoryFlowSettings.asset";
 
+        // Set when the settings asset could not be created, so the page shows its error instead
+        // of trying again on every repaint. Opening the page again tries again.
+        private static bool creationFailed;
+
         [SettingsProvider]
         public static SettingsProvider CreateProvider()
         {
@@ -26,6 +30,7 @@ namespace StoryFlow.Editor
                 activateHandler = (searchContext, rootElement) =>
                 {
                     // Ensure settings asset exists when the settings page is opened
+                    creationFailed = false;
                     GetOrCreateSettings();
                 }
             };
@@ -40,7 +45,7 @@ namespace StoryFlow.Editor
             {
                 EditorGUILayout.HelpBox(
                     "Could not find or create the StoryFlowSettings asset at " + SettingsAssetPath + ".\n" +
-                    "Check that " + ResourcesFolder + " can be written to.",
+                    "Check that " + ResourcesFolder + " can be written to, then open this page again.",
                     MessageType.Error);
                 return;
             }
@@ -115,6 +120,7 @@ namespace StoryFlow.Editor
 
         /// <summary>
         /// Finds the existing StoryFlowSettings asset in Resources, or creates one if missing.
+        /// Returns null if it could not be created.
         /// </summary>
         private static StoryFlowSettings GetOrCreateSettings()
         {
@@ -128,17 +134,11 @@ namespace StoryFlow.Editor
             if (settings != null)
                 return settings;
 
-            // Create the asset
-            if (!AssetDatabase.IsValidFolder(ResourcesFolder))
-            {
-                AssetDatabase.CreateFolder("Assets", "Resources");
-            }
+            if (creationFailed)
+                return null;
 
-            settings = ScriptableObject.CreateInstance<StoryFlowSettings>();
-            AssetDatabase.CreateAsset(settings, SettingsAssetPath);
-            AssetDatabase.SaveAssets();
-
-            Debug.Log("[StoryFlow] Created StoryFlowSettings asset at: " + SettingsAssetPath);
+            settings = StoryFlowEditorHelpers.CreateSettingsAsset();
+            creationFailed = settings == null;
             return settings;
         }
     }
