@@ -210,6 +210,21 @@ namespace StoryFlow.Execution.NodeHandlers
                 return;
             }
 
+            // A called script whose Start leads nowhere is refused before it becomes the current script, as a
+            // missing one is, so the walk ends in this script and the line it started from is shown again
+            var startNode = targetScript.GetNode(targetScript.StartNodeId);
+            if (startNode != null && targetScript.GetEdgesFromSource(startNode.Id).Count == 0)
+            {
+                component.BroadcastError("Script's Start node is not connected");
+                return;
+            }
+            var startEdge = startNode != null ? targetScript.FindEdgeBySourceHandle(StoryFlowHandles.Source(startNode.Id, "")) : null;
+            if (startEdge != null && targetScript.GetNode(startEdge.Target) == null)
+            {
+                component.BroadcastError($"Target node not found: {startEdge.Target}");
+                return;
+            }
+
             // Evaluate input parameters while still in calling script's context
             var paramValues = new Dictionary<string, StoryFlowVariant>();
             var scriptInterfaceJson = node.GetData("scriptInterface");
@@ -342,12 +357,7 @@ namespace StoryFlow.Execution.NodeHandlers
             component.NotifyScriptStarted(scriptId);
 
             // Process the start node
-            var startNode = targetScript.GetNode(targetScript.StartNodeId);
-            if (startNode != null && targetScript.GetEdgesFromSource(startNode.Id).Count == 0)
-            {
-                component.BroadcastError("Script's Start node is not connected");
-            }
-            else if (startNode != null)
+            if (startNode != null)
             {
                 context.NextNode = startNode;
             }

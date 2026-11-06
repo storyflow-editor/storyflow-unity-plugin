@@ -23,7 +23,14 @@ namespace StoryFlow.Tests
             Run("Exit flow with a connected route takes it", () => ParityExitFlow(true));
             Run("End inside a flow of the startup script ends the dialogue", ParityRootEndInFlow);
             Run("Run Flow without its Entry Flow raises an error and leaves no flow frame", ParityMissingEntryFlow);
-            Run("Run Script into a script whose Start is unconnected raises an error", ParityUnconnectedStart);
+            Run("Run Script into a script whose Start is unconnected or leads nowhere raises an error and keeps the line", ParityUnconnectedStart);
+            Run("A story whose Start has nothing connected reports it and ends the dialogue",
+                () => ParityStartupError("[{'id':'A','type':'dialogue','choices':[]}]", new JObject[0], "Start node is not connected"));
+            Run("A story whose Start leads to a node it does not have reports it and ends the dialogue",
+                () => ParityStartupError("[{'id':'A','type':'dialogue','choices':[]}]", new[] { RegressionEdge("0", "gone") }, "Target node not found: gone"));
+            Run("A story that stops on an error before its first line ends the dialogue",
+                () => ParityStartupError("[{'id':'call','type':'runScript','script':'missing.json'},{'id':'A','type':'dialogue','choices':[]}]",
+                    new[] { RegressionEdge("0", "call"), RegressionEdge("call", "A", "output") }, "Script not found: missing.json"));
             Run("Unwired Run Script parameters pass type defaults and leave a map alone", ParityUnwiredParameters);
             Run("Diagnostics use the editor wording", ParityDiagnostics);
             Run("Global variable node without the scope flag does not reach the global", ParityStrictScope);
@@ -355,14 +362,38 @@ namespace StoryFlow.Tests
             });
         }
 
+        // line A: Go -> Run Script(blank). blank's Start has nothing connected, or leads to a node blank does not have.
+        // The call is refused before blank becomes the current script, so A comes back and still takes input.
         private static void ParityUnconnectedStart()
         {
-            var story = ParityStory("{'id':'tail','type':'runScript','script':'blank.json'}", new JObject[0]);
-            story["blank.json"] = LoopScript("[{'id':'end','type':'end'}]", new JObject[0]);
-            WithLoopStory(false, story, (c, errors) =>
+            foreach (var start in new[] { new JObject[0], new[] { RegressionEdge("0", "gone") } })
             {
-                c.SelectOption("go");
-                AssertEqual(1, errors.Count, "error raised");
+                var story = ParityStory("{'id':'tail','type':'runScript','script':'blank.json'}", new JObject[0]);
+                story["blank.json"] = LoopScript("[{'id':'end','type':'end'}]", start);
+                WithLoopStory(false, story, (c, errors) =>
+                {
+                    var started = new List<string>();
+                    c.OnScriptStarted += started.Add;
+                    c.SelectOption("go");
+                    AssertEqual(start.Length == 0 ? "Script's Start node is not connected" : "Target node not found: gone", string.Join(" | ", errors), "error raised");
+                    AssertEqual("main.json:A", LoopAt(c), "line A is shown again"); AssertTrue(c.IsWaitingForInput(), "and takes input");
+                    AssertEqual(0, c.GetContext().CallStackDepth, "no call is left open"); AssertEqual(0, started.Count, "blank never starts");
+                    c.SelectOption("next");
+                    AssertEqual("main.json:B", LoopAt(c), "A's other option still works");
+                });
+            }
+        }
+
+        // The first walk of a dialogue stops on an error before any line is shown. Nothing can be shown after that, so the
+        // dialogue ends instead of staying active, where it would refuse every save load until the game stopped it.
+        private static void ParityStartupError(string nodes, JObject[] edges, string expected)
+        {
+            WithLoopStory(false, new Dictionary<string, JObject> { ["main.json"] = LoopScript(nodes, edges) }, (c, errors) =>
+            {
+                AssertEqual(expected, string.Join(" | ", errors), "the error");
+                AssertTrue(!c.IsDialogueActive(), "the dialogue has ended");
+                AssertTrue(!StoryFlowManager.Instance.IsDialogueActive(), "no dialogue is active");
+                AssertTrue(StoryFlowManager.Instance.ImportState(StoryFlowManager.Instance.ExportState()), "a save loads");
             });
         }
     }

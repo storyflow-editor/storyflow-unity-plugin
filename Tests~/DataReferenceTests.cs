@@ -383,7 +383,7 @@ namespace StoryFlow.Tests
             foreach (bool stale in new[] { false, true })
             {
                 var callee = ScriptableObject.CreateInstance<StoryFlowScriptAsset>(); callee.ScriptPath = "callee.sfe";
-                callee.SetNodes(new() { DaN("0", StoryFlowNodeType.End) });
+                callee.SetNodes(new() { DaN("0", StoryFlowNodeType.Start), DaN("E", StoryFlowNodeType.End) }); callee.SetConnections(new() { DaE("0", "E", "0") });
                 callee.SetVariables(new() { new() { Id = "result", Name = "Ref", Type = stale ? StoryFlowVariableType.String : StoryFlowVariableType.DataAsset, IsInput = true, IsOutput = true, IsArray = array, DefaultValueJson = array ? "[]" : "default" } });
                 var project = ScriptableObject.CreateInstance<StoryFlowProjectAsset>(); project.SetScriptReferences(new() { new() { Path = "callee.sfe", Asset = callee } });
                 SetManagerProject(project);
@@ -401,7 +401,7 @@ namespace StoryFlow.Tests
                     var caller = ctx.CurrentScript;
                     ControlFlowNodeHandler.HandleRunScript(component, caller.GetNode("CALL"));
                     AssertEqual(stale ? StoryFlowVariableType.String : StoryFlowVariableType.DataAsset, ctx.LocalVariables["result"].Value.Type, "callee declaration guards Data input array=" + array + " stale=" + stale);
-                    ControlFlowNodeHandler.HandleEnd(component, callee.GetNode("0"));
+                    ControlFlowNodeHandler.HandleEnd(component, callee.GetNode("E"));
                     DataAssetNodeHandler.HandleSetDataAssetVariable(component, caller.GetNode("W"));
                     AssertEqual(stale ? 0 : 1, store.Overlay.Count, "actual RunScript output declaration guards Data setter array=" + array + " stale=" + stale);
                 }

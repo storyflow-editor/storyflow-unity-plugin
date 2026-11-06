@@ -172,6 +172,9 @@ namespace StoryFlow
         private bool _audioAdvanceAllowSkip;
         private bool _isRefreshingDialogue;
 
+        // Errors broadcast so far, so a walk can tell whether it stopped on one
+        private int reportedErrors;
+
         /// <summary>
         /// The audio clip currently assigned to the dialogue audio source.
         /// Used to detect changes and avoid restarting the same clip on re-render
@@ -345,7 +348,14 @@ namespace StoryFlow
                 return;
             }
 
+            var errorsBefore = reportedErrors;
             ProcessNode(startNode);
+
+            // The first walk stopped on an error before showing a line, so nothing can be shown. The dialogue ends
+            // rather than staying active, where it would refuse every save load until the game stopped it.
+            if (reportedErrors != errorsBefore && IsCurrentDialogueSession(generation) && !_context.IsWaitingForInput &&
+                _context.NextNode == null && string.IsNullOrEmpty(_context.CurrentDialogueState?.NodeId))
+                StopDialogue();
         }
         private bool IsCurrentDialogueSession(ulong generation) => _isDialogueActive && dialogueLifecycleGeneration == generation;
 
@@ -3314,6 +3324,7 @@ namespace StoryFlow
         /// </summary>
         internal void BroadcastError(string message)
         {
+            reportedErrors++;
             Debug.LogError("[StoryFlow] " + message);
             OnError?.Invoke(message);
         }
