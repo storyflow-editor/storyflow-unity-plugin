@@ -499,6 +499,7 @@ namespace StoryFlow.Editor
         ///   "project-updated" - Editor has exported JSON to the build/ directory.
         ///                       payload.projectPath = absolute path to the project root.
         ///                       The build directory is at {projectPath}/build/.
+        ///   "sync-failed"     - A sync the editor could not run. payload.message = the reason.
         ///   "pong"            - Response to a ping (no action needed).
         /// </summary>
         private void ProcessMessage(string message)
@@ -528,6 +529,11 @@ namespace StoryFlow.Editor
             {
                 case "project-updated":
                     HandleProjectUpdated(payload);
+                    break;
+
+                case "sync-failed":
+                    // A sync StoryFlow Editor could not run: its export failed or its files could not be saved
+                    AddLogFromBackground($"Sync failed in StoryFlow Editor: {payload?.Value<string>("message") ?? ""}");
                     break;
 
                 case "pong":
