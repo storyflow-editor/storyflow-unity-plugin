@@ -24,6 +24,8 @@ namespace StoryFlow.Tests
             Run("End inside a flow of the startup script ends the dialogue", ParityRootEndInFlow);
             Run("Run Flow without its Entry Flow raises an error and leaves no flow frame", ParityMissingEntryFlow);
             Run("Run Script into a script whose Start is unconnected or leads nowhere raises an error and keeps the line", ParityUnconnectedStart);
+            Run("A walk that runs out inside a called script before its first line shows the line it started from again", ParityCalledScriptDeadEnd);
+            Run("A walk that runs out inside a script called from a For Each body moves the loop on", ParityCalledScriptDeadEndInLoop);
             Run("A story whose Start has nothing connected reports it and ends the dialogue",
                 () => ParityStartupError("[{'id':'A','type':'dialogue','choices':[]}]", new JObject[0], "Start node is not connected"));
             Run("A story whose Start leads to a node it does not have reports it and ends the dialogue",
@@ -382,6 +384,52 @@ namespace StoryFlow.Tests
                     AssertEqual("main.json:B", LoopAt(c), "A's other option still works");
                 });
             }
+        }
+
+        // sub: Add To Array(Log, 7), with nothing connected after it.
+        private static JObject ParityDeadEndScript() => LoopScript(
+            "[{'id':'logArray','type':'getIntArray','variable':'log','isGlobal':true},{'id':'log','type':'addToIntArray','value':7}]",
+            new[] { RegressionEdge("0", "log"), RegressionEdge("logArray", "log", "integer-array-", "integer-array-2") });
+
+        private static string ParityLog(StoryFlowComponent c) =>
+            string.Join(",", c.GetContext().FindVariableByName("Log", false, true).Value.ArrayValue.Select(value => value.GetInt()));
+
+        // line A: Go -> Run Script(sub), Next -> line B. sub runs out of connections before it shows a line: it ends there,
+        // as if nothing were connected after the Run Script, so line A is shown again and its other options still work.
+        private static void ParityCalledScriptDeadEnd()
+        {
+            var story = ParityStory("{'id':'tail','type':'runScript','script':'sub.json'}", new JObject[0]);
+            story["sub.json"] = ParityDeadEndScript();
+            WithLoopStory(false, story, (c, errors) =>
+            {
+                var ended = new List<string>();
+                c.OnScriptEnded += ended.Add;
+                c.SelectOption("go");
+                AssertEqual("7", ParityLog(c), "sub ran");
+                AssertEqual("main.json:A", LoopAt(c), "line A is shown again"); AssertTrue(c.IsWaitingForInput(), "and takes input");
+                AssertEqual(0, c.GetContext().CallStackDepth, "no call is left open"); AssertEqual("sub.json", string.Join(",", ended), "sub ended");
+                c.SelectOption("next");
+                AssertEqual("main.json:B", LoopAt(c), "A's other option still works"); AssertEqual(0, errors.Count, "no error");
+            });
+        }
+
+        // line A: Go -> For Each [1, 2] -> Loop Body -> Run Script(sub), Completed -> line Done. Each call runs out of
+        // connections inside sub, which ends the iteration, so the loop moves on and reaches Done.
+        private static void ParityCalledScriptDeadEndInLoop()
+        {
+            var story = ParityStory(@"{'id':'tail','type':'forEachIntLoop'},{'id':'array','type':'getIntArray','variable':'numbers'},
+                {'id':'call','type':'runScript','script':'sub.json'},{'id':'Done','type':'dialogue','choices':[]}",
+                new[] { RegressionEdge("tail", "call", "loopBody"), RegressionEdge("tail", "Done", "completed"),
+                    RegressionEdge("array", "tail", "integer-array-", "integer-array-array") });
+            story["sub.json"] = ParityDeadEndScript();
+            WithLoopStory(false, story, (c, errors) =>
+            {
+                c.SelectOption("go");
+                AssertEqual("7,7", ParityLog(c), "sub ran once per element");
+                AssertEqual("main.json:Done", LoopAt(c), "the loop finished"); AssertTrue(c.IsWaitingForInput(), "and its line takes input");
+                AssertEqual(0, c.GetContext().CallStackDepth, "no call is left open"); AssertEqual(0, c.GetContext().LoopStackDepth, "no loop is left open");
+                AssertEqual(0, errors.Count, "no error");
+            });
         }
 
         // The first walk of a dialogue stops on an error before any line is shown. Nothing can be shown after that, so the

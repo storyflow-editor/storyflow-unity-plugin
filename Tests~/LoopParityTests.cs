@@ -24,7 +24,7 @@ namespace StoryFlow.Tests
             foreach (bool rollback in new[] { false, true })
             {
                 Run("For Each with nothing connected to Loop Body reaches Completed, rollback " + rollback, () => LoopEmptyBody(rollback));
-                Run("Dead end in a called script leaves the caller loop parked, rollback " + rollback, () => LoopDeadEndInCalledScript(rollback));
+                Run("Dead end in a called script ends it and the caller loop moves on, rollback " + rollback, () => LoopDeadEndInCalledScript(rollback));
                 Run("Called script that ends inside its loop starts it afresh, rollback " + rollback, () => LoopLeftByEnd(rollback));
                 Run("Caller loop keeps its position while the called loop restarts, rollback " + rollback, () => LoopParkedInCaller(rollback));
                 Run("Script calling itself from its loop keeps the caller position, rollback " + rollback, () => LoopSelfCall(rollback));
@@ -306,7 +306,8 @@ namespace StoryFlow.Tests
         }
 
         // main: For Each [1, 2, 3] -> Run Script(sub) -> Set Int. sub: Add To Array(Log, 7) -> Branch with nothing connected.
-        // The walk ends in the called script, which has no loop of its own: only its return continues the caller's loop.
+        // sub has no End and no loop of its own. It ends where it runs out, as if nothing were connected after the Run
+        // Script, so the caller's loop moves on to its next element.
         private static void LoopDeadEndInCalledScript(bool rollback)
         {
             var scripts = LoopLineInCalledScript(Tail("Set Int", "{'type':'setInt','variable':'mark','value':1}"));
@@ -316,9 +317,11 @@ namespace StoryFlow.Tests
             WithLoopStory(rollback, scripts, (c, errors) =>
             {
                 var log = c.GetContext().FindVariableByName("Log", false, true).Value.ArrayValue;
-                AssertEqual("sub.json", c.GetContext().CurrentScript.ScriptPath, "the walk ended in the called script");
-                AssertEqual("7", string.Join(",", log.Select(value => value.GetInt())), "the caller loop called it once");
-                AssertEqual(1, c.GetContext().CallStackDepth, "the call has not returned"); AssertEqual(0, errors.Count, "no error");
+                // Each call ends where sub runs out, as if nothing were connected after the Run Script
+                AssertEqual("main.json", c.GetContext().CurrentScript.ScriptPath, "the walk ended in the caller");
+                AssertEqual("7,7,7", string.Join(",", log.Select(value => value.GetInt())), "the caller loop called it once per element");
+                AssertEqual(0, c.GetContext().CallStackDepth, "no call is left open"); AssertEqual(0, c.GetContext().LoopStackDepth, "no loop is left open");
+                AssertEqual(0, errors.Count, "no error");
             });
         }
 

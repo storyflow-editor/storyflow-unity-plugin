@@ -59,12 +59,15 @@ namespace StoryFlow.Tests
             {
                 var component = new StoryFlowComponent { UIStyle = BuiltInUIStyle.None };
                 var errors = new List<string>();
-                int calls = 0;
+                int calls = 0, ended = 0;
                 component.OnError += errors.Add;
                 component.OnScriptStarted += _ => calls++;
+                component.OnScriptEnded += _ => ended++;
                 component.StartDialogue();
-                AssertEqual(expected, component.GetContext().CallStackDepth, "recursive calls stop at the configured limit");
                 AssertEqual(expected + 1, calls, "root plus exactly the allowed nested scripts enter");
+                // The walk stopped before any line, so each nested script ends where it stopped and none is left open
+                AssertEqual(expected, ended, "every nested script ends");
+                AssertEqual(0, component.GetContext().CallStackDepth, "no call is left open");
                 AssertEqual(1, errors.Count, "overflow is reported once");
                 AssertTrue(errors.Count == 1 && errors[0].Contains(expected.ToString()), "overflow reports the configured limit");
                 component.StopDialogue();

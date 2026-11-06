@@ -104,26 +104,7 @@ namespace StoryFlow.Execution.NodeHandlers
                     return;
                 }
 
-                // Restore the previous script asset
-                if (callFrame.Script != null && callFrame.Script.TryGetTarget(out var previousScript))
-                {
-                    context.CurrentScript = previousScript;
-                    previousScript.BuildIndices();
-                }
-                else
-                {
-                    // Fallback: try to get it from the project
-                    var project = component.GetProject();
-                    if (project != null && !string.IsNullOrEmpty(callFrame.ScriptPath))
-                    {
-                        var restored = project.GetScriptByPath(callFrame.ScriptPath);
-                        if (restored != null)
-                        {
-                            context.CurrentScript = restored;
-                            restored.BuildIndices();
-                        }
-                    }
-                }
+                RestoreCallerScript(component, context, callFrame);
 
                 // Store outputs on the RunScript node in the calling script
                 if (!string.IsNullOrEmpty(callFrame.ReturnNodeId) && outputValues.Count > 0)
@@ -162,6 +143,44 @@ namespace StoryFlow.Execution.NodeHandlers
             {
                 // End in the startup script finishes the dialogue, inside a flow or not
                 component.StopDialogue();
+            }
+        }
+
+        /// <summary>
+        /// Ends the called script the walk is in where it ran out of connections, as if nothing were connected after its
+        /// Run Script: no outputs are passed back and the Run Script's output is not followed.
+        /// </summary>
+        internal static void EndCalledScript(StoryFlowComponent component, StoryFlowExecutionContext context)
+        {
+            var scriptPath = context.CurrentScript != null ? context.CurrentScript.ScriptPath : "";
+            var callFrame = context.PopCallFrame();
+            if (callFrame == null) return;
+            RestoreCallerScript(component, context, callFrame);
+            component.Trace($"SCRIPT RETURN \"{scriptPath}\"");
+            component.NotifyScriptEnded(scriptPath);
+        }
+
+        /// <summary>Makes the script of a popped call frame current again.</summary>
+        private static void RestoreCallerScript(StoryFlowComponent component, StoryFlowExecutionContext context, CallFrame callFrame)
+        {
+            if (callFrame.Script != null && callFrame.Script.TryGetTarget(out var previousScript))
+            {
+                context.CurrentScript = previousScript;
+                previousScript.BuildIndices();
+            }
+            else
+            {
+                // Fallback: try to get it from the project
+                var project = component.GetProject();
+                if (project != null && !string.IsNullOrEmpty(callFrame.ScriptPath))
+                {
+                    var restored = project.GetScriptByPath(callFrame.ScriptPath);
+                    if (restored != null)
+                    {
+                        context.CurrentScript = restored;
+                        restored.BuildIndices();
+                    }
+                }
             }
         }
 

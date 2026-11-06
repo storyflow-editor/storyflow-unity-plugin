@@ -3130,6 +3130,17 @@ namespace StoryFlow
                     return;
                 }
 
+                // The walk ran out of connections inside a called script before that script showed a line. The
+                // script ends there, as if nothing were connected after its Run Script: back in the caller a For
+                // Each around the call moves on, and otherwise the walk ends there too.
+                while (_context.NextNode == null && !_context.ShouldPause && ReferenceEquals(_context, context) && _isDialogueActive &&
+                       !context.IsWaitingForInput && context.LoopStackDepth == 0 && string.IsNullOrEmpty(context.LastDialogueNodeId) &&
+                       context.CallStackDepth > 0 && current.Type != Data.StoryFlowNodeType.Dialogue)
+                {
+                    ControlFlowNodeHandler.EndCalledScript(this, context);
+                    EndLoopBody();
+                }
+
                 // The walk ended without reaching a line, outside any loop: the line it started from
                 // stays up and keeps taking input, as in the HTML runtime. Re-render it like the Set*
                 // fallthrough does.
