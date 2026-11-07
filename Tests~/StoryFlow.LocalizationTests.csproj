@@ -19,6 +19,7 @@
     <Compile Include="LegacyCharacterImportTests.cs" />
     <Compile Include="ScriptNestingTests.cs" /><Compile Include="RollbackTests.cs" />
     <Compile Include="LoopParityTests.cs" /><Compile Include="HandlerParityTests.cs" />
+    <Compile Include="LineInLoopBodyTests.cs" />
     <Compile Include="SwitchOnEnumValueTests.cs" />
     <Compile Include="SingleInputPinTests.cs" />
     <Compile Include="ReadAfterWriteTests.cs" />

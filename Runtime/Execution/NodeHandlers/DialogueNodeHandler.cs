@@ -21,14 +21,6 @@ namespace StoryFlow.Execution.NodeHandlers
             bool isFreshEntry = context.EnteringDialogueViaEdge;
             context.EnteringDialogueViaEdge = false;
 
-            // Dialogue nodes cannot be used inside forEach loops
-            var loopCtx = context.PeekLoop();
-            if (loopCtx != null)
-            {
-                component.BroadcastError("Dialogue nodes cannot be used inside ForEach loops.");
-                return;
-            }
-
             // A line ends the walk that led to it, shown fresh or again. Run Flow is a jump, so the flow
             // frames pushed on the way are never returned to, and a story that loops back through Run Flow
             // (a menu's Back, a shop) piled them up until the 50-frame limit stopped it. That limit is for

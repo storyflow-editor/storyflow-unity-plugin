@@ -398,7 +398,7 @@ namespace StoryFlow.Tests
         }
 
         // chapter: For Each [1, 2, 3] -> Branch(Stop): false -> Set Bool(Stop = true),
-        // true -> Set Int(Seen = element) -> a line, where the walk stops on "Dialogue nodes cannot be used inside ForEach loops".
+        // true -> Set Int(Seen = element) -> line halt, where the walk stops inside the loop body on the second element.
         private static void LoopAfterStoppedWalk(bool rollback)
         {
             var scripts = LoopStoryAround(LoopScript(
@@ -413,14 +413,14 @@ namespace StoryFlow.Tests
             {
                 var save = StoryFlowManager.Instance.ExportState();
                 c.AdvanceDialogue();
-                AssertEqual("chapter.json", c.GetContext().CurrentScript.ScriptPath, "the walk stopped in the called script");
+                AssertEqual("chapter.json:halt", LoopAt(c), "the walk stopped on the line in the loop body");
                 AssertEqual(2, c.GetIntVariable("Seen", true), "on the second element");
-                AssertEqual(1, errors.Count, "the line in the loop body stops the walk"); errors.Clear();
                 c.StopDialogue(); AssertTrue(StoryFlowManager.Instance.ImportState(save), "stopped Load"); c.StartDialogue();
                 AssertEqual("main.json:A", LoopAt(c), "story starts again"); AssertEqual(0, c.GetIntVariable("Seen", true), "loaded state");
                 c.AdvanceDialogue();
+                AssertEqual("chapter.json:halt", LoopAt(c), "the walk stops on the line again");
                 AssertEqual(2, c.GetIntVariable("Seen", true), "the loop starts at its first element");
-                AssertEqual(1, errors.Count, "the line in the loop body stops the walk again");
+                AssertEqual(0, errors.Count, "no error");
             });
         }
 

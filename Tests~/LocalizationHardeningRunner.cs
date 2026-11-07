@@ -15,6 +15,7 @@ namespace StoryFlow.Tests
             RunDataReferenceTests();
             RunScriptNestingTests(); RunRollbackTests();
             RunLoopParityTests(); RunHandlerParityTests();
+            RunLineInLoopBodyTests();
             RunSwitchOnEnumValueTests();
             RunSingleInputPinTests();
             RunReadAfterWriteTests();
